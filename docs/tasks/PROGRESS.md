@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 3 |
+| Completed | 4 |
 | In Progress | 0 |
-| Not Started | 84 |
+| Not Started | 83 |
 
 ---
 
@@ -109,6 +109,40 @@
 
 ---
 
+### T-004: Central Data Types -- WorkflowState, RunOpts, RunResult, Task, Phase, StepRecord
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `WorkflowState` and `StepRecord` types in `internal/workflow/state.go` with constructor, `AddStepRecord`, and `LastStep` methods
+- `RunOpts`, `RunResult`, and `RateLimitInfo` types in `internal/agent/types.go` with `Success()` and `WasRateLimited()` methods
+- `Task`, `Phase`, and `TaskStatus` types in `internal/task/types.go` with `IsReady()` and `ValidStatus()` functions
+- Five `TaskStatus` string constants (not iota): `not_started`, `in_progress`, `completed`, `blocked`, `skipped`
+- All types have JSON struct tags matching PRD Section 6.4
+- Empty slices serialize as `[]` (not `null`), empty maps as `{}` (not `null`)
+- `time.Duration` serializes as nanoseconds (int64) -- documented in type comments
+
+**Files created/modified:**
+
+- `internal/workflow/state.go` - WorkflowState, StepRecord, NewWorkflowState, AddStepRecord, LastStep
+- `internal/workflow/state_test.go` - 9 tests: constructor, JSON round-trip, struct tags, omitempty, duration nanoseconds
+- `internal/agent/types.go` - RunOpts, RunResult, RateLimitInfo, Success, WasRateLimited
+- `internal/agent/types_test.go` - 9 tests: Success/WasRateLimited table-driven, JSON round-trip, omitempty, struct tags
+- `internal/task/types.go` - Task, Phase, TaskStatus, IsReady, ValidStatus
+- `internal/task/types_test.go` - 9 tests: IsReady (8 cases), ValidStatus (9 cases), JSON round-trip, serialization
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go test -race -cover` pass (100% coverage, no races)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -131,7 +165,7 @@ _None currently_
 | T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Completed |
 | T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Completed |
 | T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Completed |
-| T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Not Started |
+| T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Completed |
 | T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Not Started |
 | T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Not Started |
 | T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Not Started |
