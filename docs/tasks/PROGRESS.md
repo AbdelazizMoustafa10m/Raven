@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 1 |
+| Completed | 2 |
 | In Progress | 0 |
-| Not Started | 86 |
+| Not Started | 85 |
 
 ---
 
@@ -19,7 +19,7 @@
 
 **What was built:**
 
-- Go module initialized with `github.com/ravenco/raven` module path and Go 1.24 directive
+- Go module initialized with `github.com/AbdelazizMoustafa10m/Raven` module path and Go 1.24 directive
 - Minimal entry point at `cmd/raven/main.go` with placeholder output
 - All 12 internal subpackages with `doc.go` stubs: cli, config, workflow, agent, task, loop, review, prd, pipeline, git, tui, buildinfo
 - `tools.go` with `//go:build tools` tag to declare all direct dependencies
@@ -49,6 +49,39 @@
 
 ---
 
+### T-002: Makefile with Build Targets and ldflags
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- GNU Makefile with 12 targets: `all`, `build`, `test`, `vet`, `lint`, `tidy`, `fmt`, `clean`, `install`, `bench`, `run-version`, `build-debug`
+- Version injection via ldflags `-X` flags for `internal/buildinfo.Version`, `.Commit`, `.Date`
+- `CGO_ENABLED=0` for all build and install targets (pure Go cross-compilation)
+- Separate `LDFLAGS_DEBUG` without `-s -w` for debug builds with `dlv` support
+- Added `Version`, `Commit`, `Date` variables to `internal/buildinfo` package with defaults (`"dev"`, `"unknown"`, `"unknown"`)
+- Comprehensive test suite: static analysis tests for Makefile content + integration tests for build/clean/debug targets and ldflags injection
+
+**Files created/modified:**
+
+- `Makefile` - GNU Makefile with build targets and ldflags
+- `internal/buildinfo/doc.go` - Added Version, Commit, Date variables for ldflags injection
+- `internal/buildinfo/buildinfo_test.go` - Default values test (table-driven)
+- `Makefile_test.go` - Makefile content tests + integration tests for make targets
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests including new Makefile tests)
+- `go mod tidy` no drift
+- `make build` produces `dist/raven` with injected version info
+- `make build-debug` produces `dist/raven-debug` with debug symbols
+- `make clean` removes `dist/` directory
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -69,7 +102,7 @@ _None currently_
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
 | T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Completed |
-| T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Not Started |
+| T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Completed |
 | T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Not Started |
 | T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Not Started |
 | T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Not Started |

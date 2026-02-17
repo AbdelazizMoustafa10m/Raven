@@ -145,8 +145,8 @@ func TestGoMod_ModulePath(t *testing.T) {
 	root := projectRoot(t)
 	content := readFileContent(t, filepath.Join(root, "go.mod"))
 
-	assert.Contains(t, content, "module github.com/ravenco/raven",
-		"go.mod must declare module path as github.com/ravenco/raven")
+	assert.Contains(t, content, "module github.com/AbdelazizMoustafa10m/Raven",
+		"go.mod must declare module path as github.com/AbdelazizMoustafa10m/Raven")
 }
 
 func TestGoMod_GoDirective(t *testing.T) {
