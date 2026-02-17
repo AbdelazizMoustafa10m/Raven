@@ -1,0 +1,6 @@
+[project]
+name = "test"
+unknown_key = "should be detected"
+
+[unknown_section]
+foo = "bar"

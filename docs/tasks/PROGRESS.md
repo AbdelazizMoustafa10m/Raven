@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 8 |
+| Completed | 9 |
 | In Progress | 0 |
-| Not Started | 79 |
+| Not Started | 78 |
 
 ---
 
@@ -264,6 +264,47 @@
 
 ---
 
+### T-009: TOML Configuration Types and Loading with BurntSushi/toml
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- Complete TOML configuration type hierarchy: `Config`, `ProjectConfig`, `AgentConfig`, `ReviewConfig`, `WorkflowConfig` with `toml` struct tags
+- `FindConfigFile(startDir)` walks up directories from CWD to find `raven.toml`, stops at filesystem root
+- `LoadFromFile(path)` parses TOML via `toml.DecodeFile` and returns `*Config` plus `toml.MetaData` for unknown-key detection
+- `NewDefaults()` returns config with all PRD-specified defaults (TasksDir, TaskStateFile, PhasesConf, ProgressFile, LogDir, PromptDir, BranchTemplate)
+- 9 test fixture TOML files covering valid, partial, empty, UTF-8, multiline, special agent names, malformed, and unknown keys
+- 21 tests across load and defaults test files with race-safe parallel execution
+
+**Files created/modified:**
+
+- `internal/config/config.go` - Configuration type hierarchy (Config, ProjectConfig, AgentConfig, ReviewConfig, WorkflowConfig)
+- `internal/config/defaults.go` - NewDefaults() with PRD-specified default values
+- `internal/config/load.go` - FindConfigFile() and LoadFromFile() with BurntSushi/toml
+- `internal/config/load_test.go` - 17 tests: LoadFromFile (valid, partial, agents, malformed, nonexistent, metadata, empty, comments, UTF-8, multiline, special names) and FindConfigFile (current dir, parent dir, not found, root, deeply nested, absolute path)
+- `internal/config/defaults_test.go` - 4 tests: default values, empty agents, empty workflows, zero review
+- `testdata/valid-full.toml` - Full config matching PRD Section 5.10
+- `testdata/valid-partial.toml` - Project-only config
+- `testdata/valid-empty.toml` - Empty file
+- `testdata/valid-comments-only.toml` - Comments only
+- `testdata/valid-utf8.toml` - UTF-8 characters
+- `testdata/valid-multiline.toml` - Multi-line strings
+- `testdata/valid-special-agent-names.toml` - Agent names with hyphens/dots
+- `testdata/invalid-malformed.toml` - Malformed TOML
+- `testdata/valid-unknown-keys.toml` - Unknown keys for MetaData.Undecoded
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go test -race` pass (no races)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -291,7 +332,7 @@ _None currently_
 | T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Completed |
 | T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Completed |
 | T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Completed |
-| T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Not Started |
+| T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Completed |
 | T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Not Started |
 | T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Not Started |
 | T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Not Started |
