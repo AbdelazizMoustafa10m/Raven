@@ -255,6 +255,16 @@ generated_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF_META
 }
 
+consolidate_progress() {
+    local consolidate_script="$SCRIPT_DIR/consolidate-progress.sh"
+    if [[ ! -f "$consolidate_script" ]]; then
+        log_step "$_SYM_ARROW" "consolidate-progress.sh not found -- skipping PROGRESS.md consolidation"
+        return 0
+    fi
+    log_step "$_SYM_ARROW" "Consolidating PROGRESS.md for phase ${PHASE_ID}"
+    "$consolidate_script" --phase "$PHASE_ID"
+}
+
 create_pr() {
     local title="$PR_TITLE"
     if [[ -z "$title" ]]; then
@@ -337,6 +347,7 @@ EOF_BODY
     ensure_has_commits "$base_ref"
     render_pr_body "$base_ref"
     persist_artifact_metadata
+    consolidate_progress
     create_pr
 }
 
