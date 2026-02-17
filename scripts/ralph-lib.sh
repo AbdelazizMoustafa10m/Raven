@@ -839,8 +839,99 @@ get_dirty_summary() {
 # Use when agent updated PROGRESS.md but failed to create a commit.
 # Arguments: task_id
 # Returns 0 on success, 1 on failure.
+# Extract the commit message the agent intended to use from its output.
+# Looks for a `git commit -m "..."` block in the agent's stdout.
+# Arguments: agent_output
+# Outputs: The extracted commit message (subject + body), or empty string.
+extract_agent_commit_message() {
+    local output="$1"
+
+    # Strategy: find `git commit -m "..."` in the output.
+    # The agent consistently wraps it in a ```bash code fence.
+    # We extract everything between `git commit -m "` and the closing `"`.
+    # For multi-line messages, we grab until the line ending with a lone `"`
+    local msg=""
+    msg=$(printf '%s' "$output" | awk '
+        /git commit -m "/ {
+            # Remove everything up to and including git commit -m "
+            sub(/.*git commit -m "/, "")
+            collecting = 1
+        }
+        collecting {
+            # Check if this line ends the message (trailing lone " or ")
+            if (match($0, /"[[:space:]]*$/)) {
+                sub(/"[[:space:]]*$/, "")
+                print
+                exit
+            }
+            print
+        }
+    ')
+
+    # Trim leading/trailing blank lines (awk for macOS compatibility)
+    msg=$(printf '%s' "$msg" | awk '
+        NF { found=1 }
+        found { lines[++n] = $0 }
+        END {
+            # Remove trailing blank lines
+            while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+            for (i = 1; i <= n; i++) print lines[i]
+        }
+    ')
+
+    printf '%s' "$msg"
+}
+
+# Build a commit message from staged changes when agent message extraction fails.
+# Arguments: task_id
+# Outputs: A generated commit message with file summary.
+generate_commit_message_from_diff() {
+    local task_id="$1"
+
+    # Get the list of staged files with their status
+    local stat_summary
+    stat_summary=$(git diff --cached --stat 2>/dev/null | tail -1)
+
+    local files_changed
+    files_changed=$(git diff --cached --name-status 2>/dev/null)
+
+    # Detect primary package from changed files (for conventional commit scope)
+    local scope="recovery"
+    local primary_dir
+    primary_dir=$(git diff --cached --name-only 2>/dev/null \
+        | grep '^internal/' \
+        | head -1 \
+        | sed 's|^internal/||; s|/.*||')
+    if [[ -n "$primary_dir" ]]; then
+        scope="$primary_dir"
+    fi
+
+    # Build file list for the body
+    local file_list=""
+    while IFS=$'\t' read -r status filepath; do
+        [[ -z "$status" ]] && continue
+        case "$status" in
+            A) file_list+="- Add ${filepath}"$'\n' ;;
+            M) file_list+="- Update ${filepath}"$'\n' ;;
+            D) file_list+="- Remove ${filepath}"$'\n' ;;
+            *) file_list+="- ${status} ${filepath}"$'\n' ;;
+        esac
+    done <<< "$files_changed"
+
+    cat <<EOF
+feat(${scope}): implement ${task_id}
+
+${file_list}
+${stat_summary}
+
+Task: ${task_id}
+Recovered-by: ralph-loop
+EOF
+}
+
 run_commit_recovery() {
     local task_id="$1"
+    local agent_output="${2:-}"
 
     if ! is_tree_dirty; then
         log "COMMIT_RECOVERY: Working tree is clean, nothing to commit."
@@ -863,15 +954,26 @@ run_commit_recovery() {
         return 0
     fi
 
-    # Create recovery commit
-    if git commit -m "$(cat <<EOF
-chore(recovery): auto-commit pending changes for ${task_id}
+    # Build commit message: prefer agent's intended message, fall back to generated
+    local commit_msg=""
+    if [[ -n "$agent_output" ]]; then
+        commit_msg=$(extract_agent_commit_message "$agent_output")
+        if [[ -n "$commit_msg" ]]; then
+            log "COMMIT_RECOVERY: Extracted commit message from agent output."
+            # Append recovery trailer
+            commit_msg="${commit_msg}
 
-This commit was created by the Ralph loop recovery mechanism.
-The agent completed ${task_id} but did not create a git commit
-(likely due to permission restrictions in dontAsk mode).
-EOF
-    )" 2>/dev/null; then
+Recovered-by: ralph-loop"
+        fi
+    fi
+
+    if [[ -z "$commit_msg" ]]; then
+        log "COMMIT_RECOVERY: No agent message found, generating from staged diff."
+        commit_msg=$(generate_commit_message_from_diff "$task_id")
+    fi
+
+    # Create recovery commit
+    if git commit -m "$commit_msg" 2>/dev/null; then
         local new_head
         new_head=$(git rev-parse --short HEAD 2>/dev/null)
         log "COMMIT_RECOVERY: Successfully committed as $new_head."
@@ -1242,7 +1344,7 @@ run_ralph_loop() {
         elif [[ "$progress_made" == "true" && "$commit_made" == "false" ]]; then
             # Progress but no commit -- attempt auto-commit recovery
             log "COMMIT_RECOVERY: $selected_task marked complete but no commit detected."
-            if run_commit_recovery "$selected_task"; then
+            if run_commit_recovery "$selected_task" "$output"; then
                 tasks_completed=$((tasks_completed + (remaining - new_remaining)))
                 consecutive_errors=0
                 rate_limit_waits=0
@@ -1381,7 +1483,7 @@ run_single_task() {
     if is_task_completed "$task_id"; then
         if [[ -n "$start_head" && "$start_head" == "$end_head" ]] && is_tree_dirty; then
             log "COMMIT_RECOVERY: $task_id marked complete but no commit detected."
-            run_commit_recovery "$task_id" || true
+            run_commit_recovery "$task_id" "$output" || true
         fi
         log_success "Single task $task_id completed successfully."
         _ralph_render_banner "summary" "$phase_icon Single Task Complete" \

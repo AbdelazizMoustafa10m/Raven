@@ -50,10 +50,12 @@ source "$SCRIPT_DIR/ralph-lib.sh"
 # Claude-Specific Allowed Tools
 # =============================================================================
 
-# Git subcommands are listed explicitly (no blanket "git *") to prevent
-# accidental git push. The "git commit" pattern uses both bare and arg
-# forms to work around Claude Code issue #1520 with complex commit messages.
-CLAUDE_ALLOWED_TOOLS='Edit,Write,Read,Glob,Grep,Task,WebSearch,WebFetch,Bash(go build*),Bash(go test*),Bash(go vet*),Bash(go mod*),Bash(go get*),Bash(go run*),Bash(go fmt*),Bash(go install*),Bash(go version*),Bash(go generate*),Bash(git add *),Bash(git add),Bash(git commit *),Bash(git commit),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git rev-parse*),Bash(git stash*),Bash(git branch*),Bash(git checkout*),Bash(git merge*),Bash(git rebase*),Bash(git rm *),Bash(git mv *),Bash(git show*),Bash(git reset*),Bash(mkdir*),Bash(ls*),Bash(make*),Bash(chmod*),Bash(curl *),Bash(wget *),Bash(golangci-lint*),Bash(./bin/*),Bash(./scripts/*)'
+# Note: "git commit" in dontAsk mode is unreliable due to Claude Code
+# hallucinating permission denials (issue #1520). The recovery mechanism
+# in ralph-lib.sh handles this by extracting the agent's intended commit
+# message and auto-committing. Using "Bash(git *)" for simplicity since
+# the model doesn't actually try the command regardless of pattern specificity.
+CLAUDE_ALLOWED_TOOLS='Edit,Write,Read,Glob,Grep,Task,WebSearch,WebFetch,Bash(go build*),Bash(go test*),Bash(go vet*),Bash(go mod*),Bash(go get*),Bash(go run*),Bash(go fmt*),Bash(go install*),Bash(go version*),Bash(go generate*),Bash(git *),Bash(mkdir*),Bash(ls*),Bash(make*),Bash(chmod*),Bash(curl *),Bash(wget *),Bash(golangci-lint*),Bash(./bin/*),Bash(./scripts/*)'
 
 # =============================================================================
 # Agent-Specific Functions (required by ralph-lib.sh)
