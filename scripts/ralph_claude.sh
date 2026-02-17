@@ -12,7 +12,7 @@
 #   ./scripts/ralph_claude.sh --task T-003                  # Run single task
 #   ./scripts/ralph_claude.sh --phase 1 --dry-run           # Preview prompt only
 #   ./scripts/ralph_claude.sh --phase all                   # Run all phases sequentially
-#   ./scripts/ralph_claude.sh --model claude-sonnet-4-5-20250929  # Use specific model
+#   ./scripts/ralph_claude.sh --model claude-sonnet-4-6  # Use specific model
 #
 # Prerequisites:
 #   - Claude Code CLI installed (`claude` command available)
@@ -130,7 +130,7 @@ Options:
 
 Examples:
   ./scripts/ralph_claude.sh --phase 1                        # Run all Phase 1 tasks
-  ./scripts/ralph_claude.sh --phase 1 --model claude-sonnet-4-5-20250929  # Use Sonnet
+  ./scripts/ralph_claude.sh --phase 1 --model claude-sonnet-4-6  # Use Sonnet
   ./scripts/ralph_claude.sh --phase 1 --effort medium        # Lower thinking effort
   ./scripts/ralph_claude.sh --phase 1 --max-iterations 5     # Cap at 5 iterations
   ./scripts/ralph_claude.sh --phase 1 --max-limit-waits 3    # Allow 3 rate-limit waits
