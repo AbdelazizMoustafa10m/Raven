@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 10 |
+| Completed | 11 |
 | In Progress | 0 |
-| Not Started | 77 |
+| Not Started | 76 |
 
 ---
 
@@ -338,6 +338,36 @@
 
 ---
 
+### T-011: Configuration Validation and Unknown Key Detection
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `Validate()` function performing structural, semantic, and unknown-key validation of resolved config
+- `ValidationSeverity`, `ValidationIssue`, `ValidationResult` types with `HasErrors()`, `HasWarnings()`, `Errors()`, `Warnings()` methods
+- Project validation: required name, recognized language set, non-empty verification commands
+- Agent validation: required command, recognized effort values, prompt_template existence warnings
+- Review validation: regex compilation checks for extensions and risk_patterns, path existence warnings
+- Workflow validation: non-empty steps, transition keys and targets must reference defined steps
+- Unknown key detection via `toml.MetaData.Undecoded()` with nil-safe guard
+- Comprehensive test suite with 50+ test functions covering all acceptance criteria, edge cases, and integration tests
+
+**Files created/modified:**
+
+- `internal/config/validate.go` - Validation types and Validate() function with section validators
+- `internal/config/validate_test.go` - 50+ tests: ValidationResult methods, project/agent/review/workflow validation, unknown keys, filesystem warnings, edge cases, integration with testdata fixtures
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -367,7 +397,7 @@ _None currently_
 | T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Completed |
 | T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Completed |
 | T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Completed |
-| T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Not Started |
+| T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Completed |
 | T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Not Started |
 | T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Not Started |
 | T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Not Started |
