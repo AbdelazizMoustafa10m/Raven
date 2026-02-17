@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 7 |
+| Completed | 8 |
 | In Progress | 0 |
-| Not Started | 80 |
+| Not Started | 79 |
 
 ---
 
@@ -236,6 +236,34 @@
 
 ---
 
+### T-008: Shell Completion Command -- raven completion
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `raven completion <shell>` command generating shell completion scripts for bash, zsh, fish, and PowerShell
+- Uses Cobra's built-in `GenBashCompletionV2`, `GenZshCompletion`, `GenFishCompletion`, `GenPowerShellCompletionWithDesc` for shell-specific generation
+- `ValidArgs` + `cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)` for strict argument validation
+- Long description includes installation examples for all four shells across Linux, macOS, and Windows
+- `DisableFlagsInUseLine: true` since command takes no flags
+- Comprehensive test suite with 16 test functions covering all acceptance criteria
+
+**Files created/modified:**
+
+- `internal/cli/completion.go` - Completion command with shell-specific generation via Cobra's built-in methods
+- `internal/cli/completion_test.go` - 16 tests: per-shell output validation, table-driven all-shells test, no-args error, invalid shell error, extra args error, case sensitivity, registration, help visibility, metadata, ValidArgs, install examples, stdout isolation
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -262,7 +290,7 @@ _None currently_
 | T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Completed |
 | T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Completed |
 | T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Completed |
-| T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Not Started |
+| T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Completed |
 | T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Not Started |
 | T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Not Started |
 | T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Not Started |
