@@ -4,15 +4,48 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 0 |
+| Completed | 1 |
 | In Progress | 0 |
-| Not Started | 87 |
+| Not Started | 86 |
 
 ---
 
 ## Completed Tasks
 
-_None yet_
+### T-001: Go Project Initialization and Module Setup
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- Go module initialized with `github.com/ravenco/raven` module path and Go 1.24 directive
+- Minimal entry point at `cmd/raven/main.go` with placeholder output
+- All 12 internal subpackages with `doc.go` stubs: cli, config, workflow, agent, task, loop, review, prd, pipeline, git, tui, buildinfo
+- `tools.go` with `//go:build tools` tag to declare all direct dependencies
+- 11 direct dependencies declared: cobra, bubbletea, lipgloss, bubbles, huh, log, toml, sync, doublestar, testify, xxhash
+- `testdata/` and `templates/go-cli/` directories
+- Comprehensive test suite covering all acceptance criteria (25+ test cases)
+
+**Files created/modified:**
+
+- `go.mod` - Module declaration with all direct dependencies
+- `go.sum` - Dependency checksums
+- `cmd/raven/main.go` - Minimal entry point
+- `cmd/raven/main_test.go` - Build, run, vet, tidy verification tests
+- `internal/{cli,config,workflow,agent,task,loop,review,prd,pipeline,git,tui,buildinfo}/doc.go` - Package stubs
+- `internal/project_test.go` - Project structure and dependency tests
+- `tools.go` - Dependency declarations with build tag
+- `templates/go-cli/.gitkeep` - Template directory placeholder
+- `testdata/.gitkeep` - Test fixture directory placeholder
+- `.gitignore` - Added `*.coverprofile`
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all 25+ tests)
+- `go mod tidy` no drift
 
 ---
 
@@ -35,7 +68,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Not Started |
+| T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Completed |
 | T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Not Started |
 | T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Not Started |
 | T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Not Started |
