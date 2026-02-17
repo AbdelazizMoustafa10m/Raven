@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 14 |
+| Completed | 15 |
 | In Progress | 0 |
-| Not Started | 73 |
+| Not Started | 72 |
 
 ---
 
@@ -444,6 +444,43 @@
 
 ---
 
+### T-015: Git Client Wrapper -- internal/git/client.go
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+
+**What was built:**
+
+- `GitClient` struct in `internal/git/client.go` wrapping all git CLI operations via `os/exec`
+- `NewGitClient(workDir string)` constructor that validates git is installed and the directory is a git repository via `git rev-parse --git-dir`
+- Full branch management: `CurrentBranch`, `CreateBranch`, `Checkout`, `BranchExists`
+- Status detection: `HasUncommittedChanges`, `IsClean` (inverse of HasUncommittedChanges)
+- Stash operations: `Stash` (checks clean first, returns false if no-op), `StashPop`
+- Diff operations: `DiffFiles` (parses `--name-status` output including rename handling), `DiffStat` (parses summary line with insertions/deletions), `DiffUnified`
+- Log operations: `HeadCommit` (short SHA), `Log` (slice of `LogEntry`)
+- Push: `Push(remote, setUpstream)` resolving current branch name first
+- Internal `run` / `runSilent` helpers using `exec.CommandContext` with `cmd.Dir` set; `runSilent` returns `(exitCode, stdout, stderr, error)` distinguishing exec failures (exitCode=-1) from non-zero exit (exitCode>0)
+- `EnsureClean(ctx)` in `internal/git/recovery.go` — auto-stashes dirty tree and returns a cleanup function that pops the stash; no-op when tree is already clean
+- Comprehensive `client_test.go` with 68+ test functions using temporary git repos via `t.TempDir()`
+- `recovery_test.go` with 6 focused tests for EnsureClean covering clean/dirty/cleanup/defer patterns
+- Bug fix: `Stash()` now detects "No local changes to save" output to correctly return `false` when only untracked files exist (prevents spurious `StashPop` in `EnsureClean`)
+
+**Files created/modified:**
+
+- `internal/git/client.go` - GitClient struct, all git operation methods, internal helpers; fixed Stash() untracked-file edge case
+- `internal/git/recovery.go` - EnsureClean helper with auto-stash/pop pattern
+- `internal/git/client_test.go` - 68+ tests: NewGitClient, branch ops, status ops, stash ops, log ops, diff ops, parser unit tests, context propagation, error wrapping, integration tests
+- `internal/git/recovery_test.go` - 6 tests: EnsureClean clean/dirty/multi-cleanup/error-wrapping/untracked/defer-pattern
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ### T-011: Configuration Validation and Unknown Key Detection
 
 - **Status:** Completed
@@ -507,7 +544,7 @@ _None currently_
 | T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Completed |
 | T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Completed |
 | T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Completed |
-| T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Not Started |
+| T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Completed |
 
 **Deliverable:** `raven version`, `raven init go-cli`, and `raven config debug` work correctly.
 
@@ -693,4 +730,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-17_
+_Last updated: 2026-02-18_
