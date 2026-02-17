@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 12 |
+| Completed | 13 |
 | In Progress | 0 |
-| Not Started | 75 |
+| Not Started | 74 |
 
 ---
 
@@ -370,6 +370,43 @@
 
 ---
 
+### T-013: Embedded Project Templates -- go-cli Template
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+
+**What was built:**
+
+- `internal/config/templates/go-cli/` directory tree with 8 template files covering `raven.toml`, agent prompts, review directory scaffold, and docs directory scaffold
+- `internal/config/templates.go` with `//go:embed all:templates` directive embedding all template files (including dotfiles via `all:` prefix)
+- `TemplateVars` struct with `ProjectName`, `Language`, and `ModulePath` fields
+- `ListTemplates()` returning all top-level template directory names from the embedded FS
+- `TemplateExists(name)` checking for a named subdirectory in the embedded FS
+- `RenderTemplate(name, destDir, vars)` walking the embedded FS, processing `.tmpl` files via `text/template`, copying static files as-is, stripping `.tmpl` extensions from output filenames, never overwriting existing files, creating parent directories with 0755, and writing files with 0644
+- Comprehensive test suite: 14 test functions achieving >90% coverage, including integration test parsing rendered TOML with BurntSushi/toml
+
+**Files created/modified:**
+
+- `internal/config/templates.go` - TemplateVars, ListTemplates, TemplateExists, RenderTemplate
+- `internal/config/templates_test.go` - 14 tests: ListTemplates, TemplateExists (known/unknown), RenderTemplate (invalid name, creates dest dir, raven.toml creation, variable substitution, TOML validity, prompts dir, .github dirs, docs dirs, project brief substitution, no-overwrite, file permissions, static files, all files count, absolute paths)
+- `internal/config/templates/go-cli/raven.toml.tmpl` - TOML config template with ProjectName and Language substitution
+- `internal/config/templates/go-cli/prompts/implement-claude.md` - Static Claude prompt
+- `internal/config/templates/go-cli/prompts/implement-codex.md` - Static Codex prompt
+- `internal/config/templates/go-cli/.github/review/prompts/review-prompt.md` - Static review prompt
+- `internal/config/templates/go-cli/.github/review/rules/.gitkeep` - Empty placeholder
+- `internal/config/templates/go-cli/.github/review/PROJECT_BRIEF.md.tmpl` - Project brief template with ProjectName and Language substitution
+- `internal/config/templates/go-cli/docs/tasks/.gitkeep` - Empty placeholder
+- `internal/config/templates/go-cli/docs/prd/.gitkeep` - Empty placeholder
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./internal/config/...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ### T-011: Configuration Validation and Unknown Key Detection
 
 - **Status:** Completed
@@ -431,7 +468,7 @@ _None currently_
 | T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Completed |
 | T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Completed |
 | T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Completed |
-| T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Not Started |
+| T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Completed |
 | T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Not Started |
 | T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Not Started |
 
