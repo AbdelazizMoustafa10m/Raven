@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 4 |
+| Completed | 5 |
 | In Progress | 0 |
-| Not Started | 83 |
+| Not Started | 82 |
 
 ---
 
@@ -143,6 +143,38 @@
 
 ---
 
+### T-005: Structured Logging with charmbracelet/log
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `internal/logging` package providing centralized logger factory with component prefixes
+- `Setup(verbose, quiet, jsonFormat bool)` function for global logging configuration (called once during CLI init)
+- `New(component string)` factory function creating loggers with component prefixes via `log.WithPrefix()`
+- `SetOutput(w io.Writer)` for test output capture
+- Re-exported level constants (`LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`, `LevelFatal`)
+- All output goes to stderr; stdout reserved for structured output
+- Quiet wins over verbose when both flags set
+- Comprehensive test suite: 17 test functions including 8-case table-driven level filtering, concurrent logging with 10 goroutines, JSON/text formatter toggling, stdout isolation verification
+
+**Files created/modified:**
+
+- `internal/logging/logging.go` - Logger factory with Setup(), New(), SetOutput(), and level constants
+- `internal/logging/logging_test.go` - 17 test functions with 100% coverage
+- `internal/project_test.go` - Updated subpackage count assertion for new logging package
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go test -race -cover` pass (100% coverage, no races)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -166,7 +198,7 @@ _None currently_
 | T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Completed |
 | T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Completed |
 | T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Completed |
-| T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Not Started |
+| T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Completed |
 | T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Not Started |
 | T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Not Started |
 | T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Not Started |
