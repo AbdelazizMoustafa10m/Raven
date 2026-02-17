@@ -117,7 +117,7 @@ func (i Info) String() string {
 
 ### Potential Pitfalls
 - The variable names MUST be exported (start with capital letter) for `-ldflags -X` to work. Unexported variables cannot be set via ldflags.
-- The ldflags `-X` path must use the full module path (from `go.mod`), not a relative path. Example: `-X github.com/ravenco/raven/internal/buildinfo.Version=1.0.0`
+- The ldflags `-X` path must use the full module path (from `go.mod`), not a relative path. Example: `-X github.com/AbdelazizMoustafa10m/Raven/internal/buildinfo.Version=1.0.0`
 - Do not use `const` -- ldflags can only set `var` declarations.
 - Do not use `init()` functions -- per CLAUDE.md conventions, init() is only for cobra command registration.
 

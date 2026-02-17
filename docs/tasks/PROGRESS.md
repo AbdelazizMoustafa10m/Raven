@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 2 |
+| Completed | 3 |
 | In Progress | 0 |
-| Not Started | 85 |
+| Not Started | 84 |
 
 ---
 
@@ -82,6 +82,33 @@
 
 ---
 
+### T-003: Build Info Package -- internal/buildinfo
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `Info` struct with JSON struct tags for structured build information
+- `GetInfo()` function returning populated `Info` from package-level variables
+- `Info.String()` method returning human-readable format: `raven v{version} (commit: {commit}, built: {date})`
+- Comprehensive test suite with 11 test functions and 3 benchmarks achieving 100% coverage
+
+**Files created/modified:**
+
+- `internal/buildinfo/buildinfo.go` - Info struct, GetInfo() accessor, String() formatter
+- `internal/buildinfo/buildinfo_test.go` - Comprehensive tests: defaults, String formatting, JSON marshal/unmarshal, round-trip, edge cases, struct tags, zero values
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go test -race -cover` pass (100% coverage, no races)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -103,7 +130,7 @@ _None currently_
 |------|------|----------|--------|--------|
 | T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Completed |
 | T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Completed |
-| T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Not Started |
+| T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Completed |
 | T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Not Started |
 | T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Not Started |
 | T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Not Started |
