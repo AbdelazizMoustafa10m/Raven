@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 11 |
+| Completed | 12 |
 | In Progress | 0 |
-| Not Started | 76 |
+| Not Started | 75 |
 
 ---
 
@@ -338,6 +338,38 @@
 
 ---
 
+### T-012: Config Debug and Validate Commands
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `raven config` parent command (namespace-only, shows help with subcommands)
+- `raven config debug` command printing fully-resolved configuration with source annotations (color-coded: green=default, blue=file, yellow=env, red=cli)
+- `raven config validate` command running the full validation suite and reporting errors/warnings with colored labels
+- `loadAndResolveConfig()` shared helper returning `(*ResolvedConfig, *toml.MetaData, error)` -- handles `--config` flag, auto-detection via `FindConfigFile`, and nil metadata when no file is found
+- `printResolvedConfig()` helper formatting all config sections ([project], [agents.*], [review], [workflows.*]) with aligned columns and lipgloss source labels
+- `printValidationResult()` helper formatting errors (red), warnings (yellow), and "No issues found." (green)
+- Fixed-width field column (24 chars) for readable alignment
+- Agents and workflows sorted alphabetically for deterministic output
+- `--no-color` respected automatically (lipgloss Ascii profile set by root PersistentPreRunE)
+- 35+ unit tests covering registration, output routing, format helpers, loadAndResolveConfig edge cases, and end-to-end command invocations
+
+**Files created/modified:**
+
+- `internal/cli/config_cmd.go` - configCmd, configDebugCmd, configValidateCmd, loadAndResolveConfig, printResolvedConfig, printValidationResult, fmtStr, fmtSlice, sourceStyle, style vars
+- `internal/cli/config_cmd_test.go` - 35+ tests: registration, metadata, help output, debug/validate with file/no-file/explicit-flag, validation errors/warnings/unknown-keys, output routing, fmtStr/fmtSlice table-driven, loadAndResolveConfig unit tests, sourceStyle tests
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ### T-011: Configuration Validation and Unknown Key Detection
 
 - **Status:** Completed
@@ -398,7 +430,7 @@ _None currently_
 | T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Completed |
 | T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Completed |
 | T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Completed |
-| T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Not Started |
+| T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Completed |
 | T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Not Started |
 | T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Not Started |
 | T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Not Started |
