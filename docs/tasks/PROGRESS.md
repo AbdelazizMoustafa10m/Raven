@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 6 |
+| Completed | 7 |
 | In Progress | 0 |
-| Not Started | 81 |
+| Not Started | 80 |
 
 ---
 
@@ -209,6 +209,33 @@
 
 ---
 
+### T-007: Version Command -- raven version
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- `raven version` command printing human-readable version string to stdout
+- `--json` flag for structured JSON output with indentation
+- `cobra.NoArgs` validation rejecting extra positional arguments
+- Command registered as subcommand of root, visible in `raven --help`
+- Comprehensive test suite with 11 tests covering all acceptance criteria
+
+**Files created/modified:**
+
+- `internal/cli/version.go` - Version command with `--json` flag, uses `buildinfo.GetInfo()`
+- `internal/cli/version_test.go` - 11 tests: human-readable output, defaults, JSON validity, indentation, extra args rejection, registration, help visibility, metadata, flag registration, stdout isolation, JSON round-trip
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -234,7 +261,7 @@ _None currently_
 | T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Completed |
 | T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Completed |
 | T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Completed |
-| T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Not Started |
+| T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Completed |
 | T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Not Started |
 | T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Not Started |
 | T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Not Started |
