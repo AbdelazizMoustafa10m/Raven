@@ -62,12 +62,12 @@ func TemplateExists(name string) bool {
 // RenderTemplate writes the named template's files into destDir. Files whose
 // names end in ".tmpl" are processed with text/template using vars; all other
 // files are copied byte-for-byte. The ".tmpl" extension is stripped from the
-// output filename. Existing files in destDir are never overwritten -- they are
-// silently skipped.
+// output filename. When force is false, existing files in destDir are silently
+// skipped. When force is true, existing files are overwritten.
 //
 // Returns the list of file paths created (relative to destDir). Returns an
 // error if the template does not exist or if any I/O operation fails.
-func RenderTemplate(name string, destDir string, vars TemplateVars) ([]string, error) {
+func RenderTemplate(name string, destDir string, vars TemplateVars, force bool) ([]string, error) {
 	if !TemplateExists(name) {
 		return nil, fmt.Errorf("template %q not found", name)
 	}
@@ -100,10 +100,13 @@ func RenderTemplate(name string, destDir string, vars TemplateVars) ([]string, e
 
 		destFile := filepath.Join(destDir, destRel)
 
-		// Skip existing files -- never overwrite.
+		// Skip existing files unless force is set.
 		if _, statErr := os.Stat(destFile); statErr == nil {
-			log.Debug("skipping existing file", "path", destFile)
-			return nil
+			if !force {
+				log.Debug("skipping existing file", "path", destFile)
+				return nil
+			}
+			log.Debug("overwriting existing file", "path", destFile)
 		}
 
 		// Ensure the parent directory exists.

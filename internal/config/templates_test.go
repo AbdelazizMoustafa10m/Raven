@@ -37,7 +37,7 @@ func TestTemplateExists_unknown(t *testing.T) {
 // when the requested template does not exist.
 func TestRenderTemplate_invalidName(t *testing.T) {
 	dir := t.TempDir()
-	_, err := RenderTemplate("nonexistent", dir, TemplateVars{})
+	_, err := RenderTemplate("nonexistent", dir, TemplateVars{}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -52,7 +52,7 @@ func TestRenderTemplate_createsDestDir(t *testing.T) {
 		ProjectName: "myproject",
 		Language:    "go",
 		ModulePath:  "github.com/example/myproject",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	info, err := os.Stat(newDir)
@@ -70,7 +70,7 @@ func TestRenderTemplate_createsRavenToml(t *testing.T) {
 		ModulePath:  "github.com/example/test-project",
 	}
 
-	created, err := RenderTemplate("go-cli", dir, vars)
+	created, err := RenderTemplate("go-cli", dir, vars, false)
 	require.NoError(t, err)
 
 	tomlPath := filepath.Join(dir, "raven.toml")
@@ -119,7 +119,7 @@ func TestRenderTemplate_substitutesVars(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			_, err := RenderTemplate("go-cli", dir, tt.vars)
+			_, err := RenderTemplate("go-cli", dir, tt.vars, false)
 			require.NoError(t, err)
 
 			content, err := os.ReadFile(filepath.Join(dir, "raven.toml"))
@@ -142,7 +142,7 @@ func TestRenderTemplate_renderedTomlIsValidTOML(t *testing.T) {
 		ModulePath:  "github.com/example/integration-test",
 	}
 
-	_, err := RenderTemplate("go-cli", dir, vars)
+	_, err := RenderTemplate("go-cli", dir, vars, false)
 	require.NoError(t, err)
 
 	tomlPath := filepath.Join(dir, "raven.toml")
@@ -160,7 +160,7 @@ func TestRenderTemplate_createsPromptsDir(t *testing.T) {
 	_, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "p",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, "prompts", "implement-claude.md"))
@@ -174,7 +174,7 @@ func TestRenderTemplate_createsGitHubReviewDirs(t *testing.T) {
 	_, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "p",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, ".github", "review", "prompts", "review-prompt.md"))
@@ -189,7 +189,7 @@ func TestRenderTemplate_createsDocsDirs(t *testing.T) {
 	_, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "p",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.FileExists(t, filepath.Join(dir, "docs", "tasks", ".gitkeep"))
@@ -206,7 +206,7 @@ func TestRenderTemplate_projectBriefSubstitution(t *testing.T) {
 		ModulePath:  "github.com/example/my-brief-project",
 	}
 
-	_, err := RenderTemplate("go-cli", dir, vars)
+	_, err := RenderTemplate("go-cli", dir, vars, false)
 	require.NoError(t, err)
 
 	briefPath := filepath.Join(dir, ".github", "review", "PROJECT_BRIEF.md")
@@ -222,7 +222,7 @@ func TestRenderTemplate_projectBriefSubstitution(t *testing.T) {
 }
 
 // TestRenderTemplate_doesNotOverwriteExistingFiles verifies that RenderTemplate
-// skips files that already exist in the destination directory.
+// skips files that already exist in the destination directory when force=false.
 func TestRenderTemplate_doesNotOverwriteExistingFiles(t *testing.T) {
 	dir := t.TempDir()
 
@@ -236,7 +236,7 @@ func TestRenderTemplate_doesNotOverwriteExistingFiles(t *testing.T) {
 	_, err = RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "should-not-appear",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	content, err := os.ReadFile(tomlPath)
@@ -246,6 +246,32 @@ func TestRenderTemplate_doesNotOverwriteExistingFiles(t *testing.T) {
 	assert.NotContains(t, string(content), "should-not-appear")
 }
 
+// TestRenderTemplate_forceOverwritesExistingFiles verifies that when force=true,
+// RenderTemplate overwrites files that already exist in the destination directory.
+func TestRenderTemplate_forceOverwritesExistingFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Pre-create raven.toml with known content.
+	tomlPath := filepath.Join(dir, "raven.toml")
+	originalContent := "# original content\n"
+	err := os.WriteFile(tomlPath, []byte(originalContent), 0o644)
+	require.NoError(t, err)
+
+	// RenderTemplate with force=true must overwrite the existing file.
+	_, err = RenderTemplate("go-cli", dir, TemplateVars{
+		ProjectName: "force-project",
+		Language:    "go",
+	}, true)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(tomlPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "force-project",
+		"existing raven.toml must be overwritten when force=true")
+	assert.NotContains(t, string(content), "# original content",
+		"original content must be replaced when force=true")
+}
+
 // TestRenderTemplate_filePermissions verifies that created files have 0644
 // permissions and created directories have 0755 permissions.
 func TestRenderTemplate_filePermissions(t *testing.T) {
@@ -253,7 +279,7 @@ func TestRenderTemplate_filePermissions(t *testing.T) {
 	_, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "perm-test",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	// Check file permission.
@@ -276,7 +302,7 @@ func TestRenderTemplate_staticFilesNotModified(t *testing.T) {
 	_, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "static-test",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	// The prompt files should be static markdown; they must exist and be non-empty.
@@ -295,7 +321,7 @@ func TestRenderTemplate_allExpectedFiles(t *testing.T) {
 	created, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "count-test",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 
 	// Build a set of relative paths for easy lookup.
@@ -332,7 +358,7 @@ func TestRenderTemplate_returnedPathsAreAbsolute(t *testing.T) {
 	created, err := RenderTemplate("go-cli", dir, TemplateVars{
 		ProjectName: "abs-test",
 		Language:    "go",
-	})
+	}, false)
 	require.NoError(t, err)
 	require.NotEmpty(t, created)
 

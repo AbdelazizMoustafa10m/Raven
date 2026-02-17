@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 13 |
+| Completed | 14 |
 | In Progress | 0 |
-| Not Started | 74 |
+| Not Started | 73 |
 
 ---
 
@@ -370,6 +370,43 @@
 
 ---
 
+### T-014: `raven init [template]` CLI Command
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+
+**What was built:**
+
+- `internal/cli/init_cmd.go` with `raven init [template]` Cobra command
+- `PersistentPreRunE` override that skips config loading (no `raven.toml` required) while still honouring env-var flags, logging setup, colour disable, and `--dir` handling
+- `--name` / `-n` flag: project name defaulting to current directory's base name
+- `--force` flag: overwrites existing files (including `raven.toml`) instead of erroring
+- Path-traversal guard on `--name` values
+- Guard that errors on existing `raven.toml` without `--force`
+- Delegates template rendering to `config.RenderTemplate()` from T-013
+- All success output (initialized message, created file list, next steps) goes to stderr
+- Added `force bool` parameter to `config.RenderTemplate()` enabling overwrite behaviour
+- Updated all existing `RenderTemplate` call sites in `templates_test.go` to pass `false`
+- New `TestRenderTemplate_forceOverwritesExistingFiles` test in templates_test.go
+- Comprehensive `init_cmd_test.go` with 12 test functions covering all acceptance criteria
+
+**Files created/modified:**
+
+- `internal/cli/init_cmd.go` - init command: PersistentPreRunE override, --name/-n, --force flags, runInit handler
+- `internal/cli/init_cmd_test.go` - 12 tests: registration, flags, default template, explicit template, --name flag, directory-name default, unknown template error, existing raven.toml without --force, --force overwrite, directory structure, path traversal rejection, max-one-arg, TOML validity, no-config-required
+- `internal/config/templates.go` - RenderTemplate signature updated with `force bool` parameter
+- `internal/config/templates_test.go` - All RenderTemplate calls updated to pass `false`; new TestRenderTemplate_forceOverwritesExistingFiles test added
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./internal/config/...` pass (all tests)
+- `go test ./internal/cli/...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ### T-013: Embedded Project Templates -- go-cli Template
 
 - **Status:** Completed
@@ -469,7 +506,7 @@ _None currently_
 | T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Completed |
 | T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Completed |
 | T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Completed |
-| T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Not Started |
+| T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Completed |
 | T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Not Started |
 
 **Deliverable:** `raven version`, `raven init go-cli`, and `raven config debug` work correctly.
