@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 5 |
+| Completed | 6 |
 | In Progress | 0 |
-| Not Started | 82 |
+| Not Started | 81 |
 
 ---
 
@@ -175,6 +175,40 @@
 
 ---
 
+### T-006: Cobra CLI Root Command and Global Flags
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- Cobra root command (`rootCmd`) in `internal/cli/root.go` with Use "raven", Short and Long descriptions
+- Six global persistent flags: `--verbose/-v`, `--quiet/-q`, `--config`, `--dir`, `--dry-run`, `--no-color`
+- `PersistentPreRunE` hook that initializes logging via `logging.Setup()`, checks environment variable overrides (`RAVEN_VERBOSE`, `RAVEN_QUIET`, `NO_COLOR`, `RAVEN_NO_COLOR`, `RAVEN_LOG_FORMAT`), disables color via `lipgloss.SetColorProfile(termenv.Ascii)`, and resolves `--dir` working directory changes
+- `Execute() int` public function returning exit codes (0 success, 1 error)
+- `RunE` that displays full help (Usage + Flags) when invoked with no subcommand
+- `SilenceUsage: true` and `SilenceErrors: true` for Raven's own error handling
+- Environment variable precedence: CLI flags > env vars > defaults
+- Updated `cmd/raven/main.go` to call `cli.Execute()` with `os.Exit()`
+- Comprehensive test suite: 27 test functions covering flag registration, PreRun behavior, env var propagation, directory handling, edge cases
+
+**Files created/modified:**
+
+- `internal/cli/root.go` - Root command, global flags, PersistentPreRunE, Execute()
+- `internal/cli/root_test.go` - 27 tests: metadata, flags, exit codes, env vars, --dir edge cases, help output
+- `cmd/raven/main.go` - Updated to call cli.Execute() instead of fmt.Println
+- `cmd/raven/main_test.go` - Updated binary tests for Cobra help output
+- `go.mod` - Added muesli/termenv and spf13/pflag as direct dependencies
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -199,7 +233,7 @@ _None currently_
 | T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Completed |
 | T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Completed |
 | T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Completed |
-| T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Not Started |
+| T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Completed |
 | T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Not Started |
 | T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Not Started |
 | T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Not Started |

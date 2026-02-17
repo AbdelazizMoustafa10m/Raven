@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,6 +61,7 @@ func TestBuild_BinaryRuns(t *testing.T) {
 	require.NoError(t, err, "go build failed: %s", string(buildOutput))
 
 	// Run the binary and check it exits with code 0.
+	// With Cobra, running with no subcommand shows help and exits 0.
 	runCmd := exec.Command(binPath)
 	output, err := runCmd.CombinedOutput()
 	require.NoError(t, err, "binary execution failed with output: %s", string(output))
@@ -80,14 +80,18 @@ func TestBuild_BinaryOutput(t *testing.T) {
 	buildOutput, err := buildCmd.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", string(buildOutput))
 
-	// Run the binary and verify output.
-	runCmd := exec.Command(binPath)
+	// Run with --help to get full help output (includes Usage and flags).
+	runCmd := exec.Command(binPath, "--help")
 	output, err := runCmd.CombinedOutput()
 	require.NoError(t, err, "binary execution failed")
 
-	outputStr := strings.TrimSpace(string(output))
-	assert.Equal(t, "raven - AI workflow orchestration command center", outputStr,
-		"binary must print the expected placeholder message")
+	outputStr := string(output)
+	assert.Contains(t, outputStr, "AI workflow orchestration command center",
+		"binary must print help output containing the short description")
+	assert.Contains(t, outputStr, "Usage:",
+		"binary help output must contain Usage section")
+	assert.Contains(t, outputStr, "--verbose",
+		"binary help output must list the --verbose flag")
 }
 
 func TestGoRun_Success(t *testing.T) {
@@ -99,9 +103,9 @@ func TestGoRun_Success(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "go run failed: %s", string(output))
 
-	outputStr := strings.TrimSpace(string(output))
-	assert.Equal(t, "raven - AI workflow orchestration command center", outputStr,
-		"go run must produce the expected output")
+	outputStr := string(output)
+	assert.Contains(t, outputStr, "AI workflow orchestration command center",
+		"go run output must contain the short description")
 }
 
 func TestGoVet_Passes(t *testing.T) {

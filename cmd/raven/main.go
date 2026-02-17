@@ -1,7 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"os"
+
+	"github.com/AbdelazizMoustafa10m/Raven/internal/cli"
+)
 
 func main() {
-	fmt.Println("raven - AI workflow orchestration command center")
+	os.Exit(cli.Execute())
 }
