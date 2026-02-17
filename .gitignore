@@ -5,6 +5,8 @@
 *.so
 *.dylib
 raven
+bin/
+dist/
 
 # Test binary, built with `go test -c`
 *.test
@@ -35,6 +37,12 @@ Thumbs.db
 .raven/state/
 .raven/
 
+# ─── Ralph Loop Logs ─────────────────────────────────
+scripts/logs/*.log
+
+.review-workspace/
+reports/review/
+
 # Build artifacts
 dist/
 build/
@@ -43,6 +51,9 @@ build/
 .env
 .env.local
 *.env
+*.pem
+*.key
+
 
 # Temporary files
 *.tmp

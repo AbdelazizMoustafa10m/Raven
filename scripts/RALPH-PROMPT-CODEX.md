@@ -29,9 +29,10 @@ Implement the assigned task, verify it, update progress, and commit.
 
 1. Read `AGENTS.md` for project conventions and tech stack
 2. Read the task spec carefully
-3. Create/modify files per the spec
-4. Write tests alongside implementation
-5. Follow Go conventions and best practices from your skill directory (.codex/skills/)
+3. Read skills/*.md for GO, Cobra, and CLI best practices.
+4. Create/modify files per the spec
+5. Write tests alongside implementation
+6. Follow Go conventions and best practices from your skill directory (.codex/skills/)
 
 ### Step 3: Verify
 

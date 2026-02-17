@@ -36,9 +36,10 @@ This will:
 
 If `/implement-task` is not available, implement directly:
 1. Read the task spec carefully
-2. Create/modify files per the spec
-3. Write tests alongside implementation
-4. Follow Go conventions from CLAUDE.md
+2. Read skills/*.md for GO, Cobra, and CLI best practices.
+3. Create/modify files per the spec
+4. Write tests alongside implementation
+5. Follow Go conventions from skills/*.md
 
 ### Step 3: Verify
 
