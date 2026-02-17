@@ -758,9 +758,15 @@ wait_for_rate_limit_reset() {
 
     log_rate_limit "Waiting ${wait_seconds}s (resuming ~${_BOLD}${resume_time}${_RESET}${_MAGENTA}). Cycle $((wait_cycle + 1))/$max_cycles"
 
-    # Countdown display every 60 seconds
-    local remaining=$wait_seconds
-    while [[ $remaining -gt 0 ]]; do
+    # Countdown display every 60 seconds (epoch-based to survive system sleep)
+    local target_epoch=$(( $(date +%s) + wait_seconds ))
+    while true; do
+        local now_epoch
+        now_epoch=$(date +%s)
+        local remaining=$(( target_epoch - now_epoch ))
+        if [[ $remaining -le 0 ]]; then
+            break
+        fi
         local display_mins=$((remaining / 60))
         local display_secs=$((remaining % 60))
         printf "\r  %b⏳ Rate limit cooldown: %b%dm %ds%b remaining...  %b" \
@@ -771,7 +777,6 @@ wait_for_rate_limit_reset() {
             sleep_chunk=$remaining
         fi
         sleep "$sleep_chunk"
-        remaining=$((remaining - sleep_chunk))
     done
     printf "\r  %b✓ Rate limit cooldown: %bcomplete!%b                    %b\n" \
         "$_GREEN" "$_BOLD" "$_RESET$_GREEN" "$_RESET"
@@ -1337,13 +1342,27 @@ run_ralph_loop() {
                 log_warn "Invalid rate-limit wait duration; using fallback backoff of ${wait_seconds}s."
             fi
 
-            # Stash any partial work from the interrupted iteration so next attempt starts clean
+            # Stash any partial work so the cooldown starts with a clean tree
+            local stashed_for_rate_limit=false
             if is_tree_dirty; then
-                stash_dirty_tree "rate-limit interrupt during $selected_task"
+                if stash_dirty_tree "rate-limit interrupt during $selected_task"; then
+                    stashed_for_rate_limit=true
+                fi
             fi
 
             wait_for_rate_limit_reset "$wait_seconds" "$rate_limit_waits" "$max_limit_waits"
             rate_limit_waits=$((rate_limit_waits + 1))
+
+            # Restore stashed partial work so next iteration resumes where we left off
+            if [[ "$stashed_for_rate_limit" == "true" ]]; then
+                log "STASH_RECOVERY: Restoring stashed partial work for $selected_task..."
+                if git stash pop 2>/dev/null; then
+                    log_success "STASH_RECOVERY: Partial work restored successfully."
+                else
+                    log_warn "STASH_RECOVERY: git stash pop failed. Partial work remains in stash (inspect with 'git stash list')."
+                fi
+            fi
+
             # Do NOT increment consecutive_errors for rate limits
             continue
         fi

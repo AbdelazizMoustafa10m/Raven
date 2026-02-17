@@ -24,8 +24,11 @@ Implement the assigned task, verify it, update progress, and commit.
 3. Read the task spec file for `{{TASK_ID}}`: `docs/tasks/{{TASK_ID}}-*.md`
 4. Understand acceptance criteria, dependencies, technical notes, files to create
 5. If the task references PRD sections, read `docs/prd/PRD-Raven.md` for context
+6. **Check for partial progress**: Run `git status` and check if any files listed in the task spec already exist with implementation code. If you find uncommitted changes or partially-implemented files for `{{TASK_ID}}`, a previous session was interrupted (rate limit, crash, etc.) and partial work was preserved. Read the existing changes, understand what is already done vs. what remains, and plan to continue from there.
 
 ### Step 2: Implement
+
+> **Resume hint:** If Step 1.6 found partial progress, do NOT re-implement from scratch. Read the existing partial code, compare it against the acceptance criteria, identify what is missing or incomplete, and continue from where the previous session left off. Only create files that don't exist yet and only modify sections that are incomplete.
 
 Use `/implement-task {{TASK_ID}}` to orchestrate the implementation.
 
