@@ -12,502 +12,74 @@
 
 ## Completed Tasks
 
-### T-001: Go Project Initialization and Module Setup
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- Go module initialized with `github.com/AbdelazizMoustafa10m/Raven` module path and Go 1.24 directive
-- Minimal entry point at `cmd/raven/main.go` with placeholder output
-- All 12 internal subpackages with `doc.go` stubs: cli, config, workflow, agent, task, loop, review, prd, pipeline, git, tui, buildinfo
-- `tools.go` with `//go:build tools` tag to declare all direct dependencies
-- 11 direct dependencies declared: cobra, bubbletea, lipgloss, bubbles, huh, log, toml, sync, doublestar, testify, xxhash
-- `testdata/` and `templates/go-cli/` directories
-- Comprehensive test suite covering all acceptance criteria (25+ test cases)
-
-**Files created/modified:**
-
-- `go.mod` - Module declaration with all direct dependencies
-- `go.sum` - Dependency checksums
-- `cmd/raven/main.go` - Minimal entry point
-- `cmd/raven/main_test.go` - Build, run, vet, tidy verification tests
-- `internal/{cli,config,workflow,agent,task,loop,review,prd,pipeline,git,tui,buildinfo}/doc.go` - Package stubs
-- `internal/project_test.go` - Project structure and dependency tests
-- `tools.go` - Dependency declarations with build tag
-- `templates/go-cli/.gitkeep` - Template directory placeholder
-- `testdata/.gitkeep` - Test fixture directory placeholder
-- `.gitignore` - Added `*.coverprofile`
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all 25+ tests)
-- `go mod tidy` no drift
-
----
-
-### T-002: Makefile with Build Targets and ldflags
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- GNU Makefile with 12 targets: `all`, `build`, `test`, `vet`, `lint`, `tidy`, `fmt`, `clean`, `install`, `bench`, `run-version`, `build-debug`
-- Version injection via ldflags `-X` flags for `internal/buildinfo.Version`, `.Commit`, `.Date`
-- `CGO_ENABLED=0` for all build and install targets (pure Go cross-compilation)
-- Separate `LDFLAGS_DEBUG` without `-s -w` for debug builds with `dlv` support
-- Added `Version`, `Commit`, `Date` variables to `internal/buildinfo` package with defaults (`"dev"`, `"unknown"`, `"unknown"`)
-- Comprehensive test suite: static analysis tests for Makefile content + integration tests for build/clean/debug targets and ldflags injection
-
-**Files created/modified:**
-
-- `Makefile` - GNU Makefile with build targets and ldflags
-- `internal/buildinfo/doc.go` - Added Version, Commit, Date variables for ldflags injection
-- `internal/buildinfo/buildinfo_test.go` - Default values test (table-driven)
-- `Makefile_test.go` - Makefile content tests + integration tests for make targets
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests including new Makefile tests)
-- `go mod tidy` no drift
-- `make build` produces `dist/raven` with injected version info
-- `make build-debug` produces `dist/raven-debug` with debug symbols
-- `make clean` removes `dist/` directory
-
----
-
-### T-003: Build Info Package -- internal/buildinfo
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `Info` struct with JSON struct tags for structured build information
-- `GetInfo()` function returning populated `Info` from package-level variables
-- `Info.String()` method returning human-readable format: `raven v{version} (commit: {commit}, built: {date})`
-- Comprehensive test suite with 11 test functions and 3 benchmarks achieving 100% coverage
-
-**Files created/modified:**
-
-- `internal/buildinfo/buildinfo.go` - Info struct, GetInfo() accessor, String() formatter
-- `internal/buildinfo/buildinfo_test.go` - Comprehensive tests: defaults, String formatting, JSON marshal/unmarshal, round-trip, edge cases, struct tags, zero values
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go test -race -cover` pass (100% coverage, no races)
-- `go mod tidy` no drift
-
----
-
-### T-004: Central Data Types -- WorkflowState, RunOpts, RunResult, Task, Phase, StepRecord
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `WorkflowState` and `StepRecord` types in `internal/workflow/state.go` with constructor, `AddStepRecord`, and `LastStep` methods
-- `RunOpts`, `RunResult`, and `RateLimitInfo` types in `internal/agent/types.go` with `Success()` and `WasRateLimited()` methods
-- `Task`, `Phase`, and `TaskStatus` types in `internal/task/types.go` with `IsReady()` and `ValidStatus()` functions
-- Five `TaskStatus` string constants (not iota): `not_started`, `in_progress`, `completed`, `blocked`, `skipped`
-- All types have JSON struct tags matching PRD Section 6.4
-- Empty slices serialize as `[]` (not `null`), empty maps as `{}` (not `null`)
-- `time.Duration` serializes as nanoseconds (int64) -- documented in type comments
-
-**Files created/modified:**
-
-- `internal/workflow/state.go` - WorkflowState, StepRecord, NewWorkflowState, AddStepRecord, LastStep
-- `internal/workflow/state_test.go` - 9 tests: constructor, JSON round-trip, struct tags, omitempty, duration nanoseconds
-- `internal/agent/types.go` - RunOpts, RunResult, RateLimitInfo, Success, WasRateLimited
-- `internal/agent/types_test.go` - 9 tests: Success/WasRateLimited table-driven, JSON round-trip, omitempty, struct tags
-- `internal/task/types.go` - Task, Phase, TaskStatus, IsReady, ValidStatus
-- `internal/task/types_test.go` - 9 tests: IsReady (8 cases), ValidStatus (9 cases), JSON round-trip, serialization
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go test -race -cover` pass (100% coverage, no races)
-- `go mod tidy` no drift
-
----
-
-### T-005: Structured Logging with charmbracelet/log
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `internal/logging` package providing centralized logger factory with component prefixes
-- `Setup(verbose, quiet, jsonFormat bool)` function for global logging configuration (called once during CLI init)
-- `New(component string)` factory function creating loggers with component prefixes via `log.WithPrefix()`
-- `SetOutput(w io.Writer)` for test output capture
-- Re-exported level constants (`LevelDebug`, `LevelInfo`, `LevelWarn`, `LevelError`, `LevelFatal`)
-- All output goes to stderr; stdout reserved for structured output
-- Quiet wins over verbose when both flags set
-- Comprehensive test suite: 17 test functions including 8-case table-driven level filtering, concurrent logging with 10 goroutines, JSON/text formatter toggling, stdout isolation verification
-
-**Files created/modified:**
-
-- `internal/logging/logging.go` - Logger factory with Setup(), New(), SetOutput(), and level constants
-- `internal/logging/logging_test.go` - 17 test functions with 100% coverage
-- `internal/project_test.go` - Updated subpackage count assertion for new logging package
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go test -race -cover` pass (100% coverage, no races)
-- `go mod tidy` no drift
-
----
-
-### T-006: Cobra CLI Root Command and Global Flags
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- Cobra root command (`rootCmd`) in `internal/cli/root.go` with Use "raven", Short and Long descriptions
-- Six global persistent flags: `--verbose/-v`, `--quiet/-q`, `--config`, `--dir`, `--dry-run`, `--no-color`
-- `PersistentPreRunE` hook that initializes logging via `logging.Setup()`, checks environment variable overrides (`RAVEN_VERBOSE`, `RAVEN_QUIET`, `NO_COLOR`, `RAVEN_NO_COLOR`, `RAVEN_LOG_FORMAT`), disables color via `lipgloss.SetColorProfile(termenv.Ascii)`, and resolves `--dir` working directory changes
-- `Execute() int` public function returning exit codes (0 success, 1 error)
-- `RunE` that displays full help (Usage + Flags) when invoked with no subcommand
-- `SilenceUsage: true` and `SilenceErrors: true` for Raven's own error handling
-- Environment variable precedence: CLI flags > env vars > defaults
-- Updated `cmd/raven/main.go` to call `cli.Execute()` with `os.Exit()`
-- Comprehensive test suite: 27 test functions covering flag registration, PreRun behavior, env var propagation, directory handling, edge cases
-
-**Files created/modified:**
-
-- `internal/cli/root.go` - Root command, global flags, PersistentPreRunE, Execute()
-- `internal/cli/root_test.go` - 27 tests: metadata, flags, exit codes, env vars, --dir edge cases, help output
-- `cmd/raven/main.go` - Updated to call cli.Execute() instead of fmt.Println
-- `cmd/raven/main_test.go` - Updated binary tests for Cobra help output
-- `go.mod` - Added muesli/termenv and spf13/pflag as direct dependencies
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go mod tidy` no drift
-
----
-
-### T-007: Version Command -- raven version
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `raven version` command printing human-readable version string to stdout
-- `--json` flag for structured JSON output with indentation
-- `cobra.NoArgs` validation rejecting extra positional arguments
-- Command registered as subcommand of root, visible in `raven --help`
-- Comprehensive test suite with 11 tests covering all acceptance criteria
-
-**Files created/modified:**
-
-- `internal/cli/version.go` - Version command with `--json` flag, uses `buildinfo.GetInfo()`
-- `internal/cli/version_test.go` - 11 tests: human-readable output, defaults, JSON validity, indentation, extra args rejection, registration, help visibility, metadata, flag registration, stdout isolation, JSON round-trip
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go mod tidy` no drift
-
----
-
-### T-008: Shell Completion Command -- raven completion
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `raven completion <shell>` command generating shell completion scripts for bash, zsh, fish, and PowerShell
-- Uses Cobra's built-in `GenBashCompletionV2`, `GenZshCompletion`, `GenFishCompletion`, `GenPowerShellCompletionWithDesc` for shell-specific generation
-- `ValidArgs` + `cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)` for strict argument validation
-- Long description includes installation examples for all four shells across Linux, macOS, and Windows
-- `DisableFlagsInUseLine: true` since command takes no flags
-- Comprehensive test suite with 16 test functions covering all acceptance criteria
-
-**Files created/modified:**
-
-- `internal/cli/completion.go` - Completion command with shell-specific generation via Cobra's built-in methods
-- `internal/cli/completion_test.go` - 16 tests: per-shell output validation, table-driven all-shells test, no-args error, invalid shell error, extra args error, case sensitivity, registration, help visibility, metadata, ValidArgs, install examples, stdout isolation
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go mod tidy` no drift
-
----
-
-### T-009: TOML Configuration Types and Loading with BurntSushi/toml
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- Complete TOML configuration type hierarchy: `Config`, `ProjectConfig`, `AgentConfig`, `ReviewConfig`, `WorkflowConfig` with `toml` struct tags
-- `FindConfigFile(startDir)` walks up directories from CWD to find `raven.toml`, stops at filesystem root
-- `LoadFromFile(path)` parses TOML via `toml.DecodeFile` and returns `*Config` plus `toml.MetaData` for unknown-key detection
-- `NewDefaults()` returns config with all PRD-specified defaults (TasksDir, TaskStateFile, PhasesConf, ProgressFile, LogDir, PromptDir, BranchTemplate)
-- 9 test fixture TOML files covering valid, partial, empty, UTF-8, multiline, special agent names, malformed, and unknown keys
-- 21 tests across load and defaults test files with race-safe parallel execution
-
-**Files created/modified:**
-
-- `internal/config/config.go` - Configuration type hierarchy (Config, ProjectConfig, AgentConfig, ReviewConfig, WorkflowConfig)
-- `internal/config/defaults.go` - NewDefaults() with PRD-specified default values
-- `internal/config/load.go` - FindConfigFile() and LoadFromFile() with BurntSushi/toml
-- `internal/config/load_test.go` - 17 tests: LoadFromFile (valid, partial, agents, malformed, nonexistent, metadata, empty, comments, UTF-8, multiline, special names) and FindConfigFile (current dir, parent dir, not found, root, deeply nested, absolute path)
-- `internal/config/defaults_test.go` - 4 tests: default values, empty agents, empty workflows, zero review
-- `testdata/valid-full.toml` - Full config matching PRD Section 5.10
-- `testdata/valid-partial.toml` - Project-only config
-- `testdata/valid-empty.toml` - Empty file
-- `testdata/valid-comments-only.toml` - Comments only
-- `testdata/valid-utf8.toml` - UTF-8 characters
-- `testdata/valid-multiline.toml` - Multi-line strings
-- `testdata/valid-special-agent-names.toml` - Agent names with hyphens/dots
-- `testdata/invalid-malformed.toml` - Malformed TOML
-- `testdata/valid-unknown-keys.toml` - Unknown keys for MetaData.Undecoded
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go test -race` pass (no races)
-- `go mod tidy` no drift
-
----
-
-### T-010: Config Resolution -- CLI > env > file > defaults
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- Four-layer configuration resolution system: CLI flags > env vars > raven.toml > defaults
-- `Resolve()` function with explicit field-by-field merging (no reflection) for type safety
-- `ConfigSource` enum (default, file, env, cli) with source tracking for every resolved field
-- `ResolvedConfig` wrapper pairing merged `Config` with `Sources` map for `raven config debug` (T-012)
-- `CLIOverrides` with pointer types (`*string`, `*bool`) to distinguish "not set" from "set to zero value"
-- `EnvFunc` injection for testable environment variable resolution
-- 7 RAVEN_* environment variables: PROJECT_NAME, TASKS_DIR, LOG_DIR, PROMPT_DIR, BRANCH_TEMPLATE, AGENT_MODEL, AGENT_EFFORT
-- Agent map merging: file agents additive on top of defaults; env/CLI agent overrides apply to ALL agents
-- Deep copy of agents and workflows to prevent shared reference mutation
-- 30 test functions with table-driven priority tests, edge cases, and deep copy verification
-
-**Files created/modified:**
-
-- `internal/config/resolve.go` - Resolve(), ConfigSource, ResolvedConfig, CLIOverrides, EnvFunc, layer merge helpers
-- `internal/config/resolve_test.go` - 30 tests: priority ordering, env var mapping, agent merging, edge cases, deep copy safety
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go test -race` pass (no races)
-- `go mod tidy` no drift
-
----
-
-### T-012: Config Debug and Validate Commands
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `raven config` parent command (namespace-only, shows help with subcommands)
-- `raven config debug` command printing fully-resolved configuration with source annotations (color-coded: green=default, blue=file, yellow=env, red=cli)
-- `raven config validate` command running the full validation suite and reporting errors/warnings with colored labels
-- `loadAndResolveConfig()` shared helper returning `(*ResolvedConfig, *toml.MetaData, error)` -- handles `--config` flag, auto-detection via `FindConfigFile`, and nil metadata when no file is found
-- `printResolvedConfig()` helper formatting all config sections ([project], [agents.*], [review], [workflows.*]) with aligned columns and lipgloss source labels
-- `printValidationResult()` helper formatting errors (red), warnings (yellow), and "No issues found." (green)
-- Fixed-width field column (24 chars) for readable alignment
-- Agents and workflows sorted alphabetically for deterministic output
-- `--no-color` respected automatically (lipgloss Ascii profile set by root PersistentPreRunE)
-- 35+ unit tests covering registration, output routing, format helpers, loadAndResolveConfig edge cases, and end-to-end command invocations
-
-**Files created/modified:**
-
-- `internal/cli/config_cmd.go` - configCmd, configDebugCmd, configValidateCmd, loadAndResolveConfig, printResolvedConfig, printValidationResult, fmtStr, fmtSlice, sourceStyle, style vars
-- `internal/cli/config_cmd_test.go` - 35+ tests: registration, metadata, help output, debug/validate with file/no-file/explicit-flag, validation errors/warnings/unknown-keys, output routing, fmtStr/fmtSlice table-driven, loadAndResolveConfig unit tests, sourceStyle tests
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go mod tidy` no drift
-
----
-
-### T-014: `raven init [template]` CLI Command
+### Phase 1: Foundation (T-001 to T-015)
 
 - **Status:** Completed
 - **Date:** 2026-02-18
+- **Tasks Completed:** 15 tasks
 
-**What was built:**
+#### Features Implemented
 
-- `internal/cli/init_cmd.go` with `raven init [template]` Cobra command
-- `PersistentPreRunE` override that skips config loading (no `raven.toml` required) while still honouring env-var flags, logging setup, colour disable, and `--dir` handling
-- `--name` / `-n` flag: project name defaulting to current directory's base name
-- `--force` flag: overwrites existing files (including `raven.toml`) instead of erroring
-- Path-traversal guard on `--name` values
-- Guard that errors on existing `raven.toml` without `--force`
-- Delegates template rendering to `config.RenderTemplate()` from T-013
-- All success output (initialized message, created file list, next steps) goes to stderr
-- Added `force bool` parameter to `config.RenderTemplate()` enabling overwrite behaviour
-- Updated all existing `RenderTemplate` call sites in `templates_test.go` to pass `false`
-- New `TestRenderTemplate_forceOverwritesExistingFiles` test in templates_test.go
-- Comprehensive `init_cmd_test.go` with 12 test functions covering all acceptance criteria
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Go module & project scaffold | T-001 | Module initialization, 12 internal package stubs, dependency declarations, `testdata/` and `templates/` directories |
+| Makefile & build targets | T-002 | 12 GNU make targets, ldflags version injection, `CGO_ENABLED=0`, debug build support |
+| Build info package | T-003 | `Info` struct, `GetInfo()` accessor, `String()` formatter with JSON struct tags |
+| Core data types | T-004 | `WorkflowState`, `StepRecord`, `RunOpts`, `RunResult`, `RateLimitInfo`, `Task`, `Phase`, `TaskStatus` with JSON serialization |
+| Structured logging | T-005 | `internal/logging` package: `Setup()`, `New(component)`, `SetOutput()`, level constants, stderr-only output |
+| Cobra root command | T-006 | Root command, 6 global persistent flags, `PersistentPreRunE` with env-var overrides, `Execute() int` |
+| Version command | T-007 | `raven version` with `--json` flag, uses `buildinfo.GetInfo()` |
+| Shell completion | T-008 | `raven completion <shell>` for bash/zsh/fish/PowerShell via Cobra built-ins |
+| TOML config types & loading | T-009 | `Config` type hierarchy, `FindConfigFile()` dir-walk, `LoadFromFile()`, `NewDefaults()` |
+| Config resolution | T-010 | Four-layer merge (CLI > env > file > defaults), `ResolvedConfig` with source tracking, `CLIOverrides`, `EnvFunc` injection |
+| Config validation | T-011 | `Validate()`, `ValidationResult`/`ValidationIssue`/`ValidationSeverity` types, unknown-key detection via `toml.MetaData.Undecoded()` |
+| Config debug & validate commands | T-012 | `raven config debug` (color-coded source annotations), `raven config validate` (errors/warnings), shared `loadAndResolveConfig()` helper |
+| Embedded project templates | T-013 | `//go:embed all:templates`, `TemplateVars`, `ListTemplates()`, `TemplateExists()`, `RenderTemplate()` with `text/template` processing |
+| Init command | T-014 | `raven init [template]` with `--name`/`--force` flags, path-traversal guard, PersistentPreRunE override skipping config load |
+| Git client wrapper | T-015 | `GitClient` wrapping all git CLI ops, branch/status/stash/diff/log/push methods, `EnsureClean()` auto-stash recovery |
 
-**Files created/modified:**
+#### Key Technical Decisions
 
-- `internal/cli/init_cmd.go` - init command: PersistentPreRunE override, --name/-n, --force flags, runInit handler
-- `internal/cli/init_cmd_test.go` - 12 tests: registration, flags, default template, explicit template, --name flag, directory-name default, unknown template error, existing raven.toml without --force, --force overwrite, directory structure, path traversal rejection, max-one-arg, TOML validity, no-config-required
-- `internal/config/templates.go` - RenderTemplate signature updated with `force bool` parameter
-- `internal/config/templates_test.go` - All RenderTemplate calls updated to pass `false`; new TestRenderTemplate_forceOverwritesExistingFiles test added
+1. **BurntSushi/toml over encoding/toml** -- `MetaData.Undecoded()` enables unknown-key detection without reflection hacks
+2. **Pointer types in CLIOverrides** -- `*string`/`*bool` fields distinguish "not set" from "set to zero value" for correct priority merging
+3. **`all:` embed prefix for templates** -- Required to include dotfiles (`.github/`, `.gitkeep`) in the embedded FS
+4. **`TaskStatus` as string constants, not iota** -- Values must round-trip through JSON/TOML without a custom marshaler
+5. **`runSilent` helper in GitClient** -- Separates exec failures (exitCode=-1) from non-zero git exit codes for accurate error handling
+6. **`CGO_ENABLED=0` for all builds** -- Pure Go cross-compilation; no C dependencies anywhere in the stack
+7. **charmbracelet/log over slog** -- Pretty terminal output with component prefixes, consistent with the TUI ecosystem
 
-**Verification:**
+#### Key Files Reference
 
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./internal/config/...` pass (all tests)
-- `go test ./internal/cli/...` pass (all tests)
-- `go mod tidy` no drift
+| Purpose | Location |
+| ------- | -------- |
+| Entry point | `cmd/raven/main.go` |
+| Build targets & ldflags | `Makefile` |
+| Build info variables | `internal/buildinfo/buildinfo.go` |
+| WorkflowState, StepRecord | `internal/workflow/state.go` |
+| RunOpts, RunResult, RateLimitInfo | `internal/agent/types.go` |
+| Task, Phase, TaskStatus | `internal/task/types.go` |
+| Logger factory | `internal/logging/logging.go` |
+| Root command & global flags | `internal/cli/root.go` |
+| Version command | `internal/cli/version.go` |
+| Shell completion command | `internal/cli/completion.go` |
+| Config type hierarchy | `internal/config/config.go` |
+| Default config values | `internal/config/defaults.go` |
+| Config file discovery & loading | `internal/config/load.go` |
+| Four-layer config resolution | `internal/config/resolve.go` |
+| Config validation | `internal/config/validate.go` |
+| Config debug/validate commands | `internal/cli/config_cmd.go` |
+| Template embedding & rendering | `internal/config/templates.go` |
+| Embedded go-cli template | `internal/config/templates/go-cli/raven.toml.tmpl` |
+| Init command | `internal/cli/init_cmd.go` |
+| Git client wrapper | `internal/git/client.go` |
+| Git auto-stash recovery | `internal/git/recovery.go` |
+| Dependency declarations | `tools.go` |
 
----
-
-### T-013: Embedded Project Templates -- go-cli Template
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-
-**What was built:**
-
-- `internal/config/templates/go-cli/` directory tree with 8 template files covering `raven.toml`, agent prompts, review directory scaffold, and docs directory scaffold
-- `internal/config/templates.go` with `//go:embed all:templates` directive embedding all template files (including dotfiles via `all:` prefix)
-- `TemplateVars` struct with `ProjectName`, `Language`, and `ModulePath` fields
-- `ListTemplates()` returning all top-level template directory names from the embedded FS
-- `TemplateExists(name)` checking for a named subdirectory in the embedded FS
-- `RenderTemplate(name, destDir, vars)` walking the embedded FS, processing `.tmpl` files via `text/template`, copying static files as-is, stripping `.tmpl` extensions from output filenames, never overwriting existing files, creating parent directories with 0755, and writing files with 0644
-- Comprehensive test suite: 14 test functions achieving >90% coverage, including integration test parsing rendered TOML with BurntSushi/toml
-
-**Files created/modified:**
-
-- `internal/config/templates.go` - TemplateVars, ListTemplates, TemplateExists, RenderTemplate
-- `internal/config/templates_test.go` - 14 tests: ListTemplates, TemplateExists (known/unknown), RenderTemplate (invalid name, creates dest dir, raven.toml creation, variable substitution, TOML validity, prompts dir, .github dirs, docs dirs, project brief substitution, no-overwrite, file permissions, static files, all files count, absolute paths)
-- `internal/config/templates/go-cli/raven.toml.tmpl` - TOML config template with ProjectName and Language substitution
-- `internal/config/templates/go-cli/prompts/implement-claude.md` - Static Claude prompt
-- `internal/config/templates/go-cli/prompts/implement-codex.md` - Static Codex prompt
-- `internal/config/templates/go-cli/.github/review/prompts/review-prompt.md` - Static review prompt
-- `internal/config/templates/go-cli/.github/review/rules/.gitkeep` - Empty placeholder
-- `internal/config/templates/go-cli/.github/review/PROJECT_BRIEF.md.tmpl` - Project brief template with ProjectName and Language substitution
-- `internal/config/templates/go-cli/docs/tasks/.gitkeep` - Empty placeholder
-- `internal/config/templates/go-cli/docs/prd/.gitkeep` - Empty placeholder
-
-**Verification:**
+#### Verification
 
 - `go build ./cmd/raven/` pass
 - `go vet ./...` pass
-- `go test ./internal/config/...` pass (all tests)
-- `go mod tidy` no drift
-
----
-
-### T-015: Git Client Wrapper -- internal/git/client.go
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-
-**What was built:**
-
-- `GitClient` struct in `internal/git/client.go` wrapping all git CLI operations via `os/exec`
-- `NewGitClient(workDir string)` constructor that validates git is installed and the directory is a git repository via `git rev-parse --git-dir`
-- Full branch management: `CurrentBranch`, `CreateBranch`, `Checkout`, `BranchExists`
-- Status detection: `HasUncommittedChanges`, `IsClean` (inverse of HasUncommittedChanges)
-- Stash operations: `Stash` (checks clean first, returns false if no-op), `StashPop`
-- Diff operations: `DiffFiles` (parses `--name-status` output including rename handling), `DiffStat` (parses summary line with insertions/deletions), `DiffUnified`
-- Log operations: `HeadCommit` (short SHA), `Log` (slice of `LogEntry`)
-- Push: `Push(remote, setUpstream)` resolving current branch name first
-- Internal `run` / `runSilent` helpers using `exec.CommandContext` with `cmd.Dir` set; `runSilent` returns `(exitCode, stdout, stderr, error)` distinguishing exec failures (exitCode=-1) from non-zero exit (exitCode>0)
-- `EnsureClean(ctx)` in `internal/git/recovery.go` — auto-stashes dirty tree and returns a cleanup function that pops the stash; no-op when tree is already clean
-- Comprehensive `client_test.go` with 68+ test functions using temporary git repos via `t.TempDir()`
-- `recovery_test.go` with 6 focused tests for EnsureClean covering clean/dirty/cleanup/defer patterns
-- Bug fix: `Stash()` now detects "No local changes to save" output to correctly return `false` when only untracked files exist (prevents spurious `StashPop` in `EnsureClean`)
-
-**Files created/modified:**
-
-- `internal/git/client.go` - GitClient struct, all git operation methods, internal helpers; fixed Stash() untracked-file edge case
-- `internal/git/recovery.go` - EnsureClean helper with auto-stash/pop pattern
-- `internal/git/client_test.go` - 68+ tests: NewGitClient, branch ops, status ops, stash ops, log ops, diff ops, parser unit tests, context propagation, error wrapping, integration tests
-- `internal/git/recovery_test.go` - 6 tests: EnsureClean clean/dirty/multi-cleanup/error-wrapping/untracked/defer-pattern
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go mod tidy` no drift
-
----
-
-### T-011: Configuration Validation and Unknown Key Detection
-
-- **Status:** Completed
-- **Date:** 2026-02-17
-
-**What was built:**
-
-- `Validate()` function performing structural, semantic, and unknown-key validation of resolved config
-- `ValidationSeverity`, `ValidationIssue`, `ValidationResult` types with `HasErrors()`, `HasWarnings()`, `Errors()`, `Warnings()` methods
-- Project validation: required name, recognized language set, non-empty verification commands
-- Agent validation: required command, recognized effort values, prompt_template existence warnings
-- Review validation: regex compilation checks for extensions and risk_patterns, path existence warnings
-- Workflow validation: non-empty steps, transition keys and targets must reference defined steps
-- Unknown key detection via `toml.MetaData.Undecoded()` with nil-safe guard
-- Comprehensive test suite with 50+ test functions covering all acceptance criteria, edge cases, and integration tests
-
-**Files created/modified:**
-
-- `internal/config/validate.go` - Validation types and Validate() function with section validators
-- `internal/config/validate_test.go` - 50+ tests: ValidationResult methods, project/agent/review/workflow validation, unknown keys, filesystem warnings, edge cases, integration with testdata fixtures
-
-**Verification:**
-
-- `go build ./cmd/raven/` pass
-- `go vet ./...` pass
-- `go test ./...` pass (all tests)
-- `go mod tidy` no drift
+- `go test ./...` pass
 
 ---
 
