@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 9 |
+| Completed | 10 |
 | In Progress | 0 |
-| Not Started | 78 |
+| Not Started | 77 |
 
 ---
 
@@ -305,6 +305,39 @@
 
 ---
 
+### T-010: Config Resolution -- CLI > env > file > defaults
+
+- **Status:** Completed
+- **Date:** 2026-02-17
+
+**What was built:**
+
+- Four-layer configuration resolution system: CLI flags > env vars > raven.toml > defaults
+- `Resolve()` function with explicit field-by-field merging (no reflection) for type safety
+- `ConfigSource` enum (default, file, env, cli) with source tracking for every resolved field
+- `ResolvedConfig` wrapper pairing merged `Config` with `Sources` map for `raven config debug` (T-012)
+- `CLIOverrides` with pointer types (`*string`, `*bool`) to distinguish "not set" from "set to zero value"
+- `EnvFunc` injection for testable environment variable resolution
+- 7 RAVEN_* environment variables: PROJECT_NAME, TASKS_DIR, LOG_DIR, PROMPT_DIR, BRANCH_TEMPLATE, AGENT_MODEL, AGENT_EFFORT
+- Agent map merging: file agents additive on top of defaults; env/CLI agent overrides apply to ALL agents
+- Deep copy of agents and workflows to prevent shared reference mutation
+- 30 test functions with table-driven priority tests, edge cases, and deep copy verification
+
+**Files created/modified:**
+
+- `internal/config/resolve.go` - Resolve(), ConfigSource, ResolvedConfig, CLIOverrides, EnvFunc, layer merge helpers
+- `internal/config/resolve_test.go` - 30 tests: priority ordering, env var mapping, agent merging, edge cases, deep copy safety
+
+**Verification:**
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass (all tests)
+- `go test -race` pass (no races)
+- `go mod tidy` no drift
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -333,7 +366,7 @@ _None currently_
 | T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Completed |
 | T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Completed |
 | T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Completed |
-| T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Not Started |
+| T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Completed |
 | T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Not Started |
 | T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Not Started |
 | T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Not Started |
