@@ -202,8 +202,11 @@ eval "$(extract_function "$RALPH_SCRIPT" cap_wait_seconds)"
 eval "$(extract_function "$RALPH_SCRIPT" compute_rate_limit_wait)"
 eval "$(extract_function "$RALPH_SCRIPT" is_tree_dirty)"
 eval "$(extract_function "$RALPH_SCRIPT" get_dirty_summary)"
+eval "$(extract_function "$RALPH_SCRIPT" extract_agent_commit_message)"
+eval "$(extract_function "$RALPH_SCRIPT" generate_commit_message_from_diff)"
 eval "$(extract_function "$RALPH_SCRIPT" run_commit_recovery)"
 eval "$(extract_function "$RALPH_SCRIPT" stash_dirty_tree)"
+eval "$(extract_function "$RALPH_SCRIPT" _detect_completed_task_in_dirty_tree)"
 eval "$(extract_function "$RALPH_SCRIPT" recover_dirty_tree)"
 
 # We need is_task_completed from the script too

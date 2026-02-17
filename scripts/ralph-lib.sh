@@ -858,9 +858,11 @@ extract_agent_commit_message() {
             collecting = 1
         }
         collecting {
-            # Check if this line ends the message (trailing lone " or ")
-            if (match($0, /"[[:space:]]*$/)) {
-                sub(/"[[:space:]]*$/, "")
+            # End of message: trailing " possibly followed by `, ), or whitespace.
+            # Pattern: " followed by zero or more non-alphanumeric chars to EOL.
+            # This handles: bare "  backtick-wrapped "`  and paren-wrapped ")
+            if (match($0, /"[^a-zA-Z0-9]*$/)) {
+                sub(/"[^a-zA-Z0-9]*$/, "")
                 print
                 exit
             }
@@ -1014,6 +1016,54 @@ stash_dirty_tree() {
     fi
 }
 
+# Detect a task that was newly completed in the dirty (uncommitted)
+# task-state.conf by comparing against the last committed version.
+# Used as a safety net when last_completed_task is unknown.
+# Arguments: task_range ("T-XXX:T-YYY")
+# Outputs: first newly-completed task ID, or empty string.
+_detect_completed_task_in_dirty_tree() {
+    local task_range="$1"
+    local start="${task_range%%:*}"
+    local end="${task_range##*:}"
+    local start_num=$((10#${start#T-}))
+    local end_num=$((10#${end#T-}))
+
+    # Get relative path of task-state.conf within the git repo.
+    # Uses git rev-parse --show-prefix to avoid macOS /tmp → /private/tmp
+    # symlink mismatch with git rev-parse --show-toplevel.
+    local rel_path
+    rel_path=$(cd "$(dirname "$TASK_STATE_FILE")" && git rev-parse --show-prefix 2>/dev/null)$(basename "$TASK_STATE_FILE") || return 0
+
+    # Get the committed version of the file
+    local committed_content
+    committed_content=$(git show "HEAD:${rel_path}" 2>/dev/null) || return 0
+
+    local i
+    for ((i = start_num; i <= end_num; i++)); do
+        local task_id
+        task_id=$(printf "T-%03d" "$i")
+
+        # Is it completed in the current (dirty) file?
+        if ! is_task_completed "$task_id"; then
+            continue
+        fi
+
+        # Was it already completed in the committed version?
+        local was_completed
+        was_completed=$(printf '%s' "$committed_content" | awk -F'|' -v task="$task_id" '
+            $0 !~ /^[[:space:]]*#/ && NF >= 2 {
+                id=$1; gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+                st=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", st)
+                if (id == task && tolower(st) == "completed") { print "yes"; exit }
+            }')
+
+        if [[ "$was_completed" != "yes" ]]; then
+            echo "$task_id"
+            return 0
+        fi
+    done
+}
+
 # Pre-iteration dirty tree check and recovery.
 # If the tree is dirty at the start of an iteration, this means either:
 #   (a) A prior iteration completed a task but didn't commit -> auto-commit
@@ -1038,6 +1088,21 @@ recover_dirty_tree() {
             return 0
         fi
         log "DIRTY_TREE: Commit recovery failed. Falling through to stash."
+    fi
+
+    # Case (a2): no last_task_id provided, but a task may have been newly
+    # completed in the dirty task-state.conf. This is a safety net for when
+    # the RALPH_ERROR handler couldn't set last_completed_task.
+    if [[ -z "$last_task_id" ]]; then
+        local detected_task
+        detected_task=$(_detect_completed_task_in_dirty_tree "$task_range")
+        if [[ -n "$detected_task" ]]; then
+            log "DIRTY_TREE: Detected $detected_task newly completed in dirty task-state.conf. Running commit recovery..."
+            if run_commit_recovery "$detected_task"; then
+                return 0
+            fi
+            log "DIRTY_TREE: Commit recovery for $detected_task failed. Falling through to stash."
+        fi
     fi
 
     # Case (b): interrupted mid-task or commit recovery failed -> stash
@@ -1293,6 +1358,32 @@ run_ralph_loop() {
         if echo "$output" | grep -q "RALPH_ERROR"; then
             local error_msg
             error_msg=$(echo "$output" | grep "RALPH_ERROR" | head -1)
+
+            # Special case: "commit missing" means the agent completed the task
+            # but couldn't create a git commit (e.g., permission denial in
+            # dontAsk mode). Check if progress was actually made and attempt
+            # commit recovery before treating this as an error.
+            if echo "$error_msg" | grep -qi "commit missing"; then
+                local new_remaining_err
+                new_remaining_err=$(count_remaining_tasks "$task_range")
+                if [[ "$new_remaining_err" -lt "$remaining" ]]; then
+                    log "COMMIT_RECOVERY: $selected_task completed but agent couldn't commit. Attempting recovery..."
+                    if run_commit_recovery "$selected_task" "$output"; then
+                        tasks_completed=$((tasks_completed + (remaining - new_remaining_err)))
+                        consecutive_errors=0
+                        rate_limit_waits=0
+                        last_completed_task="$selected_task"
+                        log_success "Task completed with recovery commit! (total this session: $tasks_completed)"
+                        if [[ $iteration -lt $max_iterations ]]; then
+                            log_info "Sleeping ${SLEEP_BETWEEN_ITERATIONS}s before next iteration..."
+                            sleep "$SLEEP_BETWEEN_ITERATIONS"
+                        fi
+                        continue
+                    fi
+                    log_warn "Commit recovery failed for $selected_task despite progress."
+                fi
+            fi
+
             log_error "$error_msg"
             consecutive_errors=$((consecutive_errors + 1))
 
