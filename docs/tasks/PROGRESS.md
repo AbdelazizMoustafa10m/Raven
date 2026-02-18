@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 76 |
+| Completed | 77 |
 | In Progress | 0 |
-| Not Started | 13 |
+| Not Started | 12 |
 
 ---
 
@@ -605,6 +605,27 @@
   - `internal/tui/agent_panel_test.go` -- 31 tests covering ring buffer, tab switching, auto-scroll, edge cases, integration
 - **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
 
+### T-074: Event Log Panel for Workflow Milestones
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `EventCategory` enum (Info, Success, Warning, Error, Debug) for styled display
+  - `EventEntry` struct with timestamp, category, and message
+  - `EventLogModel` sub-model with bounded 500-entry buffer, viewport scrolling, and visibility toggle
+  - `classifyWorkflowEvent`, `classifyLoopEvent`, `classifyAgentStatus` helper functions mapping all message types to human-readable entries
+  - `RateLimitMsg` formatted as "Rate limit: {provider}, waiting M:SS" using shared `formatCountdown`
+  - `ErrorMsg` handling with fallback from Detail to Source field
+  - Auto-scroll to newest entry; disabled on k/up/pgup scroll; re-enabled on G/End
+  - `l` key toggles panel visibility; hidden panel returns `""` from `View()`
+  - Header "Event Log" always rendered when visible; "No events yet" placeholder for empty log
+  - Focused state highlighted with `ColorPrimary` border
+  - 40+ unit and integration tests achieving 90%+ coverage
+- **Files created/modified:**
+  - `internal/tui/event_log.go` -- `EventLogModel`, `EventEntry`, `EventCategory`, classifier functions
+  - `internal/tui/event_log_test.go` -- 40+ tests covering all acceptance criteria, edge cases, and integration scenarios
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
 ---
 
 ## In Progress Tasks
@@ -635,7 +656,7 @@ _None currently_
 | T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Completed |
 | T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Completed |
 | T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Completed |
-| T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Not Started |
+| T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Completed |
 | T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Not Started |
 | T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Not Started |
 | T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Not Started |
