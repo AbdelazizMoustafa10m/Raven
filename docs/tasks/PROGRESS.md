@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 28 |
+| Completed | 29 |
 | In Progress | 0 |
-| Not Started | 58 |
+| Not Started | 57 |
 
 ---
 
@@ -50,6 +50,7 @@
 | Prompt template system | T-026 | `PromptContext` struct (task, phase, project, verification, progress, agent fields); `PromptGenerator` with custom `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts in task spec content); `NewPromptGenerator(templateDir)` with directory validation; `LoadTemplate(name)` with directory-traversal guard and LRU caching; `Generate(templateName, ctx)` (empty name falls back to built-in default); `GenerateFromString(tmplStr, ctx)` for inline templates; `BuildContext(spec, phase, cfg, selector, agentName)` populating all fields from live state; `DefaultImplementTemplate` const; `formatIDSummary` helper ("None" for empty, ", "-joined otherwise); `VerificationString` = `strings.Join(cmds, " && ")`; model lookup from `cfg.Agents[agentName].Model`; debug logging of rendered output |
 | Implementation loop runner | T-027 | `Runner` struct orchestrating the full implement loop; `RunConfig` (AgentName, PhaseID, TaskID, MaxIterations/50, MaxLimitWaits/5, SleepBetween/5s, DryRun, TemplateName); `NewRunner(selector, promptGen, agent, stateManager, rateLimiter, cfg, phases, events, logger)`; `Run(ctx, runCfg)` -- phase mode: select->prompt->invoke->detect->update->sleep->repeat until phase complete, max-iters, or ctx cancelled; `RunSingleTask(ctx, runCfg)` -- single-task mode via `--task T-007`; `DetectSignals(output)` exported scanner for PHASE_COMPLETE/TASK_BLOCKED/RAVEN_ERROR signals; internal helpers: `selectTask`, `generatePrompt`, `invokeAgent`, `invokeAgentWithRetry` (rate-limit wait+retry), `handleCompletion` (marks task completed/blocked based on signal), `handleDryRun` (print prompt+cmd to stderr, revert task, emit dry_run event), `emit` (non-blocking channel send with `select { default: }`); `applyDefaults` fills zero-value RunConfig fields; `sleepWithContext` with `time.NewTimer`+`select` for cancellable sleep; stale-task detection (3 consecutive same-task selections emits EventLoopError warning); `LoopEvent` struct with Type/Iteration/TaskID/AgentName/Message/Timestamp/Duration/WaitTime; 16 `LoopEventType` constants; `CompletionSignal` type with 3 signal constants |
 | Loop recovery | T-028 | `RateLimitWaiter` with `Wait(ctx, agentName)` checking `coordinator.ShouldWait` before blocking; `displayCountdown(ctx, duration)` using `time.NewTicker(1s)` with `\r` carriage-return in-place updates ("Rate limited. Retrying in %ds...  "); nil output writer falls back to `sleepWithContext`; `DirtyTreeRecovery` with `CheckAndStash(ctx, taskID)` detecting dirty tree via `gitClient.HasUncommittedChanges`, stashing with `"raven-autostash: "+taskID` message, and returning `(stashed bool, err error)`; `RestoreStash(ctx)` calling `gitClient.StashPop`; `EnsureCleanTree(ctx, taskID)` combining check+stash into one call; `AgentErrorRecovery` tracking consecutive errors against configurable max threshold with `RecordError(err) bool` (returns false at limit), `RecordSuccess()` resetting counter, `ShouldAbort() bool`; `RecoveryEventType` string type with 7 constants (EventRateLimitCountdown, EventRateLimitResuming, EventDirtyTreeDetected, EventStashCreated, EventStashRestored, EventStashFailed, EventRecoveryError); `RecoveryEvent` struct (Type, Message, Remaining, Timestamp); `emitRecovery(ch, event)` non-blocking helper; all structs nil-guard their optional logger and events channel |
+| Implementation CLI command | T-029 | `raven implement` CLI command wiring all Phase 2 components; `implementFlags` struct (Agent required, PhaseStr/Task mutually exclusive, MaxIterations/50, MaxLimitWaits/5, Sleep/5s, DryRun, Model); `newImplementCmd()` with 8 flags, `--agent` marked required, shell completion for `--agent` returning claude/codex/gemini; `runImplement()` 16-step composition root: validate flags -> load config -> discover tasks -> create StateManager -> load phases (graceful missing file) -> verify phase exists -> build selector -> build agent registry -> lookup agent -> CheckPrerequisites -> create PromptGenerator -> create RateLimitCoordinator with MaxLimitWaits override -> create Runner -> build RunConfig with global --dry-run merge -> signal.NotifyContext for SIGINT/SIGTERM -> dispatch to RunSingleTask/runAllPhases/Run; `validateImplementFlags()` parsing "all"/numeric phase strings, treating 0 as all-phases sentinel, rejecting negatives; `buildAgentRegistry()` converting config.AgentConfig to agent.AgentConfig via toAgentCfg closure, applying --model override to selected agent only, defaulting Command to "claude"/"codex" when empty; `runAllPhases()` iterating phases in order with ctx cancellation check between phases; graceful --phase 0 / --phase all validation requiring non-empty phases slice; context.Canceled mapped to informational stderr message; init() registers command on rootCmd |
 
 #### Key Technical Decisions
 
@@ -94,6 +95,7 @@
 | Phase config test fixtures | `internal/task/testdata/phases/` |
 | Dependency resolver & task selector | `internal/task/selector.go` |
 | Status command | `internal/cli/status.go` |
+| Implement command | `internal/cli/implement.go` |
 | Agent interface & registry | `internal/agent/agent.go` |
 | Mock agent for testing | `internal/agent/mock.go` |
 | Claude agent adapter | `internal/agent/claude.go` |
@@ -143,7 +145,7 @@ _None currently_
 | T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Completed |
 | T-027 | Implementation Loop Runner | Must Have | Large (16-24hrs) | Completed |
 | T-028 | Loop Recovery (Rate-Limit Wait, Dirty-Tree) | Must Have | Medium (8-12hrs) | Completed |
-| T-029 | Implementation CLI Command -- raven implement | Must Have | Medium (8-12hrs) | Not Started |
+| T-029 | Implementation CLI Command -- raven implement | Must Have | Medium (8-12hrs) | Completed |
 | T-030 | Progress File Generation -- PROGRESS.md | Must Have | Small (4-6hrs) | Not Started |
 
 **Deliverable:** `raven implement --agent claude --phase 1` runs the full implementation loop for a phase.
@@ -299,4 +301,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-027 completed)
+_Last updated: 2026-02-18_ (T-029 completed)
