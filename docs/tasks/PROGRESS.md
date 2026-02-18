@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 31 |
+| Completed | 32 |
 | In Progress | 0 |
-| Not Started | 55 |
+| Not Started | 54 |
 
 ---
 
@@ -168,6 +168,33 @@
 
 ---
 
+### T-032: Git Diff Generation and Risk Classification
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `git.Client` interface in `internal/git/client.go` exposing `DiffFiles`, `DiffStat`, `DiffUnified`, `DiffNumStat`; compile-time check `var _ Client = (*GitClient)(nil)`
+  - `git.NumStatEntry` type and `GitClient.DiffNumStat()` method parsing `git diff --numstat` output including binary files (`-1` sentinel) and rename brace notation (`{old => new}`)
+  - `parseNumStat` and `parseRenamePath` internal parsers for numstat output
+  - `review.DiffGenerator` with `NewDiffGenerator(gitClient, cfg, logger)` eagerly compiling Extensions and RiskPatterns as regexes
+  - `review.Generate(ctx, baseBranch)` with branch-name injection guard (`^[a-zA-Z0-9_./-]+$`), extension filtering, risk classification, and full `DiffResult` assembly
+  - `review.SplitFiles(files, n)` round-robin distribution with high-risk files sorted first
+  - `ChangeType` (added/modified/deleted/renamed), `RiskLevel` (high/normal/low), `ChangedFile`, `DiffResult`, `DiffStats` types
+- **Key Decisions:**
+  - `git.Client` interface defined in the `git` package (not `review`) so callers can inject mocks without import cycles
+  - `DiffNumStat` added to `git.Client` interface (extending the spec's three-method interface) because `Generate` requires per-file line counts for `DiffStats`
+  - Extensions and RiskPatterns treated as regex strings (not glob/comma-separated) as specified; empty means match-all/no-high-risk
+  - Binary files from numstat (`-1`) are clamped to 0 in `ChangedFile.LinesAdded/LinesDeleted`
+  - `min` builtin removed in favour of inline conditional to avoid shadowing Go 1.21+ builtin
+- **Files created/modified:**
+  - `internal/git/client.go` -- added `Client` interface, `NumStatEntry` type, `DiffNumStat` method, `parseNumStat`, `parseRenamePath`
+  - `internal/git/client_test.go` -- added `TestDiffNumStat_*`, `TestParseNumStat`, `TestParseRenamePath`, `TestClientInterface` tests
+  - `internal/review/diff.go` -- new file: all diff generation types and logic
+  - `internal/review/diff_test.go` -- new file: mock client, 30+ test functions covering all code paths
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -188,7 +215,7 @@ _None currently_
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
 | T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Completed |
-| T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Not Started |
+| T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Completed |
 | T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Not Started |
 | T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Not Started |
 | T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Not Started |
