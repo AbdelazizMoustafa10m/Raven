@@ -1796,6 +1796,511 @@ func TestRemapDependencies_MultipleUnresolved(t *testing.T) {
 	assert.Len(t, report.Unresolved, 3)
 }
 
+// --- NormalizeTitle tests ---
+
+func TestNormalizeTitle_Lowercase(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "user authentication", NormalizeTitle("User Authentication"))
+}
+
+func TestNormalizeTitle_StripImplementPrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "user auth", NormalizeTitle("Implement user auth"))
+}
+
+func TestNormalizeTitle_StripCreatePrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "database schema", NormalizeTitle("Create database schema"))
+}
+
+func TestNormalizeTitle_StripSetUpPrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "database", NormalizeTitle("Set up database"))
+}
+
+func TestNormalizeTitle_StripAddPrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "logging", NormalizeTitle("Add logging"))
+}
+
+func TestNormalizeTitle_StripBuildPrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "cli interface", NormalizeTitle("Build CLI interface"))
+}
+
+func TestNormalizeTitle_StripDefinePrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "api contract", NormalizeTitle("Define API contract"))
+}
+
+func TestNormalizeTitle_StripWritePrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "unit tests", NormalizeTitle("Write unit tests"))
+}
+
+func TestNormalizeTitle_StripConfigurePrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "ci pipeline", NormalizeTitle("Configure CI pipeline"))
+}
+
+func TestNormalizeTitle_StripDesignPrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "data model", NormalizeTitle("Design data model"))
+}
+
+func TestNormalizeTitle_StripEstablishPrefix(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "coding standards", NormalizeTitle("Establish coding standards"))
+}
+
+// TestNormalizeTitle_ImplementationNotStripped verifies that "implementation" is NOT
+// stripped because the next character after "implement" is a letter, not a space.
+func TestNormalizeTitle_ImplementationNotStripped(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "implementation details", NormalizeTitle("Implementation details"))
+}
+
+// TestNormalizeTitle_PrefixOnlyFallback verifies that a title that is entirely the
+// prefix word (e.g., "Implement") is returned unchanged after normalization, not as empty.
+func TestNormalizeTitle_PrefixOnlyFallback(t *testing.T) {
+	t.Parallel()
+
+	// "implement" lowercased -> strips "implement" -> rest is "" -> fallback to original lowercased "implement"
+	result := NormalizeTitle("Implement")
+	assert.NotEmpty(t, result, "result must not be empty for prefix-only title")
+	assert.Equal(t, "implement", result)
+}
+
+func TestNormalizeTitle_CollapseWhitespace(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "user auth service", NormalizeTitle("User   Auth   Service"))
+}
+
+func TestNormalizeTitle_RemovePunctuation(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "user auth", NormalizeTitle("User Auth!"))
+}
+
+func TestNormalizeTitle_RemovePunctuationDashes(t *testing.T) {
+	t.Parallel()
+
+	// Hyphens are punctuation and are removed; "Set-up" -> "setup" (not "set up").
+	assert.Equal(t, "setup database", NormalizeTitle("Set-up database"))
+}
+
+func TestNormalizeTitle_EmptyString(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "", NormalizeTitle(""))
+}
+
+// TestNormalizeTitle_Table tests a broader set of NormalizeTitle inputs
+// to guard against regressions.
+func TestNormalizeTitle_Table(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "implement prefix stripped",
+			input: "Implement user authentication",
+			want:  "user authentication",
+		},
+		{
+			name:  "implementation not stripped",
+			input: "Implementation of auth",
+			want:  "implementation of auth",
+		},
+		{
+			name:  "set up stripped (two words)",
+			input: "Set up Redis cache",
+			want:  "redis cache",
+		},
+		{
+			name:  "create stripped",
+			input: "Create REST endpoints",
+			want:  "rest endpoints",
+		},
+		{
+			name:  "add stripped",
+			input: "Add error handling",
+			want:  "error handling",
+		},
+		{
+			name:  "build stripped",
+			input: "Build the CLI parser",
+			want:  "the cli parser",
+		},
+		{
+			name:  "define stripped",
+			input: "Define task interfaces",
+			want:  "task interfaces",
+		},
+		{
+			name:  "write stripped",
+			input: "Write integration tests",
+			want:  "integration tests",
+		},
+		{
+			name:  "configure stripped",
+			input: "Configure the database",
+			want:  "the database",
+		},
+		{
+			name:  "design stripped",
+			input: "Design the schema",
+			want:  "the schema",
+		},
+		{
+			name:  "establish stripped",
+			input: "Establish error conventions",
+			want:  "error conventions",
+		},
+		{
+			name:  "no prefix stripped",
+			input: "User login flow",
+			want:  "user login flow",
+		},
+		{
+			name:  "punctuation removed",
+			input: "Set up CI/CD pipeline",
+			want:  "cicd pipeline",
+		},
+		{
+			name:  "prefix only fallback",
+			input: "Implement",
+			want:  "implement",
+		},
+		{
+			name:  "already lowercase no prefix",
+			input: "auth middleware",
+			want:  "auth middleware",
+		},
+		{
+			name:  "mixed case with punctuation",
+			input: "Create OAuth2.0 flow",
+			want:  "oauth20 flow",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := NormalizeTitle(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// --- DeduplicateTasks tests ---
+
+func TestDeduplicateTasks_EmptyInput(t *testing.T) {
+	t.Parallel()
+
+	out, report := DeduplicateTasks(nil)
+	assert.Nil(t, out)
+	assert.Equal(t, 0, report.OriginalCount)
+	assert.Equal(t, 0, report.RemovedCount)
+	assert.Equal(t, 0, report.FinalCount)
+	assert.Empty(t, report.Merges)
+}
+
+func TestDeduplicateTasks_NoDuplicates(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "User authentication", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Database schema", AcceptanceCriteria: []string{"ac2"}},
+		{GlobalID: "T-003", Title: "CI pipeline", AcceptanceCriteria: []string{"ac3"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 3)
+	assert.Equal(t, 3, report.OriginalCount)
+	assert.Equal(t, 0, report.RemovedCount)
+	assert.Equal(t, 3, report.FinalCount)
+	assert.Empty(t, report.Merges)
+}
+
+func TestDeduplicateTasks_SingleTask(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 1)
+	assert.Equal(t, "T-001", out[0].GlobalID)
+	assert.Equal(t, 1, report.OriginalCount)
+	assert.Equal(t, 0, report.RemovedCount)
+	assert.Equal(t, 1, report.FinalCount)
+}
+
+// TestDeduplicateTasks_ExactDuplicateTitles verifies that two tasks with identical
+// titles are deduplicated, keeping the one with the lowest GlobalID.
+func TestDeduplicateTasks_ExactDuplicateTitles(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement user auth", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Implement user auth", AcceptanceCriteria: []string{"ac2"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 1)
+	assert.Equal(t, "T-001", out[0].GlobalID, "keeper must be the task with lowest GlobalID")
+	assert.Equal(t, 2, report.OriginalCount)
+	assert.Equal(t, 1, report.RemovedCount)
+	assert.Equal(t, 1, report.FinalCount)
+	require.Len(t, report.Merges, 1)
+	assert.Equal(t, "T-001", report.Merges[0].KeptTaskID)
+	assert.Equal(t, []string{"T-002"}, report.Merges[0].RemovedTaskIDs)
+}
+
+// TestDeduplicateTasks_NormalizedDuplicates verifies that tasks with titles that normalize
+// to the same string are treated as duplicates ("Implement user auth" == "Create user auth"
+// ONLY if they normalize identically -- they won't here, so let's use same-prefix variant).
+func TestDeduplicateTasks_NormalizedDuplicates_PrefixVariants(t *testing.T) {
+	t.Parallel()
+
+	// Both normalize to "user auth": "Implement user auth" -> "user auth", "Create user auth" -> "user auth"
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement user auth", AcceptanceCriteria: []string{"tokens validated"}},
+		{GlobalID: "T-005", Title: "Create user auth", AcceptanceCriteria: []string{"tokens expired rejected"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 1)
+	assert.Equal(t, "T-001", out[0].GlobalID)
+	assert.Equal(t, 1, report.RemovedCount)
+	// The unique AC from T-005 must be merged into T-001.
+	assert.Contains(t, out[0].AcceptanceCriteria, "tokens validated")
+	assert.Contains(t, out[0].AcceptanceCriteria, "tokens expired rejected")
+}
+
+// TestDeduplicateTasks_AcceptanceCriteriaMerged verifies that unique ACs from removed
+// tasks are appended to the keeper and duplicate ACs are not added twice.
+func TestDeduplicateTasks_AcceptanceCriteriaMerged(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{
+			GlobalID:           "T-001",
+			Title:              "Implement auth middleware",
+			AcceptanceCriteria: []string{"tokens validated", "expired tokens rejected"},
+		},
+		{
+			GlobalID:           "T-003",
+			Title:              "Add auth middleware",
+			AcceptanceCriteria: []string{"tokens validated", "rate limiting applied"},
+		},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 1)
+	keeper := out[0]
+	assert.Equal(t, "T-001", keeper.GlobalID)
+
+	// "tokens validated" is shared — must appear exactly once.
+	count := 0
+	for _, ac := range keeper.AcceptanceCriteria {
+		if ac == "tokens validated" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "shared AC must not be duplicated")
+
+	// "rate limiting applied" is unique to the removed task — must be merged.
+	assert.Contains(t, keeper.AcceptanceCriteria, "rate limiting applied")
+
+	assert.Equal(t, 1, report.Merges[0].MergedCriteria)
+}
+
+// TestDeduplicateTasks_DependencyRewrite verifies that dependency references pointing
+// to a removed task are rewritten to the keeper's GlobalID.
+func TestDeduplicateTasks_DependencyRewrite(t *testing.T) {
+	t.Parallel()
+
+	// T-001 and T-002 are duplicates (same normalized title). T-003 depends on T-002.
+	// After dedup: T-002 is removed, T-003's dep must be rewritten to T-001.
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}},
+		{GlobalID: "T-003", Title: "Auth tests", AcceptanceCriteria: []string{"ac3"}, Dependencies: []string{"T-002"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 2)
+
+	// T-003 must now depend on T-001 (the keeper).
+	var t003 *MergedTask
+	for i := range out {
+		if out[i].GlobalID == "T-003" {
+			t003 = &out[i]
+			break
+		}
+	}
+	require.NotNil(t, t003)
+	assert.Equal(t, []string{"T-001"}, t003.Dependencies)
+	assert.Equal(t, 1, report.RewrittenDeps)
+}
+
+// TestDeduplicateTasks_DependencyRewrite_SelfRef verifies that a dependency that is
+// rewritten to point to the keeper's own GlobalID is dropped (no self-reference).
+func TestDeduplicateTasks_DependencyRewrite_SelfRef(t *testing.T) {
+	t.Parallel()
+
+	// T-001 is the keeper; T-002 is removed. T-001 has a dep on T-002, which would
+	// become a self-ref after rewriting to T-001 — it must be dropped.
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}, Dependencies: []string{"T-002"}},
+		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 1)
+	assert.Empty(t, out[0].Dependencies, "self-reference must be dropped after rewrite")
+	assert.Equal(t, 1, report.RewrittenDeps)
+}
+
+// TestDeduplicateTasks_DepRewrite_DeduplicatesDeps verifies that if two removed tasks
+// both pointed to the same keeper, the dep list stays deduplicated.
+func TestDeduplicateTasks_DepRewrite_DeduplicatesDeps(t *testing.T) {
+	t.Parallel()
+
+	// T-001 and T-002 both normalize to the same title; T-004 depends on both T-001 and T-002.
+	// After dedup T-002 is removed and both deps rewrite to T-001 -> deduplicated to one entry.
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}},
+		{GlobalID: "T-004", Title: "Auth tests", AcceptanceCriteria: []string{"ac4"}, Dependencies: []string{"T-001", "T-002"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 2)
+
+	var t004 *MergedTask
+	for i := range out {
+		if out[i].GlobalID == "T-004" {
+			t004 = &out[i]
+			break
+		}
+	}
+	require.NotNil(t, t004)
+	// T-001 already present, T-002 rewrites to T-001 -> only one T-001 entry.
+	assert.Equal(t, []string{"T-001"}, t004.Dependencies)
+	assert.Equal(t, 1, report.RewrittenDeps)
+}
+
+// TestDeduplicateTasks_OrderPreserved verifies that the output preserves the original
+// input order of keeper tasks.
+func TestDeduplicateTasks_OrderPreserved(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Alpha", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Beta", AcceptanceCriteria: []string{"ac2"}},
+		{GlobalID: "T-003", Title: "Implement Alpha", AcceptanceCriteria: []string{"ac3"}}, // dup of T-001
+		{GlobalID: "T-004", Title: "Gamma", AcceptanceCriteria: []string{"ac4"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 3)
+	assert.Equal(t, "T-001", out[0].GlobalID)
+	assert.Equal(t, "T-002", out[1].GlobalID)
+	assert.Equal(t, "T-004", out[2].GlobalID)
+	assert.Equal(t, 1, report.RemovedCount)
+}
+
+// TestDeduplicateTasks_MultipleGroups verifies that multiple independent duplicate groups
+// are all processed correctly.
+func TestDeduplicateTasks_MultipleGroups(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}},     // dup of T-001
+		{GlobalID: "T-003", Title: "Build schema", AcceptanceCriteria: []string{"ac3"}},
+		{GlobalID: "T-004", Title: "Design schema", AcceptanceCriteria: []string{"ac4"}},   // dup of T-003
+		{GlobalID: "T-005", Title: "Write tests", AcceptanceCriteria: []string{"ac5"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 3)
+	assert.Equal(t, 5, report.OriginalCount)
+	assert.Equal(t, 2, report.RemovedCount)
+	assert.Equal(t, 3, report.FinalCount)
+	assert.Len(t, report.Merges, 2)
+}
+
+// TestDeduplicateTasks_ReportCounts verifies that OriginalCount + RemovedCount and
+// FinalCount are consistent.
+func TestDeduplicateTasks_ReportCounts(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement service", AcceptanceCriteria: []string{"a"}},
+		{GlobalID: "T-002", Title: "Create service", AcceptanceCriteria: []string{"b"}},
+		{GlobalID: "T-003", Title: "Add service", AcceptanceCriteria: []string{"c"}},
+	}
+
+	out, report := DeduplicateTasks(tasks)
+
+	require.Len(t, out, 1)
+	assert.Equal(t, 3, report.OriginalCount)
+	assert.Equal(t, 2, report.RemovedCount)
+	assert.Equal(t, 1, report.FinalCount)
+	assert.Equal(t, report.OriginalCount-report.RemovedCount, report.FinalCount)
+}
+
+// TestDeduplicateTasks_InputNotMutated verifies that the original tasks slice is not
+// mutated by DeduplicateTasks.
+func TestDeduplicateTasks_InputNotMutated(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}},
+		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}},
+	}
+	originalAC := make([]string, len(tasks[0].AcceptanceCriteria))
+	copy(originalAC, tasks[0].AcceptanceCriteria)
+
+	_, _ = DeduplicateTasks(tasks)
+
+	// The original slice must not be mutated; T-001's AC must still be the original.
+	assert.Equal(t, originalAC, tasks[0].AcceptanceCriteria,
+		"input task AcceptanceCriteria must not be mutated")
+}
+
 // buildTasks is a test helper that creates n TaskDef instances with unique TempIDs
 // derived from the provided epic prefix.
 func buildTasks(t *testing.T, epicPrefix string, n int) []TaskDef {

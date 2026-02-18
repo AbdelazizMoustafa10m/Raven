@@ -2,8 +2,10 @@ package prd
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // IDMapping maps a task's temp_id to its assigned global_id.
@@ -65,6 +67,62 @@ type AmbiguousRef struct {
 	// Candidates lists all global IDs whose title matched the label.
 	Candidates []string
 }
+
+// DedupGroup represents a set of tasks with matching normalized titles.
+type DedupGroup struct {
+	// NormalizedTitle is the shared normalized form used for deduplication matching.
+	NormalizedTitle string
+	// Tasks holds the tasks in this group, ordered by GlobalID (earliest first).
+	Tasks []MergedTask
+}
+
+// DedupReport summarizes the deduplication results.
+type DedupReport struct {
+	// OriginalCount is the total number of tasks before deduplication.
+	OriginalCount int
+	// RemovedCount is the number of tasks removed as duplicates.
+	RemovedCount int
+	// FinalCount is the total number of tasks after deduplication.
+	FinalCount int
+	// Merges describes each merge operation performed.
+	Merges []DedupMerge
+	// RewrittenDeps is the number of dependency references rewritten to point to keeper tasks.
+	RewrittenDeps int
+}
+
+// DedupMerge describes a single merge operation where one or more duplicate tasks
+// were merged into a keeper task.
+type DedupMerge struct {
+	// KeptTaskID is the global ID of the task that was kept.
+	KeptTaskID string
+	// KeptTitle is the original title of the kept task.
+	KeptTitle string
+	// RemovedTaskIDs lists the global IDs of the tasks that were removed.
+	RemovedTaskIDs []string
+	// RemovedTitles lists the original titles of the removed tasks.
+	RemovedTitles []string
+	// MergedCriteria is the number of acceptance criteria merged in from removed tasks.
+	MergedCriteria int
+}
+
+// actionPrefixes lists the common action-verb prefixes to strip during normalization.
+// Multi-word prefixes (e.g., "set up") must appear before their single-word prefix
+// sub-strings to ensure the longer match is attempted first.
+var actionPrefixes = []string{
+	"set up",
+	"implement",
+	"create",
+	"add",
+	"build",
+	"define",
+	"write",
+	"configure",
+	"design",
+	"establish",
+}
+
+// rePunct matches any rune that is not a letter, digit, or space.
+var rePunct = regexp.MustCompile(`[^\p{L}\p{N} ]+`)
 
 // SortEpicsByDependency returns epic IDs in topological order using Kahn's algorithm.
 // Epics with no dependencies are placed first, sorted lexicographically for determinism.
@@ -368,4 +426,219 @@ func RemapDependencies(
 	}
 
 	return updated, report
+}
+
+// NormalizeTitle returns a normalized version of a task title for deduplication comparison.
+// Steps applied in order:
+//  1. Lowercase the entire string.
+//  2. Strip common action-verb prefixes (word-boundary aware -- only strips when the prefix
+//     is followed by a space or end-of-string, not by another letter).
+//  3. Collapse multiple consecutive spaces into one and trim leading/trailing space.
+//  4. Remove all punctuation (non-alphanumeric, non-space characters).
+//
+// If the result after stripping is empty, the original lowercased+normalized title is
+// returned as a fallback (e.g. when the title is itself the prefix word, like "Implement").
+func NormalizeTitle(title string) string {
+	// Step 1: lowercase.
+	s := strings.ToLower(title)
+
+	// Step 2: strip action-verb prefixes with word-boundary awareness.
+	// A prefix is only stripped when it is followed by a space or is the entire string.
+	for _, prefix := range actionPrefixes {
+		if !strings.HasPrefix(s, prefix) {
+			continue
+		}
+		rest := s[len(prefix):]
+		// Word-boundary check: rest must be empty or start with a space.
+		if rest == "" || (len(rest) > 0 && rest[0] == ' ') {
+			candidate := strings.TrimSpace(rest)
+			if candidate != "" {
+				s = candidate
+			}
+			// Only strip the first matching prefix.
+			break
+		}
+	}
+
+	// Step 3: collapse whitespace.
+	fields := strings.FieldsFunc(s, unicode.IsSpace)
+	s = strings.Join(fields, " ")
+
+	// Step 4: remove punctuation.
+	s = rePunct.ReplaceAllString(s, "")
+
+	// Collapse any spaces introduced or left by punctuation removal.
+	fields = strings.Fields(s)
+	s = strings.Join(fields, " ")
+
+	return s
+}
+
+// findDuplicateGroups groups tasks by normalized title and returns only groups with
+// two or more tasks (actual duplicates). Within each group, tasks are sorted by GlobalID
+// so the earliest-assigned task (lowest GlobalID) is first.
+func findDuplicateGroups(tasks []MergedTask) []DedupGroup {
+	// Map normalized title -> tasks in insertion order.
+	index := make(map[string][]MergedTask, len(tasks))
+	order := make([]string, 0, len(tasks))
+
+	for _, task := range tasks {
+		norm := NormalizeTitle(task.Title)
+		if _, exists := index[norm]; !exists {
+			order = append(order, norm)
+		}
+		index[norm] = append(index[norm], task)
+	}
+
+	var groups []DedupGroup
+	for _, norm := range order {
+		group := index[norm]
+		if len(group) < 2 {
+			continue
+		}
+		// Sort by GlobalID so the keeper (lowest ID) is first.
+		sort.Slice(group, func(i, j int) bool {
+			return group[i].GlobalID < group[j].GlobalID
+		})
+		groups = append(groups, DedupGroup{
+			NormalizedTitle: norm,
+			Tasks:           group,
+		})
+	}
+	return groups
+}
+
+// DeduplicateTasks removes duplicate tasks that share a normalized title. The task with
+// the lowest GlobalID in each duplicate group is kept; all others are removed. Unique
+// acceptance criteria from removed tasks are appended to the keeper's criteria list.
+// All dependency references that pointed to removed tasks are rewritten to reference the
+// keeper instead, and self-references are dropped. The final task list preserves the
+// original ordering of the keeper tasks.
+//
+// Returns the deduplicated task list and a DedupReport summarising what was done.
+func DeduplicateTasks(tasks []MergedTask) ([]MergedTask, *DedupReport) {
+	report := &DedupReport{
+		OriginalCount: len(tasks),
+	}
+
+	if len(tasks) == 0 {
+		return nil, report
+	}
+
+	// Build duplicate groups.
+	groups := findDuplicateGroups(tasks)
+
+	if len(groups) == 0 {
+		// No duplicates: return a copy with zero-value report fields set.
+		out := make([]MergedTask, len(tasks))
+		copy(out, tasks)
+		report.FinalCount = len(out)
+		return out, report
+	}
+
+	// removedToKeeper maps removed global ID -> keeper global ID.
+	removedToKeeper := make(map[string]string)
+
+	// keeperUpdates maps keeper global ID -> updated MergedTask (with merged criteria).
+	keeperUpdates := make(map[string]MergedTask)
+
+	for _, group := range groups {
+		keeper := group.Tasks[0]
+
+		// Defensively copy the AcceptanceCriteria slice so we do not mutate the
+		// original input's backing array when appending new criteria (DC-1).
+		copiedAC := make([]string, len(keeper.AcceptanceCriteria))
+		copy(copiedAC, keeper.AcceptanceCriteria)
+		keeper.AcceptanceCriteria = copiedAC
+
+		// Build a set of existing acceptance criteria for the keeper to avoid duplicates.
+		existingCriteria := make(map[string]bool, len(keeper.AcceptanceCriteria))
+		for _, ac := range keeper.AcceptanceCriteria {
+			existingCriteria[ac] = true
+		}
+
+		var mergedCount int
+		var removedIDs []string
+		var removedTitles []string
+
+		for _, dup := range group.Tasks[1:] {
+			removedToKeeper[dup.GlobalID] = keeper.GlobalID
+			removedIDs = append(removedIDs, dup.GlobalID)
+			removedTitles = append(removedTitles, dup.Title)
+
+			// Merge unique acceptance criteria from the removed task.
+			for _, ac := range dup.AcceptanceCriteria {
+				if !existingCriteria[ac] {
+					existingCriteria[ac] = true
+					keeper.AcceptanceCriteria = append(keeper.AcceptanceCriteria, ac)
+					mergedCount++
+				}
+			}
+		}
+
+		keeperUpdates[keeper.GlobalID] = keeper
+
+		report.Merges = append(report.Merges, DedupMerge{
+			KeptTaskID:     keeper.GlobalID,
+			KeptTitle:      keeper.Title,
+			RemovedTaskIDs: removedIDs,
+			RemovedTitles:  removedTitles,
+			MergedCriteria: mergedCount,
+		})
+		report.RemovedCount += len(removedIDs)
+	}
+
+	// Build a set of removed IDs for quick lookup during the filter pass.
+	removedSet := make(map[string]bool, report.RemovedCount)
+	for removedID := range removedToKeeper {
+		removedSet[removedID] = true
+	}
+
+	// Walk all tasks: apply keeper criteria updates, rewrite dependencies, and filter
+	// out removed tasks. The output preserves the original order of keeper tasks.
+	out := make([]MergedTask, 0, len(tasks)-report.RemovedCount)
+
+	for _, task := range tasks {
+		if removedSet[task.GlobalID] {
+			// This task was removed; skip it.
+			continue
+		}
+
+		// Apply accumulated acceptance-criteria merges for keeper tasks.
+		if updated, ok := keeperUpdates[task.GlobalID]; ok {
+			task = updated
+		}
+
+		// Rewrite dependency references.
+		if len(task.Dependencies) > 0 {
+			seen := make(map[string]bool, len(task.Dependencies))
+			rewritten := make([]string, 0, len(task.Dependencies))
+
+			for _, dep := range task.Dependencies {
+				// Rewrite removed IDs to their keeper.
+				if keeperID, wasRemoved := removedToKeeper[dep]; wasRemoved {
+					report.RewrittenDeps++
+					dep = keeperID
+				}
+
+				// Skip self-references.
+				if dep == task.GlobalID {
+					continue
+				}
+
+				// Deduplicate.
+				if !seen[dep] {
+					seen[dep] = true
+					rewritten = append(rewritten, dep)
+				}
+			}
+
+			task.Dependencies = rewritten
+		}
+
+		out = append(out, task)
+	}
+
+	report.FinalCount = len(out)
+	return out, report
 }

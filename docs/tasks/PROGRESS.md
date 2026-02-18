@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 64 |
+| Completed | 65 |
 | In Progress | 0 |
-| Not Started | 25 |
+| Not Started | 24 |
 
 ---
 
@@ -498,6 +498,34 @@
 
 ---
 
+### T-062: Merge -- Title Deduplication
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `DedupGroup` struct — `NormalizedTitle string`, `Tasks []MergedTask` (sorted by GlobalID, keeper first)
+  - `DedupReport` struct — `OriginalCount`, `RemovedCount`, `FinalCount`, `Merges []DedupMerge`, `RewrittenDeps int`
+  - `DedupMerge` struct — `KeptTaskID`, `KeptTitle`, `RemovedTaskIDs`, `RemovedTitles`, `MergedCriteria int`
+  - `NormalizeTitle(title string) string` — lowercase, word-boundary-aware prefix stripping (10 prefixes including multi-word "set up"), whitespace collapsing, punctuation removal via `rePunct` regexp; empty-result fallback to original lowercased form
+  - `findDuplicateGroups(tasks []MergedTask) []DedupGroup` — groups tasks by normalized title, insertion-order stable, only returns groups with 2+ tasks
+  - `DeduplicateTasks(tasks []MergedTask) ([]MergedTask, *DedupReport)` — identifies duplicate groups, keeps lowest GlobalID as keeper, merges unique ACs from removed tasks, rewrites dependency references pointing to removed tasks to keeper IDs, drops self-references post-rewrite, deduplicates rewritten dep lists, preserves original order of keeper tasks
+  - `actionPrefixes` package-level slice and `rePunct` package-level compiled regexp added
+  - `regexp` and `unicode` imports added to `merger.go`
+  - Defensive copy of keeper's `AcceptanceCriteria` before appending (DC-1 compliance)
+- **Files created/modified:**
+  - `internal/prd/merger.go` — new types, package-level vars, and three new functions appended
+  - `internal/prd/merger_test.go` — 35+ new test functions for `NormalizeTitle` (individual prefix tests, table-driven, edge cases) and `DeduplicateTasks` (empty input, no dups, single task, prefix variants, AC merge, dep rewrite, self-ref avoidance, dep dedup, order preservation, multiple groups, report counts, input non-mutation)
+- **Key Decisions:**
+  - Word-boundary detection via `rest[0] == ' '` check (byte-level for ASCII prefix list) avoids regexp overhead for the common case
+  - `rePunct = regexp.MustCompile("[^\\p{L}\\p{N} ]+")` handles Unicode letters/digits, removing all punctuation including hyphens, slashes, periods
+  - Multi-word prefix "set up" listed first in `actionPrefixes` so it's attempted before single-word "set" is present (there is no "set" prefix, but order matters if prefixes share roots)
+  - `findDuplicateGroups` tracks insertion order via `order` slice to make `DeduplicateTasks` output deterministic regardless of map iteration order
+  - Acceptance criteria from removed tasks merged in order of appearance; duplicates detected via a set built from the keeper's criteria
+  - `RewrittenDeps` counts every rewrite (even if the rewritten dep is then deduplicated out), matching the spec
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -508,7 +536,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061 completed)
+- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061, T-062 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -523,7 +551,7 @@ _None currently_
 | T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Completed |
 | T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Completed |
 | T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Completed |
-| T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Not Started |
+| T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Completed |
 | T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Not Started |
 | T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Not Started |
 | T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Not Started |
