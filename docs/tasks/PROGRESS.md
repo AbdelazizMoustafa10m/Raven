@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 53 |
+| Completed | 54 |
 | In Progress | 0 |
-| Not Started | 36 |
+| Not Started | 35 |
 
 ---
 
@@ -476,6 +476,33 @@
 
 ---
 
+### T-051: Pipeline Branch Management
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `BranchManager` struct with configurable branch template and base branch
+  - `NewBranchManager(gitClient, branchTemplate, baseBranch)` constructor with empty-value defaults (`"phase/{phase_id}-{slug}"` and `"main"`)
+  - `WithLogger` fluent option for attaching a `charmbracelet/log` Logger for non-fatal warnings
+  - `PhaseBranchOpts` struct with `PhaseID`, `PhaseName`, `ProjectName`, `PreviousPhaseBranch`, `SyncBase` fields
+  - `ResolveBranchName(phaseID, phaseName, projectName)` applying `strings.NewReplacer` for `{phase_id}`, `{slug}`, `{project}` substitution
+  - `slugify` helper converting arbitrary strings to kebab-case: lowercase, non-alphanumeric sequences → single hyphen, trim leading/trailing hyphens
+  - `CreatePhaseBranch(ctx, opts)` branching from `baseBranch` for phase 1, `PreviousPhaseBranch` for subsequent phases; `SyncBase` triggers a `Fetch` with non-fatal error handling
+  - `SwitchToPhaseBranch(ctx, branchName)` checking existence then calling `Checkout`; errors on missing branch
+  - `BranchExists(ctx, branchName)` delegating to `GitClient.BranchExists`
+  - `EnsureBranch(ctx, opts)` idempotent create-or-switch for resume logic
+  - 92.3% test coverage (exceeds 90% requirement)
+  - Full unit test suite with mock git client and integration tests against real git repos
+  - Integration tests: 3-chained-branches and resume-scenario
+  - Fuzz test for `slugify` (invariants: only `[a-z0-9-]`, no leading/trailing hyphen, no consecutive hyphens)
+  - Benchmarks for `ResolveBranchName` and `slugify`
+- **Files created/modified:**
+  - `internal/pipeline/branch.go` -- BranchManager implementation with full godoc
+  - `internal/pipeline/branch_test.go` -- comprehensive test suite (unit + integration + fuzz + benchmarks)
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -503,7 +530,7 @@ _None currently_
 | T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Completed |
 | T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Completed |
 | T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Completed |
-| T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Not Started |
+| T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Completed |
 | T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Not Started |
 | T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Not Started |
 | T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Not Started |
