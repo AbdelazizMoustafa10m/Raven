@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 36 |
+| Completed | 37 |
 | In Progress | 0 |
-| Not Started | 53 |
+| Not Started | 52 |
 
 ---
 
@@ -281,6 +281,35 @@
 
 ---
 
+### T-036: Review Report Generation (Markdown)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `ReportGenerator` struct with an embedded `*template.Template` and `*log.Logger`
+  - `ReportData` struct carrying all data for the template, with sorted key slices for deterministic map iteration
+  - `reportTemplateStats` wrapper embedding `*ConsolidationStats` and adding `FindingsPerAgentKeys`/`FindingsPerSeverityKeys` sorted slices
+  - `NewReportGenerator(logger)` constructor parsing the embedded template with `[[`/`]]` delimiters and registering FuncMap helpers
+  - `Generate(consolidated, stats, diffResult)` rendering a full markdown report to a string
+  - `WriteToFile(path, ...)` generating and writing the report to disk, creating parent directories via `os.MkdirAll`
+  - `buildReportData(...)` transforming inputs into `ReportData`, sorting all map keys deterministically
+  - Template helpers: `verdictIndicator`, `escapeCellContent`, `agentVerdict`, `agentFindingCount`, `agentStatus`, `toUpper`
+  - Embedded `report_template.tmpl` producing: verdict header, summary table, findings table, findings-by-file, findings-by-severity, agent breakdown, consolidation stats, diff stats, timestamp footer
+  - "No issues found" section for APPROVED/zero-finding reviews
+  - 30+ table-driven test functions covering all acceptance criteria
+- **Files created/modified:**
+  - `internal/review/report.go` -- ReportGenerator, ReportData, reportTemplateStats, all helpers
+  - `internal/review/report_template.tmpl` -- embedded Go template with `[[`/`]]` delimiters
+  - `internal/review/report_test.go` -- 30+ tests covering all acceptance criteria, edge cases, and WriteToFile paths
+- **Key Decisions:**
+  1. `[[`/`]]` delimiters avoid conflicts with `{{`/`}}` that may appear in code snippets within finding descriptions
+  2. `toUpper` FuncMap entry wraps `Severity` to `string` conversion since `strings.ToUpper` requires a plain `string` type
+  3. Pre-sorted key slices in `ReportData` (`FindingsByFileKeys`, `FindingsBySeverityKeys`) make templates deterministic without requiring template-side logic
+  4. `[PASS]`/`[FAIL]`/`[BLOCK]` text indicators used over emoji for terminal and CI log compatibility
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/review/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -305,7 +334,7 @@ _None currently_
 | T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Completed |
 | T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Completed |
 | T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Completed |
-| T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Not Started |
+| T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Completed |
 | T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Not Started |
 | T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Not Started |
 | T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Not Started |
