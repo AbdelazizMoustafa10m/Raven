@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 59 |
+| Completed | 60 |
 | In Progress | 0 |
-| Not Started | 30 |
+| Not Started | 29 |
 
 ---
 
@@ -360,6 +360,29 @@
 
 ---
 
+### T-057: PRD Shredder (Single Agent -> Epic JSON)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Shredder` struct orchestrating a single-agent PRD-to-epics call
+  - `ShredOpts` struct for per-call parameters (PRDPath, OutputFile, Model, Effort)
+  - `ShredResult` struct with EpicBreakdown, Duration, Retries, OutputFile
+  - `ShredderOption` functional option type with `WithMaxRetries`, `WithLogger`, `WithEvents`
+  - `ShredEvent` / `ShredEventType` for progress tracking (started, completed, retry, failed)
+  - Embedded prompt template using `[[`/`]]` delimiters; includes schema example and retry error injection
+  - Retry loop: up to `maxRetries` (default 3) attempts; validation errors appended to retry prompt
+  - JSON extraction: output file first, falls back to `jsonutil.ExtractInto` on stdout
+  - 1 MB PRD file size cap; context cancellation honored at every iteration
+  - Non-blocking event sends via `select { case ch <- evt: default: }`
+  - Full test suite: success via file/stdout, retry paths, event ordering, prompt content, size caps, context cancellation
+- **Files created/modified:**
+  - `internal/prd/shredder.go` — Shredder, all option types, prompt template, extraction logic
+  - `internal/prd/shredder_test.go` — 30+ table-driven tests covering all code paths
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -370,7 +393,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056 completed)
+- **Status:** In Progress (T-056, T-057 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -380,7 +403,7 @@ _None currently_
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
 | T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Completed |
-| T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Not Started |
+| T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Completed |
 | T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Not Started |
 | T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Not Started |
 | T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Not Started |
