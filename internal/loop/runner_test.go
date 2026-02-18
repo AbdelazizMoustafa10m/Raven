@@ -98,6 +98,320 @@ func drainEvents(ch <-chan LoopEvent) []LoopEvent {
 	}
 }
 
+// ---- DetectSignalsFromJSONL ----
+
+func TestDetectSignalsFromJSONL_AssistantTextContainsSignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		jsonl      string
+		wantSignal CompletionSignal
+		wantDetail string
+	}{
+		{
+			name:       "PHASE_COMPLETE in assistant text block",
+			jsonl:      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All done.\nPHASE_COMPLETE\nGreat success"}]}}`,
+			wantSignal: SignalPhaseComplete,
+			wantDetail: "",
+		},
+		{
+			name:       "PHASE_COMPLETE with detail in assistant text",
+			jsonl:      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PHASE_COMPLETE all tasks done"}]}}`,
+			wantSignal: SignalPhaseComplete,
+			wantDetail: "all tasks done",
+		},
+		{
+			name:       "TASK_BLOCKED in assistant text",
+			jsonl:      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"TASK_BLOCKED waiting on dep"}]}}`,
+			wantSignal: SignalTaskBlocked,
+			wantDetail: "waiting on dep",
+		},
+		{
+			name:       "RAVEN_ERROR in assistant text",
+			jsonl:      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"RAVEN_ERROR build failed"}]}}`,
+			wantSignal: SignalRavenError,
+			wantDetail: "build failed",
+		},
+		{
+			name:       "no signal in any text",
+			jsonl:      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"normal output here"}]}}`,
+			wantSignal: "",
+			wantDetail: "",
+		},
+		{
+			name:       "non-assistant event ignored",
+			jsonl:      `{"type":"result","subtype":"success","num_turns":1}`,
+			wantSignal: "",
+			wantDetail: "",
+		},
+		{
+			name:       "malformed JSON line skipped",
+			jsonl:      "not json\n" + `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PHASE_COMPLETE"}]}}`,
+			wantSignal: SignalPhaseComplete,
+			wantDetail: "",
+		},
+		{
+			name:       "empty input",
+			jsonl:      "",
+			wantSignal: "",
+			wantDetail: "",
+		},
+		{
+			name:       "tool_use block does not produce signal",
+			jsonl:      `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","id":"t1"}]}}`,
+			wantSignal: "",
+			wantDetail: "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sig, detail := DetectSignalsFromJSONL(tt.jsonl)
+			assert.Equal(t, tt.wantSignal, sig)
+			assert.Equal(t, tt.wantDetail, detail)
+		})
+	}
+}
+
+func TestDetectSignalsFromJSONL_MultipleLines(t *testing.T) {
+	t.Parallel()
+
+	// Multiple JSONL events; signal is in the second assistant event.
+	jsonl := `{"type":"system","subtype":"init","session_id":"s1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"thinking..."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PHASE_COMPLETE done"}]}}
+{"type":"result","subtype":"success","num_turns":2}`
+
+	sig, detail := DetectSignalsFromJSONL(jsonl)
+	assert.Equal(t, SignalPhaseComplete, sig)
+	assert.Equal(t, "done", detail)
+}
+
+// ---- Runner.detectSignals (plain text + JSONL fallback) ----
+
+func TestRunnerDetectSignals_PlainTextFirst(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{}
+	// Plain text contains signal -- JSONL fallback not needed.
+	sig, detail := runner.detectSignals("PHASE_COMPLETE with detail text")
+	assert.Equal(t, SignalPhaseComplete, sig)
+	assert.Equal(t, "with detail text", detail)
+}
+
+func TestRunnerDetectSignals_JSONLFallback(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{}
+	// No plain-text signal; signal embedded in JSONL.
+	jsonl := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PHASE_COMPLETE jsonl"}]}}`
+	sig, detail := runner.detectSignals(jsonl)
+	assert.Equal(t, SignalPhaseComplete, sig)
+	assert.Equal(t, "jsonl", detail)
+}
+
+func TestRunnerDetectSignals_NoSignal(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{}
+	sig, _ := runner.detectSignals("completely normal output without any signals")
+	assert.Equal(t, CompletionSignal(""), sig)
+}
+
+// ---- consumeStreamEvents ----
+
+func TestConsumeStreamEvents_AssistantTextEmitsThinkingEvent(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 8)
+	streamCh <- agent.StreamEvent{
+		Type: agent.StreamEventAssistant,
+		Message: &agent.StreamMessage{
+			Content: []agent.ContentBlock{
+				{Type: "text", Text: "I am thinking about the problem"},
+			},
+		},
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 1, "T-001", "claude")
+
+	loopEvents := drainEvents(events)
+	require.Len(t, loopEvents, 1)
+	assert.Equal(t, EventAgentThinking, loopEvents[0].Type)
+	assert.Equal(t, "I am thinking about the problem", loopEvents[0].Message)
+	assert.Equal(t, 1, loopEvents[0].Iteration)
+	assert.Equal(t, "T-001", loopEvents[0].TaskID)
+	assert.Equal(t, "claude", loopEvents[0].AgentName)
+}
+
+func TestConsumeStreamEvents_AssistantToolUseEmitsToolStarted(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 8)
+	streamCh <- agent.StreamEvent{
+		Type: agent.StreamEventAssistant,
+		Message: &agent.StreamMessage{
+			Content: []agent.ContentBlock{
+				{Type: "tool_use", Name: "Read", ID: "toolu_1"},
+				{Type: "tool_use", Name: "Edit", ID: "toolu_2"},
+			},
+		},
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 2, "T-002", "claude")
+
+	loopEvents := drainEvents(events)
+	require.Len(t, loopEvents, 2)
+	assert.Equal(t, EventToolStarted, loopEvents[0].Type)
+	assert.Equal(t, "Read", loopEvents[0].ToolName)
+	assert.Equal(t, "tool call: Read", loopEvents[0].Message)
+	assert.Equal(t, EventToolStarted, loopEvents[1].Type)
+	assert.Equal(t, "Edit", loopEvents[1].ToolName)
+}
+
+func TestConsumeStreamEvents_UserToolResultEmitsToolCompleted(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 8)
+	streamCh <- agent.StreamEvent{
+		Type: agent.StreamEventUser,
+		Message: &agent.StreamMessage{
+			Content: []agent.ContentBlock{
+				{Type: "tool_result", ToolUseID: "toolu_1"},
+			},
+		},
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 1, "T-001", "claude")
+
+	loopEvents := drainEvents(events)
+	require.Len(t, loopEvents, 1)
+	assert.Equal(t, EventToolCompleted, loopEvents[0].Type)
+	assert.Equal(t, "toolu_1", loopEvents[0].ToolName)
+	assert.Contains(t, loopEvents[0].Message, "toolu_1")
+}
+
+func TestConsumeStreamEvents_ResultEmitsSessionStats(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 8)
+	streamCh <- agent.StreamEvent{
+		Type:    agent.StreamEventResult,
+		CostUSD: 0.0042,
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 3, "T-003", "claude")
+
+	loopEvents := drainEvents(events)
+	require.Len(t, loopEvents, 1)
+	assert.Equal(t, EventSessionStats, loopEvents[0].Type)
+	assert.InDelta(t, 0.0042, loopEvents[0].CostUSD, 0.00001)
+	assert.Contains(t, loopEvents[0].Message, "$0.0042")
+}
+
+func TestConsumeStreamEvents_ContextCancelledExitsEarly(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent) // unbuffered, never sends
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled immediately
+
+	// Should return promptly without blocking.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.consumeStreamEvents(ctx, streamCh, 1, "T-001", "claude")
+	}()
+
+	select {
+	case <-done:
+		// Good -- returned promptly.
+	case <-time.After(2 * time.Second):
+		t.Fatal("consumeStreamEvents did not exit after context cancellation")
+	}
+}
+
+func TestConsumeStreamEvents_ClosedChannelExits(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 8)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent)
+	close(streamCh) // closed immediately -- no events
+
+	ctx := context.Background()
+	// Should return promptly.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.consumeStreamEvents(ctx, streamCh, 1, "T-001", "claude")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("consumeStreamEvents did not exit when channel was closed")
+	}
+
+	// No events should have been emitted.
+	assert.Empty(t, events)
+}
+
+// ---- LoopEvent new fields ----
+
+func TestLoopEvent_NewFields(t *testing.T) {
+	t.Parallel()
+
+	e := LoopEvent{
+		Type:      EventToolStarted,
+		ToolName:  "Read",
+		CostUSD:   0.01,
+		TokensIn:  100,
+		TokensOut: 50,
+	}
+	assert.Equal(t, "Read", e.ToolName)
+	assert.Equal(t, 0.01, e.CostUSD)
+	assert.Equal(t, 100, e.TokensIn)
+	assert.Equal(t, 50, e.TokensOut)
+}
+
+func TestLoopEventType_NewConstants(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, LoopEventType("tool_started"), EventToolStarted)
+	assert.Equal(t, LoopEventType("tool_completed"), EventToolCompleted)
+	assert.Equal(t, LoopEventType("agent_thinking"), EventAgentThinking)
+	assert.Equal(t, LoopEventType("session_stats"), EventSessionStats)
+}
+
 // ---- DetectSignals ----
 
 func TestDetectSignals_PhaseComplete(t *testing.T) {
@@ -922,6 +1236,315 @@ func TestRun_MaxIterationsError(t *testing.T) {
 		types[i] = e.Type
 	}
 	assert.Contains(t, types, EventMaxIterations)
+}
+
+// ---- invokeAgent: passes OutputFormatStreamJSON and StreamEvents ----
+
+func TestInvokeAgent_PassesStreamJSONFormatToAgent(t *testing.T) {
+	t.Parallel()
+
+	specs := []*task.ParsedTaskSpec{
+		makeTestSpec("T-001", "Task 1", "# T-001: Task 1\n"),
+	}
+	phases := makePhases(1, "T-001", "T-001")
+
+	var capturedOpts agent.RunOpts
+	ag := agent.NewMockAgent("mock").WithRunFunc(func(ctx context.Context, opts agent.RunOpts) (*agent.RunResult, error) {
+		capturedOpts = opts
+		return &agent.RunResult{Stdout: "PHASE_COMPLETE", ExitCode: 0}, nil
+	})
+
+	runner, _, _ := makeRunnerDeps(t, specs, nil, phases, ag)
+
+	err := runner.Run(context.Background(), RunConfig{
+		AgentName:    "mock",
+		PhaseID:      1,
+		SleepBetween: 0,
+	})
+	require.NoError(t, err)
+
+	// The invokeAgent method must always set OutputFormat to stream-json.
+	assert.Equal(t, agent.OutputFormatStreamJSON, capturedOpts.OutputFormat,
+		"invokeAgent must pass OutputFormatStreamJSON so streaming is active")
+	// StreamEvents channel must be non-nil.
+	assert.NotNil(t, capturedOpts.StreamEvents,
+		"invokeAgent must pass a non-nil StreamEvents channel")
+}
+
+// ---- consumeStreamEvents: mixed assistant event (text + tool_use) ----
+
+func TestConsumeStreamEvents_AssistantMixedContentEmitsBothThinkingAndToolStarted(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	// Single assistant event that contains both a text block and a tool_use block.
+	streamCh := make(chan agent.StreamEvent, 8)
+	streamCh <- agent.StreamEvent{
+		Type: agent.StreamEventAssistant,
+		Message: &agent.StreamMessage{
+			Content: []agent.ContentBlock{
+				{Type: "text", Text: "I will read the file now"},
+				{Type: "tool_use", Name: "Read", ID: "toolu_xyz"},
+			},
+		},
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 5, "T-005", "claude")
+
+	loopEvents := drainEvents(events)
+	// Must emit EventToolStarted for the tool_use block AND EventAgentThinking for the text block.
+	require.Len(t, loopEvents, 2)
+
+	// Order: tool_use blocks are processed first (loop over ToolUseBlocks),
+	// then text content is checked.
+	var foundToolStarted, foundAgentThinking bool
+	for _, e := range loopEvents {
+		switch e.Type {
+		case EventToolStarted:
+			foundToolStarted = true
+			assert.Equal(t, "Read", e.ToolName)
+			assert.Equal(t, "T-005", e.TaskID)
+			assert.Equal(t, 5, e.Iteration)
+		case EventAgentThinking:
+			foundAgentThinking = true
+			assert.Equal(t, "I will read the file now", e.Message)
+		}
+	}
+	assert.True(t, foundToolStarted, "EventToolStarted must be emitted for tool_use block")
+	assert.True(t, foundAgentThinking, "EventAgentThinking must be emitted for text block")
+}
+
+// ---- consumeStreamEvents: system event is silently ignored ----
+
+func TestConsumeStreamEvents_SystemEventIgnored(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 8)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 4)
+	streamCh <- agent.StreamEvent{
+		Type:      agent.StreamEventSystem,
+		Subtype:   "init",
+		SessionID: "sess_1",
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 1, "T-001", "claude")
+
+	// System events produce no LoopEvents.
+	loopEvents := drainEvents(events)
+	assert.Empty(t, loopEvents, "system stream events must be silently ignored")
+}
+
+// ---- consumeStreamEvents: multiple tool_result blocks ----
+
+func TestConsumeStreamEvents_MultipleToolResultsEmitMultipleCompleted(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 32)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 8)
+	streamCh <- agent.StreamEvent{
+		Type: agent.StreamEventUser,
+		Message: &agent.StreamMessage{
+			Content: []agent.ContentBlock{
+				{Type: "tool_result", ToolUseID: "toolu_1"},
+				{Type: "tool_result", ToolUseID: "toolu_2"},
+				{Type: "tool_result", ToolUseID: "toolu_3"},
+			},
+		},
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 2, "T-002", "claude")
+
+	loopEvents := drainEvents(events)
+	require.Len(t, loopEvents, 3, "one EventToolCompleted per tool_result block")
+	for i, e := range loopEvents {
+		assert.Equal(t, EventToolCompleted, e.Type)
+		expectedID := fmt.Sprintf("toolu_%d", i+1)
+		assert.Equal(t, expectedID, e.ToolName)
+	}
+}
+
+// ---- consumeStreamEvents: EventSessionStats CostUSD and message format ----
+
+func TestConsumeStreamEvents_SessionStatsMessageFormat(t *testing.T) {
+	t.Parallel()
+
+	events := make(chan LoopEvent, 8)
+	runner := &Runner{events: events}
+
+	streamCh := make(chan agent.StreamEvent, 4)
+	streamCh <- agent.StreamEvent{
+		Type:    agent.StreamEventResult,
+		CostUSD: 0.1234,
+	}
+	close(streamCh)
+
+	ctx := context.Background()
+	runner.consumeStreamEvents(ctx, streamCh, 7, "T-007", "claude")
+
+	loopEvents := drainEvents(events)
+	require.Len(t, loopEvents, 1)
+	e := loopEvents[0]
+	assert.Equal(t, EventSessionStats, e.Type)
+	assert.InDelta(t, 0.1234, e.CostUSD, 0.00001)
+	// Message must contain the formatted cost.
+	assert.Contains(t, e.Message, "$0.1234")
+	assert.Equal(t, "T-007", e.TaskID)
+	assert.Equal(t, 7, e.Iteration)
+	assert.Equal(t, "claude", e.AgentName)
+}
+
+// ---- consumeStreamEvents: context cancelled drains remaining buffered events ----
+
+func TestConsumeStreamEvents_ContextCancelledDrainsStop(t *testing.T) {
+	t.Parallel()
+
+	// This test verifies that when context is cancelled, consumeStreamEvents
+	// exits without blocking. It specifically confirms no deadlock occurs
+	// even when there are buffered events in the channel.
+	events := make(chan LoopEvent, 64)
+	runner := &Runner{events: events}
+
+	// Pre-fill a buffered channel with events.
+	streamCh := make(chan agent.StreamEvent, 10)
+	for i := 0; i < 5; i++ {
+		streamCh <- agent.StreamEvent{
+			Type:    agent.StreamEventResult,
+			CostUSD: float64(i) * 0.001,
+		}
+	}
+	// Do not close -- ctx cancellation should cause exit.
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel before calling.
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.consumeStreamEvents(ctx, streamCh, 1, "T-001", "claude")
+	}()
+
+	select {
+	case <-done:
+		// Exited promptly after context cancel.
+	case <-time.After(2 * time.Second):
+		t.Fatal("consumeStreamEvents blocked after context cancellation with buffered events")
+	}
+}
+
+// ---- DetectSignalsFromJSONL: first signal wins across multiple lines ----
+
+func TestDetectSignalsFromJSONL_FirstSignalWins(t *testing.T) {
+	t.Parallel()
+
+	// TASK_BLOCKED appears before PHASE_COMPLETE -- first one wins.
+	jsonl := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"TASK_BLOCKED waiting on dep"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PHASE_COMPLETE all done"}]}}`
+
+	sig, detail := DetectSignalsFromJSONL(jsonl)
+	assert.Equal(t, SignalTaskBlocked, sig)
+	assert.Equal(t, "waiting on dep", detail)
+}
+
+// ---- DetectSignalsFromJSONL: whitespace-only lines skipped ----
+
+func TestDetectSignalsFromJSONL_WhitespaceOnlyLinesSkipped(t *testing.T) {
+	t.Parallel()
+
+	jsonl := "   \n\t\n" + `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"PHASE_COMPLETE done"}]}}` + "\n   "
+	sig, detail := DetectSignalsFromJSONL(jsonl)
+	assert.Equal(t, SignalPhaseComplete, sig)
+	assert.Equal(t, "done", detail)
+}
+
+// ---- DetectSignalsFromJSONL: non-{ lines (not JSON objects) are skipped ----
+
+func TestDetectSignalsFromJSONL_NonObjectLinesSkipped(t *testing.T) {
+	t.Parallel()
+
+	// Lines not starting with '{' must be skipped (non-JSON plain text).
+	jsonl := "PHASE_COMPLETE this is plain text\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"RAVEN_ERROR build failed"}]}}`
+
+	// The plain text line starts with 'P' not '{', so it is skipped.
+	// The JSONL line contains RAVEN_ERROR.
+	sig, detail := DetectSignalsFromJSONL(jsonl)
+	assert.Equal(t, SignalRavenError, sig)
+	assert.Equal(t, "build failed", detail)
+}
+
+// ---- Runner.detectSignals: plain text wins over JSONL when both present ----
+
+func TestRunnerDetectSignals_PlainTextWinsOverJSONL(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{}
+	// The output has a plain PHASE_COMPLETE on its own line, AND a JSONL
+	// line that would produce TASK_BLOCKED. Plain text is tried first.
+	output := "PHASE_COMPLETE\n" +
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"TASK_BLOCKED ignored"}]}}`
+
+	sig, _ := runner.detectSignals(output)
+	assert.Equal(t, SignalPhaseComplete, sig)
+}
+
+// ---- Backward compatibility: DetectSignals works on plain text ----
+
+func TestDetectSignals_BackwardCompatible_PlainText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		output     string
+		wantSignal CompletionSignal
+		wantDetail string
+	}{
+		{
+			name:       "PHASE_COMPLETE plain",
+			output:     "All done.\nPHASE_COMPLETE\n",
+			wantSignal: SignalPhaseComplete,
+			wantDetail: "",
+		},
+		{
+			name:       "TASK_BLOCKED with detail",
+			output:     "TASK_BLOCKED waiting on T-002",
+			wantSignal: SignalTaskBlocked,
+			wantDetail: "waiting on T-002",
+		},
+		{
+			name:       "RAVEN_ERROR with detail",
+			output:     "RAVEN_ERROR compilation failed",
+			wantSignal: SignalRavenError,
+			wantDetail: "compilation failed",
+		},
+		{
+			name:       "no signal",
+			output:     "finished task without signals",
+			wantSignal: "",
+			wantDetail: "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sig, detail := DetectSignals(tt.output)
+			assert.Equal(t, tt.wantSignal, sig)
+			assert.Equal(t, tt.wantDetail, detail)
+		})
+	}
 }
 
 // ---- Rate limit: max waits exceeded ----

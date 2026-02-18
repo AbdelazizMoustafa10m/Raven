@@ -1274,6 +1274,321 @@ func TestClaudeAgent_Run_CommandNotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Run -- streaming integration tests
+// ---------------------------------------------------------------------------
+
+func TestClaudeAgent_Run_StreamingNotActivatedWithoutChannel(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	// Script emits JSONL-like output.
+	scriptPath := writeMockScript(t, dir, "claude-no-stream.sh", `
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}'
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	// OutputFormat set to stream-json but StreamEvents is nil -- non-streaming path.
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatStreamJSON,
+		// StreamEvents: nil (default)
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ExitCode)
+	// Stdout should contain the raw JSONL line.
+	assert.Contains(t, result.Stdout, "assistant")
+}
+
+func TestClaudeAgent_Run_StreamingNotActivatedWithoutStreamJSON(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	scriptPath := writeMockScript(t, dir, "claude-no-stream2.sh", `
+echo "plain text output"
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 16)
+	// StreamEvents is set but OutputFormat is NOT stream-json -- non-streaming path.
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatJSON, // wrong format
+		StreamEvents: ch,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ExitCode)
+	// No events should have been sent (non-streaming path).
+	assert.Empty(t, ch)
+	assert.Contains(t, result.Stdout, "plain text output")
+}
+
+func TestClaudeAgent_Run_StreamingForwardsEvents(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	// Script emits two JSONL events.
+	scriptPath := writeMockScript(t, dir, "claude-stream.sh", `
+printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"thinking"}]}}\n'
+printf '{"type":"result","subtype":"success","num_turns":1,"cost_usd":0.001}\n'
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 32)
+
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatStreamJSON,
+		StreamEvents: ch,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ExitCode)
+
+	// Collect events from the channel (it is not closed by the agent per spec).
+	var events []StreamEvent
+	drainCh:
+	for {
+		select {
+		case ev := <-ch:
+			events = append(events, ev)
+		default:
+			break drainCh
+		}
+	}
+	// Both events should have been forwarded.
+	require.Len(t, events, 2)
+	assert.Equal(t, StreamEventAssistant, events[0].Type)
+	assert.Equal(t, StreamEventResult, events[1].Type)
+
+	// Stdout in RunResult still has the full JSONL content.
+	assert.Contains(t, result.Stdout, "assistant")
+	assert.Contains(t, result.Stdout, "result")
+}
+
+func TestClaudeAgent_Run_StreamingCapturesStdoutInBuffer(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	// Verify that streaming mode still populates RunResult.Stdout.
+	scriptPath := writeMockScript(t, dir, "claude-stream-buf.sh", `
+printf '{"type":"system","subtype":"init","session_id":"s1"}\n'
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 8)
+
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatStreamJSON,
+		StreamEvents: ch,
+	})
+
+	require.NoError(t, err)
+	// Stdout must contain the JSONL line that was decoded.
+	assert.Contains(t, result.Stdout, "system")
+	assert.Contains(t, result.Stdout, "s1")
+}
+
+func TestClaudeAgent_Run_StreamingSlowConsumerDropsEvents(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	// Emit many events quickly.
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, `printf '{"type":"result","subtype":"success","num_turns":1}\n'`)
+	}
+	script := ""
+	for _, l := range lines {
+		script += l + "\n"
+	}
+	script += "exit 0\n"
+	scriptPath := writeMockScript(t, dir, "claude-stream-fast.sh", script)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	// Capacity 1: many sends will be dropped (non-blocking).
+	ch := make(chan StreamEvent, 1)
+
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatStreamJSON,
+		StreamEvents: ch,
+	})
+
+	// Must not block or panic.
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ExitCode)
+	// At least the buffer content was captured.
+	assert.Contains(t, result.Stdout, "result")
+}
+
+// ---------------------------------------------------------------------------
+// Run -- streaming: RunResult fields populated in streaming mode
+// ---------------------------------------------------------------------------
+
+func TestClaudeAgent_Run_StreamingRunResultFieldsPopulated(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	// Script emits a JSONL event to stdout, writes to stderr, and exits with code 3.
+	scriptPath := writeMockScript(t, dir, "claude-stream-fields.sh", `
+printf '{"type":"result","subtype":"success","num_turns":1,"cost_usd":0.001}\n'
+echo "stderr message" >&2
+exit 3
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 16)
+
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatStreamJSON,
+		StreamEvents: ch,
+	})
+
+	// Run must not return a Go error for a non-zero exit code.
+	require.NoError(t, err)
+	// ExitCode must be 3.
+	assert.Equal(t, 3, result.ExitCode)
+	assert.False(t, result.Success())
+	// Duration must be positive.
+	assert.Greater(t, result.Duration, time.Duration(0))
+	// Stderr must be captured.
+	assert.Contains(t, result.Stderr, "stderr message")
+	// Stdout still holds the full JSONL output.
+	assert.Contains(t, result.Stdout, "result")
+}
+
+func TestClaudeAgent_Run_StreamingEmptyOutputFormatNotActivated(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	dir := t.TempDir()
+	scriptPath := writeMockScript(t, dir, "claude-empty-fmt.sh", `
+echo "plain output"
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 16)
+
+	// StreamEvents is set but OutputFormat is empty string -- must NOT activate streaming.
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: "", // empty -- streaming must not activate
+		StreamEvents: ch,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ExitCode)
+	// No events should have been sent.
+	assert.Empty(t, ch)
+	assert.Contains(t, result.Stdout, "plain output")
+}
+
+func TestClaudeAgent_Run_StreamingGoroutineExitsCleanly(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	// Verify that Run returns (doesn't hang) after the subprocess exits,
+	// which means the streaming goroutine exits cleanly when the pipe closes.
+	dir := t.TempDir()
+	scriptPath := writeMockScript(t, dir, "claude-goroutine-exit.sh", `
+printf '{"type":"system","subtype":"init","session_id":"s1"}\n'
+printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}\n'
+printf '{"type":"result","subtype":"success","num_turns":1,"cost_usd":0.0}\n'
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 32)
+
+	// This must return promptly, not block waiting for the goroutine.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = a.Run(context.Background(), RunOpts{
+			OutputFormat: OutputFormatStreamJSON,
+			StreamEvents: ch,
+		})
+	}()
+
+	select {
+	case <-done:
+		// Good -- goroutine exited and Run returned promptly.
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return within 5 seconds: streaming goroutine may have leaked")
+	}
+
+	// All 3 events should have been forwarded.
+	var events []StreamEvent
+drainLoop:
+	for {
+		select {
+		case ev := <-ch:
+			events = append(events, ev)
+		default:
+			break drainLoop
+		}
+	}
+	assert.Len(t, events, 3, "all 3 events should be forwarded before Run returns")
+}
+
+func TestClaudeAgent_Run_StreamingStdoutFullyCapturedWithTeeReader(t *testing.T) {
+	t.Parallel()
+	skipOnWindows(t)
+
+	// This test verifies the io.TeeReader dual-path: streaming decodes events
+	// AND stdoutBuf captures the exact same bytes.
+	dir := t.TempDir()
+	scriptPath := writeMockScript(t, dir, "claude-tee-reader.sh", `
+printf '{"type":"system","subtype":"init","session_id":"tee-test"}\n'
+printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"thinking"}]}}\n'
+printf '{"type":"result","subtype":"success","num_turns":1,"cost_usd":0.005}\n'
+exit 0
+`)
+
+	a := newTestAgent(AgentConfig{Command: scriptPath})
+	ch := make(chan StreamEvent, 32)
+
+	result, err := a.Run(context.Background(), RunOpts{
+		OutputFormat: OutputFormatStreamJSON,
+		StreamEvents: ch,
+	})
+
+	require.NoError(t, err)
+
+	// Collect events from channel.
+	var events []StreamEvent
+drainTeeLoop:
+	for {
+		select {
+		case ev := <-ch:
+			events = append(events, ev)
+		default:
+			break drainTeeLoop
+		}
+	}
+
+	// Both paths must be satisfied simultaneously:
+	// 1. Events were decoded and forwarded.
+	require.Len(t, events, 3)
+	assert.Equal(t, StreamEventSystem, events[0].Type)
+	assert.Equal(t, StreamEventAssistant, events[1].Type)
+	assert.Equal(t, StreamEventResult, events[2].Type)
+
+	// 2. Full stdout was captured (TeeReader behavior).
+	assert.Contains(t, result.Stdout, "tee-test", "stdout must contain session_id from system event")
+	assert.Contains(t, result.Stdout, "thinking", "stdout must contain assistant text")
+	assert.Contains(t, result.Stdout, "result", "stdout must contain result event type")
+}
+
+// ---------------------------------------------------------------------------
 // Benchmark: ParseRateLimit hot path
 // ---------------------------------------------------------------------------
 

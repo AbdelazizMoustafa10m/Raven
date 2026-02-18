@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -47,6 +48,13 @@ const (
 	EventMaxIterations   LoopEventType = "max_iterations"
 	EventSleeping        LoopEventType = "sleeping"
 	EventDryRun          LoopEventType = "dry_run"
+
+	// Fine-grained stream observability events (emitted when Claude is
+	// invoked with stream-json output format).
+	EventToolStarted   LoopEventType = "tool_started"
+	EventToolCompleted LoopEventType = "tool_completed"
+	EventAgentThinking LoopEventType = "agent_thinking"
+	EventSessionStats  LoopEventType = "session_stats"
 )
 
 // LoopEvent represents a structured event emitted during loop execution.
@@ -59,6 +67,12 @@ type LoopEvent struct {
 	Timestamp time.Time
 	Duration  time.Duration
 	WaitTime  time.Duration
+
+	// Stream-level observability fields (populated for tool/thinking/stats events).
+	ToolName string  // Name of the tool called (EventToolStarted) or tool_use_id (EventToolCompleted).
+	CostUSD  float64 // Session cost in USD (EventSessionStats).
+	TokensIn int     // Input token count (EventSessionStats).
+	TokensOut int    // Output token count (EventSessionStats).
 }
 
 // CompletionSignal represents a signal detected in agent output.
@@ -613,14 +627,25 @@ func (r *Runner) generatePrompt(spec *task.ParsedTaskSpec, runCfg RunConfig) (st
 }
 
 // invokeAgent runs the agent with the generated prompt and returns the result.
-func (r *Runner) invokeAgent(ctx context.Context, prompt string, runCfg RunConfig) (*agent.RunResult, error) {
+// It always creates a streaming channel and launches consumeStreamEvents so
+// that fine-grained LoopEvents are emitted when the agent supports stream-json.
+// Agents that do not support streaming (e.g. CodexAgent) simply ignore
+// opts.StreamEvents, and the consumer goroutine exits cleanly when the channel
+// is closed after Run returns.
+func (r *Runner) invokeAgent(ctx context.Context, prompt string, runCfg RunConfig, iteration int, taskID string) (*agent.RunResult, error) {
 	agentCfg, _ := r.config.Agents[runCfg.AgentName]
+
+	// Buffered channel owned by the caller (this method). It is closed after
+	// Run returns so the consumer goroutine can drain and exit.
+	streamCh := make(chan agent.StreamEvent, 256)
 
 	opts := agent.RunOpts{
 		Prompt:       prompt,
 		Model:        agentCfg.Model,
 		Effort:       agentCfg.Effort,
 		AllowedTools: agentCfg.AllowedTools,
+		OutputFormat: agent.OutputFormatStreamJSON,
+		StreamEvents: streamCh,
 	}
 
 	r.logger.Debug("invoking agent",
@@ -629,11 +654,89 @@ func (r *Runner) invokeAgent(ctx context.Context, prompt string, runCfg RunConfi
 		"promptBytes", len(prompt),
 	)
 
+	// Launch consumer goroutine. It drains streamCh until it is closed.
+	consumerDone := make(chan struct{})
+	go func() {
+		defer close(consumerDone)
+		r.consumeStreamEvents(ctx, streamCh, iteration, taskID, runCfg.AgentName)
+	}()
+
 	result, err := r.agent.Run(ctx, opts)
+
+	// Close the channel now that Run has returned; the consumer will drain any
+	// remaining buffered events then exit.
+	close(streamCh)
+	<-consumerDone
+
 	if err != nil {
 		return nil, fmt.Errorf("invoking agent %s: %w", runCfg.AgentName, err)
 	}
 	return result, nil
+}
+
+// consumeStreamEvents reads StreamEvent values from streamCh and translates
+// them into fine-grained LoopEvents that are forwarded to the events channel.
+// It blocks until streamCh is closed or ctx is cancelled.
+func (r *Runner) consumeStreamEvents(ctx context.Context, streamCh <-chan agent.StreamEvent, iteration int, taskID string, agentName string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-streamCh:
+			if !ok {
+				return
+			}
+			switch event.Type {
+			case agent.StreamEventAssistant:
+				// Tool_use blocks → EventToolStarted.
+				for _, block := range event.ToolUseBlocks() {
+					r.emit(LoopEvent{
+						Type:      EventToolStarted,
+						Iteration: iteration,
+						TaskID:    taskID,
+						AgentName: agentName,
+						ToolName:  block.Name,
+						Message:   fmt.Sprintf("tool call: %s", block.Name),
+						Timestamp: time.Now(),
+					})
+				}
+				// Text content → EventAgentThinking.
+				if text := event.TextContent(); text != "" {
+					r.emit(LoopEvent{
+						Type:      EventAgentThinking,
+						Iteration: iteration,
+						TaskID:    taskID,
+						AgentName: agentName,
+						Message:   text,
+						Timestamp: time.Now(),
+					})
+				}
+			case agent.StreamEventUser:
+				// Tool_result blocks → EventToolCompleted.
+				for _, block := range event.ToolResultBlocks() {
+					r.emit(LoopEvent{
+						Type:      EventToolCompleted,
+						Iteration: iteration,
+						TaskID:    taskID,
+						AgentName: agentName,
+						ToolName:  block.ToolUseID,
+						Message:   fmt.Sprintf("tool result: %s", block.ToolUseID),
+						Timestamp: time.Now(),
+					})
+				}
+			case agent.StreamEventResult:
+				r.emit(LoopEvent{
+					Type:      EventSessionStats,
+					Iteration: iteration,
+					TaskID:    taskID,
+					AgentName: agentName,
+					CostUSD:   event.CostUSD,
+					Message:   fmt.Sprintf("session cost: $%.4f", event.CostUSD),
+					Timestamp: time.Now(),
+				})
+			}
+		}
+	}
 }
 
 // invokeAgentWithRetry invokes the agent, handling rate limits with the
@@ -656,7 +759,7 @@ func (r *Runner) invokeAgentWithRetry(
 		Timestamp: time.Now(),
 	})
 
-	result, err := r.invokeAgent(ctx, prompt, runCfg)
+	result, err := r.invokeAgent(ctx, prompt, runCfg, iteration, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -704,7 +807,7 @@ func (r *Runner) invokeAgentWithRetry(
 	})
 
 	// Retry the agent after waiting.
-	result, err = r.invokeAgent(ctx, prompt, runCfg)
+	result, err = r.invokeAgent(ctx, prompt, runCfg, iteration, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -712,10 +815,40 @@ func (r *Runner) invokeAgentWithRetry(
 	return result, nil
 }
 
-// detectSignals scans the output for completion signals. It is a thin wrapper
-// around the exported DetectSignals function.
+// detectSignals scans the output for completion signals. It first attempts a
+// plain-text scan (backward compatible), then falls back to scanning JSONL
+// text content for signals embedded in stream-json output.
 func (r *Runner) detectSignals(output string) (CompletionSignal, string) {
-	return DetectSignals(output)
+	if sig, detail := DetectSignals(output); sig != "" {
+		return sig, detail
+	}
+	return DetectSignalsFromJSONL(output)
+}
+
+// DetectSignalsFromJSONL scans JSONL output (stream-json format) for completion
+// signals embedded within assistant text content blocks. Each line is parsed as
+// a StreamEvent; text blocks within assistant messages are scanned for signals.
+// Returns an empty signal if none is found.
+//
+// This function is exported for use in tests.
+func DetectSignalsFromJSONL(output string) (CompletionSignal, string) {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || line[0] != '{' {
+			continue
+		}
+		var event agent.StreamEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if text := event.TextContent(); text != "" {
+			if sig, detail := DetectSignals(text); sig != "" {
+				return sig, detail
+			}
+		}
+	}
+	return "", ""
 }
 
 // handleCompletion processes a detected signal and updates task state

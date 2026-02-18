@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 44 |
+| Completed | 45 |
 | In Progress | 0 |
-| Not Started | 45 |
+| Not Started | 44 |
 
 ---
 
@@ -293,7 +293,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Not Started |
+| T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Completed |
 | T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Not Started |
 | T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Not Started |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Not Started |
@@ -337,17 +337,18 @@ _None currently_
 
 ---
 
-### Phase 8: Headless Observability (T-088)
+### Phase 8: Headless Observability (T-088, T-089)
 
 - **Status:** Completed
 - **Date:** 2026-02-18
-- **Tasks Completed:** 1 task
+- **Tasks Completed:** 2 tasks
 
 #### Features Implemented
 
 | Feature | Tasks | Description |
 | ------- | ----- | ----------- |
 | Stream-JSON event types & JSONL decoder | T-088 | `StreamEvent`, `StreamMessage`, `ContentBlock`, `StreamUsage` types mapping to Claude Code's `--output-format stream-json` JSONL schema; `StreamDecoder` with `Next()` iterator and `Decode()` channel producer; helper methods (`ToolUseBlocks()`, `TextContent()`, `ToolResultBlocks()`, `IsText()`, `IsToolUse()`, `IsToolResult()`, `InputString()`, `ContentString()`); `OutputFormatJSON` and `OutputFormatStreamJSON` constants; `StreamEvents` channel field in `RunOpts` for real-time event delivery |
+| Stream-JSON wiring into adapters & loop runner | T-089 | `ClaudeAgent.Run()` streams JSONL via `io.TeeReader` + `StreamDecoder` when `opts.StreamEvents != nil && opts.OutputFormat == "stream-json"`; `RunResult.Stdout` still captures full output for backward compat; non-blocking channel sends drop events for slow consumers; `CodexAgent.Run()` documented as ignoring `StreamEvents`; loop runner `invokeAgent()` always passes a streaming channel, launches `consumeStreamEvents` goroutine; 4 new `LoopEventType` constants (`tool_started`, `tool_completed`, `agent_thinking`, `session_stats`); 4 new `LoopEvent` fields (`ToolName`, `CostUSD`, `TokensIn`, `TokensOut`); `DetectSignalsFromJSONL` exported helper for signal detection in stream-json output; `detectSignals` method falls through to JSONL scan when plain-text scan finds no signal |
 
 #### Key Technical Decisions
 
@@ -355,6 +356,10 @@ _None currently_
 2. **`json.RawMessage` for `Input` and `Content` fields** -- Tool inputs and results have varying JSON shapes; `RawMessage` defers parsing to consumers
 3. **1MB scanner buffer** -- Claude Code tool results can exceed the default 64KB `bufio.Scanner` limit
 4. **Non-blocking `Decode()` with context cancellation** -- Prevents goroutine leaks when the TUI or automation script stops consuming events
+5. **`io.TeeReader` in ClaudeAgent.Run()** -- Allows the `StreamDecoder` to read from the pipe while simultaneously writing all bytes to `stdoutBuf` for backward-compatible `RunResult.Stdout`
+6. **Guard condition: both `StreamEvents != nil` AND `OutputFormat == "stream-json"`** -- Avoids accidentally activating JSONL parsing on plain-text or JSON-format output
+7. **Channel owned by `invokeAgent`, closed after `Run()` returns** -- Per spec, the agent adapter never closes the channel; `invokeAgent` closes it and awaits `consumerDone` to drain remaining buffered events before returning
+8. **`DetectSignalsFromJSONL` as two-pass fallback** -- `detectSignals` first tries plain-text scan (backward compat), then falls back to JSONL scan; signals embedded in assistant text blocks are found in either mode
 
 #### Key Files Reference
 
@@ -363,16 +368,20 @@ _None currently_
 | Stream event types & decoder | `internal/agent/stream.go` |
 | Stream decoder tests (35 tests) | `internal/agent/stream_test.go` |
 | Agent types with streaming support | `internal/agent/types.go` |
+| ClaudeAgent with streaming integration | `internal/agent/claude.go` |
+| CodexAgent (StreamEvents doc comment) | `internal/agent/codex.go` |
+| Loop runner with consumeStreamEvents | `internal/loop/runner.go` |
 | Full session JSONL fixture | `testdata/stream-json/session-full.jsonl` |
 | Error session fixture | `testdata/stream-json/session-error.jsonl` |
 | Malformed/mixed fixture | `testdata/stream-json/malformed-mixed.jsonl` |
-| Task specification | `docs/tasks/T-088-headless-observability.md` |
+| Task specification (T-088) | `docs/tasks/T-088-headless-observability.md` |
 
 #### Verification
 
 - `go build ./cmd/raven/` pass
 - `go vet ./...` pass
-- `go test ./internal/agent/` pass (35 tests, 0 failures)
+- `go test ./internal/agent/` pass
+- `go test ./internal/loop/` pass
 
 ---
 

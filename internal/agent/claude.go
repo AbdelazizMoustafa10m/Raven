@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -84,6 +85,12 @@ func (c *ClaudeAgent) CheckPrerequisites() error {
 // output, exit code, and duration. The ctx parameter is used for cancellation
 // and timeout propagation.
 //
+// If opts.StreamEvents is non-nil AND opts.OutputFormat is
+// OutputFormatStreamJSON, streaming is enabled: stdout is decoded as JSONL in
+// real-time and typed StreamEvent values are forwarded to opts.StreamEvents
+// using non-blocking sends (slow consumers drop events). The full stdout is
+// still captured in RunResult.Stdout for backward compatibility.
+//
 // If the output contains a rate-limit signal, the returned RunResult will have
 // its RateLimit field populated.
 func (c *ClaudeAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error) {
@@ -114,10 +121,33 @@ func (c *ClaudeAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error)
 		wg        sync.WaitGroup
 	)
 
+	// Determine whether streaming mode is active. Both conditions must hold:
+	// the caller must supply a channel AND request stream-json output format.
+	streaming := opts.StreamEvents != nil && opts.OutputFormat == OutputFormatStreamJSON
+
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = stdoutBuf.ReadFrom(stdoutPipe)
+		if streaming {
+			// Use TeeReader so stdoutBuf captures everything while the decoder
+			// reads from the same byte stream. The goroutine owns the pipe read.
+			teeReader := io.TeeReader(stdoutPipe, &stdoutBuf)
+			decoder := NewStreamDecoder(teeReader)
+			for {
+				event, err := decoder.Next()
+				if err != nil {
+					// io.EOF or decode error -- stop reading.
+					break
+				}
+				// Non-blocking send: drop the event when the consumer is slow.
+				select {
+				case opts.StreamEvents <- *event:
+				default:
+				}
+			}
+		} else {
+			_, _ = stdoutBuf.ReadFrom(stdoutPipe)
+		}
 	}()
 	go func() {
 		defer wg.Done()

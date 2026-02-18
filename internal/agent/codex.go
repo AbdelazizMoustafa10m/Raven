@@ -89,6 +89,9 @@ func (c *CodexAgent) CheckPrerequisites() error {
 //
 // If the output contains a rate-limit signal, the returned RunResult will have
 // its RateLimit field populated.
+//
+// Note: RunOpts.StreamEvents is intentionally ignored by CodexAgent; the Codex CLI
+// does not support stream-json output format.
 func (c *CodexAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error) {
 	start := time.Now()
 
