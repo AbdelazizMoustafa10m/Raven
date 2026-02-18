@@ -1,6 +1,6 @@
 # Raven Task Index
 
-> **Total Tasks:** 87 across 7 phases | **Must Have:** 78 | **Should Have:** 9
+> **Total Tasks:** 88 across 8 phases | **Must Have:** 79 | **Should Have:** 9
 >
 > **Estimated Total Effort:** ~574-897 hours (~14 weeks at full pace)
 
@@ -170,14 +170,24 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 
 ---
 
+## Phase 8: Headless Observability (T-088)
+
+> Stream-JSON event parsing for real-time agent observability in headless/automation mode
+
+| Task | Name | Priority | Effort | Dependencies |
+|------|------|----------|--------|--------------|
+| [T-088](T-088-headless-observability.md) | Headless Observability -- Stream-JSON Event Parsing | Must Have | Medium (8-12hrs) | T-004, T-021 |
+
+---
+
 ## Effort Summary
 
 | Effort Level | Count | Hours Range |
 |-------------|-------|-------------|
 | Small (1-6hrs) | 15 | 30-64 hrs |
-| Medium (4-12hrs) | 58 | 358-570 hrs |
+| Medium (4-12hrs) | 59 | 366-582 hrs |
 | Large (14-30hrs) | 14 | 186-262 hrs |
-| **Total** | **87** | **~574-897 hrs** |
+| **Total** | **88** | **~582-908 hrs** |
 
 ---
 
@@ -185,7 +195,7 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 
 | Priority | Count |
 |----------|-------|
-| Must Have | 78 |
+| Must Have | 79 |
 | Should Have | 9 |
 
 ---
@@ -195,7 +205,7 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 | PRD Section | Tasks |
 |-------------|-------|
 | 5.1 Generic Workflow Engine | T-043, T-044, T-045, T-046, T-047, T-048, T-049 |
-| 5.2 Agent Adapter System | T-021, T-022, T-023, T-024, T-025 |
+| 5.2 Agent Adapter System | T-021, T-022, T-023, T-024, T-025, T-088 |
 | 5.3 Task Management System | T-016, T-017, T-018, T-019, T-020, T-030 |
 | 5.4 Implementation Loop Engine | T-026, T-027, T-028, T-029 |
 | 5.5 Multi-Agent Review Pipeline | T-031, T-032, T-033, T-034, T-035, T-036, T-041 |

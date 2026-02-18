@@ -4,7 +4,7 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 15 |
+| Completed | 16 |
 | In Progress | 0 |
 | Not Started | 72 |
 
@@ -256,6 +256,45 @@ _None currently_
 | T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Not Started |
 
 **Deliverable:** Published v2.0.0 with signed binaries for all platforms.
+
+---
+
+### Phase 8: Headless Observability (T-088)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 1 task
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Stream-JSON event types & JSONL decoder | T-088 | `StreamEvent`, `StreamMessage`, `ContentBlock`, `StreamUsage` types mapping to Claude Code's `--output-format stream-json` JSONL schema; `StreamDecoder` with `Next()` iterator and `Decode()` channel producer; helper methods (`ToolUseBlocks()`, `TextContent()`, `ToolResultBlocks()`, `IsText()`, `IsToolUse()`, `IsToolResult()`, `InputString()`, `ContentString()`); `OutputFormatJSON` and `OutputFormatStreamJSON` constants; `StreamEvents` channel field in `RunOpts` for real-time event delivery |
+
+#### Key Technical Decisions
+
+1. **`--output-format stream-json` over `--output-format json`** -- Real-time JSONL streaming gives per-tool-call observability without direct API access, staying within the v2.0 "shell out to CLI" architecture
+2. **`json.RawMessage` for `Input` and `Content` fields** -- Tool inputs and results have varying JSON shapes; `RawMessage` defers parsing to consumers
+3. **1MB scanner buffer** -- Claude Code tool results can exceed the default 64KB `bufio.Scanner` limit
+4. **Non-blocking `Decode()` with context cancellation** -- Prevents goroutine leaks when the TUI or automation script stops consuming events
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Stream event types & decoder | `internal/agent/stream.go` |
+| Stream decoder tests (35 tests) | `internal/agent/stream_test.go` |
+| Agent types with streaming support | `internal/agent/types.go` |
+| Full session JSONL fixture | `testdata/stream-json/session-full.jsonl` |
+| Error session fixture | `testdata/stream-json/session-error.jsonl` |
+| Malformed/mixed fixture | `testdata/stream-json/malformed-mixed.jsonl` |
+| Task specification | `docs/tasks/T-088-headless-observability.md` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./internal/agent/` pass (35 tests, 0 failures)
 
 ---
 
