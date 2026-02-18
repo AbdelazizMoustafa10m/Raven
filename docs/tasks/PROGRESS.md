@@ -37,21 +37,6 @@
 | Embedded project templates | T-013 | `//go:embed all:templates`, `TemplateVars`, `ListTemplates()`, `TemplateExists()`, `RenderTemplate()` with `text/template` processing |
 | Init command | T-014 | `raven init [template]` with `--name`/`--force` flags, path-traversal guard, PersistentPreRunE override skipping config load |
 | Git client wrapper | T-015 | `GitClient` wrapping all git CLI ops, branch/status/stash/diff/log/push methods, `EnsureClean()` auto-stash recovery |
-| Task spec markdown parser | T-016 | `ParseTaskSpec`, `ParseTaskFile`, `DiscoverTasks`, `ParsedTaskSpec.ToTask()`, pre-compiled regexes, 1 MiB size guard, CRLF/BOM normalisation |
-| Task state management | T-017 | `StateManager` with `Load`, `LoadMap`, `Get`, `Update`, `UpdateStatus`, `Initialize`, `StatusCounts`, `TasksWithStatus`; pipe-delimited `task-state.conf`; atomic write + mutex for concurrent safety; `ValidStatuses()` and `IsValid()` on `TaskStatus` |
-| Phase configuration parser | T-018 | `LoadPhases`, `ParsePhaseLine` (4-field and 6-field format auto-detection), `PhaseForTask`, `PhaseByID`, `TaskIDNumber`, `TasksInPhase`, `FormatPhaseLine`, `ValidatePhases`; reads `phases.conf`; sorts phases by ID; validates non-overlapping ranges |
-| Dependency resolution & next-task selection | T-019 | `TaskSelector` with `NewTaskSelector`, `SelectNext`, `SelectNextInRange`, `SelectByID`, `GetPhaseProgress`, `GetAllProgress`, `IsPhaseComplete`, `BlockedTasks`, `CompletedTaskIDs`, `RemainingTaskIDs`; `PhaseProgress` aggregate struct; O(1) spec lookup via specMap; read-only (never mutates state) |
-| Status command with progress bars | T-020 | `raven status` CLI command with `--phase`, `--json`, `--verbose` flags; `renderPhaseProgress` (bubbles/progress.ViewAs static bar), `renderSummary`, `renderTaskDetails`; `buildUngroupedProgress` for no-phases mode; graceful handling of missing phases.conf; JSON output via `statusOutput`/`statusPhaseOutput` structs |
-| Agent interface & registry | T-021 | `Agent` interface (5 methods: Name, Run, CheckPrerequisites, ParseRateLimit, DryRunCommand); `Registry` type with Register, Get, MustGet, List, Has; `AgentConfig` struct for raven.toml `[agents.*]` sections; `MockAgent` with builder methods (WithRunFunc, WithRateLimit, WithPrereqError); sentinel errors (ErrNotFound, ErrDuplicateName, ErrInvalidName); agent name validation via regex; compile-time interface check |
-| Claude agent adapter | T-022 | `ClaudeAgent` struct implementing `Agent`; `NewClaudeAgent(config, logger)`; `buildCommand` and `buildArgs` helpers; `--permission-mode accept --print` flags; model/allowedTools/outputFormat flag injection with RunOpts-over-config precedence; `CLAUDE_CODE_EFFORT_LEVEL` env var; large-prompt temp-file spill; `ParseRateLimit` with `reClaudeRateLimit`/`reClaudeResetTime`/`reClaudeTryAgain` regexes; `parseResetDuration` unit parser; `DryRunCommand` with prompt truncation; injected `claudeLogger` interface; compile-time `var _ Agent = (*ClaudeAgent)(nil)` |
-| Codex agent adapter | T-023 | `CodexAgent` struct implementing `Agent`; `NewCodexAgent(config, logger)`; `buildCommand` with `codex exec --sandbox --ephemeral -a never` flags; model flag with RunOpts-over-config precedence; prompt via `--prompt` or `--prompt-file`; three-tier `ParseRateLimit`: short decimal-seconds (`5.448s`), long format (`1 days 2 hours`), fallback keyword; `parseCodexDuration` helper; `DryRunCommand` with Unicode-safe prompt truncation; `codexLogger` interface; compile-time `var _ Agent = (*CodexAgent)(nil)` |
-| Gemini agent stub | T-024 | `GeminiAgent` stub struct implementing `Agent`; `NewGeminiAgent(config AgentConfig)`; `Run` and `CheckPrerequisites` return `ErrNotImplemented`; `ParseRateLimit` always returns nil/false; `DryRunCommand` returns placeholder comment; `ErrNotImplemented` sentinel error; compile-time `var _ Agent = (*GeminiAgent)(nil)`; no os/exec imports (pure stub) |
-| Rate-limit detection & coordination | T-025 | `RateLimitCoordinator` with `sync.RWMutex` for thread safety; `ProviderState` per-provider tracking (IsLimited, ResetAt, WaitCount, LastMessage, UpdatedAt); `BackoffConfig` (DefaultWait, MaxWaits, JitterFactor); `DefaultBackoffConfig()` (60s/5/0.1); provider constants (ProviderAnthropic/OpenAI/Google); `AgentProvider` map (claude->anthropic, codex->openai, gemini->google); `providerForAgent` fallback to agent name; `RecordRateLimit` (creates/updates state, increments WaitCount, extends ResetAt to max, captures callback before unlock); `ClearRateLimit` (sets IsLimited=false, preserves WaitCount); `ShouldWait` (read lock, returns copy if limited and reset is future); `WaitForReset` (checks ShouldWait, ExceededMaxWaits, timer+ctx.Done select); `ExceededMaxWaits` (MaxWaits=0 always true, WaitCount>=MaxWaits); `GetState`/`AllStates` (sorted snapshot); `computeWaitDuration` with jitter; `ErrMaxWaitsExceeded` sentinel; callback captured under lock (race-free) |
-| Prompt template system | T-026 | `PromptContext` struct (task, phase, project, verification, progress, agent fields); `PromptGenerator` with custom `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts in task spec content); `NewPromptGenerator(templateDir)` with directory validation; `LoadTemplate(name)` with directory-traversal guard and LRU caching; `Generate(templateName, ctx)` (empty name falls back to built-in default); `GenerateFromString(tmplStr, ctx)` for inline templates; `BuildContext(spec, phase, cfg, selector, agentName)` populating all fields from live state; `DefaultImplementTemplate` const; `formatIDSummary` helper ("None" for empty, ", "-joined otherwise); `VerificationString` = `strings.Join(cmds, " && ")`; model lookup from `cfg.Agents[agentName].Model`; debug logging of rendered output |
-| Implementation loop runner | T-027 | `Runner` struct orchestrating the full implement loop; `RunConfig` (AgentName, PhaseID, TaskID, MaxIterations/50, MaxLimitWaits/5, SleepBetween/5s, DryRun, TemplateName); `NewRunner(selector, promptGen, agent, stateManager, rateLimiter, cfg, phases, events, logger)`; `Run(ctx, runCfg)` -- phase mode: select->prompt->invoke->detect->update->sleep->repeat until phase complete, max-iters, or ctx cancelled; `RunSingleTask(ctx, runCfg)` -- single-task mode via `--task T-007`; `DetectSignals(output)` exported scanner for PHASE_COMPLETE/TASK_BLOCKED/RAVEN_ERROR signals; internal helpers: `selectTask`, `generatePrompt`, `invokeAgent`, `invokeAgentWithRetry` (rate-limit wait+retry), `handleCompletion` (marks task completed/blocked based on signal), `handleDryRun` (print prompt+cmd to stderr, revert task, emit dry_run event), `emit` (non-blocking channel send with `select { default: }`); `applyDefaults` fills zero-value RunConfig fields; `sleepWithContext` with `time.NewTimer`+`select` for cancellable sleep; stale-task detection (3 consecutive same-task selections emits EventLoopError warning); `LoopEvent` struct with Type/Iteration/TaskID/AgentName/Message/Timestamp/Duration/WaitTime; 16 `LoopEventType` constants; `CompletionSignal` type with 3 signal constants |
-| Loop recovery | T-028 | `RateLimitWaiter` with `Wait(ctx, agentName)` checking `coordinator.ShouldWait` before blocking; `displayCountdown(ctx, duration)` using `time.NewTicker(1s)` with `\r` carriage-return in-place updates ("Rate limited. Retrying in %ds...  "); nil output writer falls back to `sleepWithContext`; `DirtyTreeRecovery` with `CheckAndStash(ctx, taskID)` detecting dirty tree via `gitClient.HasUncommittedChanges`, stashing with `"raven-autostash: "+taskID` message, and returning `(stashed bool, err error)`; `RestoreStash(ctx)` calling `gitClient.StashPop`; `EnsureCleanTree(ctx, taskID)` combining check+stash into one call; `AgentErrorRecovery` tracking consecutive errors against configurable max threshold with `RecordError(err) bool` (returns false at limit), `RecordSuccess()` resetting counter, `ShouldAbort() bool`; `RecoveryEventType` string type with 7 constants (EventRateLimitCountdown, EventRateLimitResuming, EventDirtyTreeDetected, EventStashCreated, EventStashRestored, EventStashFailed, EventRecoveryError); `RecoveryEvent` struct (Type, Message, Remaining, Timestamp); `emitRecovery(ch, event)` non-blocking helper; all structs nil-guard their optional logger and events channel |
-| Implementation CLI command | T-029 | `raven implement` CLI command wiring all Phase 2 components; `implementFlags` struct (Agent required, PhaseStr/Task mutually exclusive, MaxIterations/50, MaxLimitWaits/5, Sleep/5s, DryRun, Model); `newImplementCmd()` with 8 flags, `--agent` marked required, shell completion for `--agent` returning claude/codex/gemini; `runImplement()` 16-step composition root: validate flags -> load config -> discover tasks -> create StateManager -> load phases (graceful missing file) -> verify phase exists -> build selector -> build agent registry -> lookup agent -> CheckPrerequisites -> create PromptGenerator -> create RateLimitCoordinator with MaxLimitWaits override -> create Runner -> build RunConfig with global --dry-run merge -> signal.NotifyContext for SIGINT/SIGTERM -> dispatch to RunSingleTask/runAllPhases/Run; `validateImplementFlags()` parsing "all"/numeric phase strings, treating 0 as all-phases sentinel, rejecting negatives; `buildAgentRegistry()` converting config.AgentConfig to agent.AgentConfig via toAgentCfg closure, applying --model override to selected agent only, defaulting Command to "claude"/"codex" when empty; `runAllPhases()` iterating phases in order with ctx cancellation check between phases; graceful --phase 0 / --phase all validation requiring non-empty phases slice; context.Canceled mapped to informational stderr message; init() registers command on rootCmd |
-| Progress file generation | T-030 | `ProgressGenerator` struct with `NewProgressGenerator(specs, state, phases)` constructor (returns error for template parse failure); `Generate(projectName) (string, error)` renders to string; `WriteTo(w io.Writer, projectName) error` renders to any io.Writer; `WriteFile(path, projectName) error` atomic write (write to `path+".tmp"` then `os.Rename`); `ProgressData`/`PhaseProgressData`/`TaskProgressData` structs for template rendering; embedded `progressTemplate` const with overall summary, per-phase progress bars, and per-task markdown tables; `textProgressBar(percent, width int) string` using `strings.Repeat("█", filled) + strings.Repeat("░", empty)`; `escapePipeChars(s string) string` for safe markdown table rendering; phases sorted by ID, tasks ordered by ID within phases; blank Agent/Timestamp for blocked/not_started tasks; parent directory auto-created with `os.MkdirAll` before WriteFile |
 
 #### Key Technical Decisions
 
@@ -88,6 +73,53 @@
 | Init command | `internal/cli/init_cmd.go` |
 | Git client wrapper | `internal/git/client.go` |
 | Git auto-stash recovery | `internal/git/recovery.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
+
+---
+
+### Phase 2: Task System & Agent Adapters (T-016 to T-030)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 15 tasks
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Task spec markdown parser | T-016 | `ParseTaskSpec`, `ParseTaskFile`, `DiscoverTasks`, `ParsedTaskSpec.ToTask()`, pre-compiled regexes, 1 MiB size guard, CRLF/BOM normalisation |
+| Task state management | T-017 | `StateManager` with `Load`, `LoadMap`, `Get`, `Update`, `UpdateStatus`, `Initialize`, `StatusCounts`, `TasksWithStatus`; pipe-delimited `task-state.conf`; atomic write + mutex for concurrent safety; `ValidStatuses()` and `IsValid()` on `TaskStatus` |
+| Phase configuration parser | T-018 | `LoadPhases`, `ParsePhaseLine` (4-field and 6-field format auto-detection), `PhaseForTask`, `PhaseByID`, `TaskIDNumber`, `TasksInPhase`, `FormatPhaseLine`, `ValidatePhases`; reads `phases.conf`; sorts phases by ID; validates non-overlapping ranges |
+| Dependency resolution & next-task selection | T-019 | `TaskSelector` with `NewTaskSelector`, `SelectNext`, `SelectNextInRange`, `SelectByID`, `GetPhaseProgress`, `GetAllProgress`, `IsPhaseComplete`, `BlockedTasks`, `CompletedTaskIDs`, `RemainingTaskIDs`; `PhaseProgress` aggregate struct; O(1) spec lookup via specMap; read-only (never mutates state) |
+| Status command with progress bars | T-020 | `raven status` CLI command with `--phase`, `--json`, `--verbose` flags; `renderPhaseProgress` (bubbles/progress.ViewAs static bar), `renderSummary`, `renderTaskDetails`; `buildUngroupedProgress` for no-phases mode; graceful handling of missing phases.conf; JSON output via `statusOutput`/`statusPhaseOutput` structs |
+| Agent interface & registry | T-021 | `Agent` interface (5 methods: Name, Run, CheckPrerequisites, ParseRateLimit, DryRunCommand); `Registry` type with Register, Get, MustGet, List, Has; `AgentConfig` struct for raven.toml `[agents.*]` sections; `MockAgent` with builder methods (WithRunFunc, WithRateLimit, WithPrereqError); sentinel errors (ErrNotFound, ErrDuplicateName, ErrInvalidName); agent name validation via regex; compile-time interface check |
+| Claude agent adapter | T-022 | `ClaudeAgent` struct implementing `Agent`; `NewClaudeAgent(config, logger)`; `buildCommand` and `buildArgs` helpers; `--permission-mode accept --print` flags; model/allowedTools/outputFormat flag injection with RunOpts-over-config precedence; `CLAUDE_CODE_EFFORT_LEVEL` env var; large-prompt temp-file spill; `ParseRateLimit` with `reClaudeRateLimit`/`reClaudeResetTime`/`reClaudeTryAgain` regexes; `parseResetDuration` unit parser; `DryRunCommand` with prompt truncation; injected `claudeLogger` interface; compile-time `var _ Agent = (*ClaudeAgent)(nil)` |
+| Codex agent adapter | T-023 | `CodexAgent` struct implementing `Agent`; `NewCodexAgent(config, logger)`; `buildCommand` with `codex exec --sandbox --ephemeral -a never` flags; model flag with RunOpts-over-config precedence; prompt via `--prompt` or `--prompt-file`; three-tier `ParseRateLimit`: short decimal-seconds (`5.448s`), long format (`1 days 2 hours`), fallback keyword; `parseCodexDuration` helper; `DryRunCommand` with Unicode-safe prompt truncation; `codexLogger` interface; compile-time `var _ Agent = (*CodexAgent)(nil)` |
+| Gemini agent stub | T-024 | `GeminiAgent` stub struct implementing `Agent`; `NewGeminiAgent(config AgentConfig)`; `Run` and `CheckPrerequisites` return `ErrNotImplemented`; `ParseRateLimit` always returns nil/false; `DryRunCommand` returns placeholder comment; `ErrNotImplemented` sentinel error; compile-time `var _ Agent = (*GeminiAgent)(nil)`; no os/exec imports (pure stub) |
+| Rate-limit detection & coordination | T-025 | `RateLimitCoordinator` with `sync.RWMutex` for thread safety; `ProviderState` per-provider tracking (IsLimited, ResetAt, WaitCount, LastMessage, UpdatedAt); `BackoffConfig` (DefaultWait, MaxWaits, JitterFactor); `DefaultBackoffConfig()` (60s/5/0.1); provider constants (ProviderAnthropic/OpenAI/Google); `AgentProvider` map; `RecordRateLimit`, `ClearRateLimit`, `ShouldWait`, `WaitForReset`, `ExceededMaxWaits`; `computeWaitDuration` with jitter; `ErrMaxWaitsExceeded` sentinel; callback captured under lock (race-free) |
+| Prompt template system | T-026 | `PromptContext` struct (task, phase, project, verification, progress, agent fields); `PromptGenerator` with custom `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts in task spec content); `NewPromptGenerator(templateDir)` with directory validation; `LoadTemplate(name)` with directory-traversal guard and LRU caching; `Generate`, `GenerateFromString`; `BuildContext(spec, phase, cfg, selector, agentName)` populating all fields from live state; `DefaultImplementTemplate` const |
+| Implementation loop runner | T-027 | `Runner` struct orchestrating the full implement loop; `RunConfig` (AgentName, PhaseID, TaskID, MaxIterations/50, MaxLimitWaits/5, SleepBetween/5s, DryRun, TemplateName); `Run(ctx, runCfg)` phase mode and `RunSingleTask(ctx, runCfg)` single-task mode; `DetectSignals(output)` exported scanner for PHASE_COMPLETE/TASK_BLOCKED/RAVEN_ERROR; stale-task detection; 16 `LoopEventType` constants; non-blocking event channel sends |
+| Loop recovery | T-028 | `RateLimitWaiter` with countdown display (`\r` in-place updates); `DirtyTreeRecovery` with `CheckAndStash`/`RestoreStash`/`EnsureCleanTree`; `AgentErrorRecovery` tracking consecutive errors with configurable max threshold; 7 `RecoveryEventType` constants; all structs nil-guard optional logger and events channel |
+| Implementation CLI command | T-029 | `raven implement` CLI command; `implementFlags` struct (Agent required, PhaseStr/Task mutually exclusive); `runImplement()` 16-step composition root wiring all Phase 2 components; `validateImplementFlags()`, `buildAgentRegistry()`, `runAllPhases()`; SIGINT/SIGTERM graceful shutdown via `signal.NotifyContext`; `init()` registers on rootCmd |
+| Progress file generation | T-030 | `ProgressGenerator` struct with `Generate`, `WriteTo`, `WriteFile` (atomic write via tmp+rename); `ProgressData`/`PhaseProgressData`/`TaskProgressData` structs; embedded `progressTemplate`; `textProgressBar` using `strings.Repeat("█"/"░")`; `escapePipeChars` for markdown tables; phases sorted by ID, tasks ordered by ID within phases |
+
+#### Key Technical Decisions
+
+1. **`MockAgent` builder pattern** -- `WithRunFunc`/`WithRateLimit`/`WithPrereqError` enable precise test scenarios without a real agent process
+2. **Custom `[[`/`]]` template delimiters** -- Avoids conflicts with `{{`/`}}` appearing in task spec Markdown content passed as template data
+3. **Per-provider rate-limit tracking** -- Maps multiple agents sharing the same API key (claude→anthropic, codex→openai) so one rate limit blocks all agents on that provider
+4. **`DetectSignals` as exported function** -- Keeps signal parsing testable independently of the loop runner's internal state
+5. **Atomic `WriteFile` (tmp → rename)** -- Prevents partial progress files if the process is killed mid-write
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
 | Task spec markdown parser | `internal/task/parser.go` |
 | Task spec test fixtures | `internal/task/testdata/task-specs/` |
 | Task state manager | `internal/task/state.go` |
@@ -96,14 +128,16 @@
 | Phase config test fixtures | `internal/task/testdata/phases/` |
 | Dependency resolver & task selector | `internal/task/selector.go` |
 | Status command | `internal/cli/status.go` |
-| Implement command | `internal/cli/implement.go` |
 | Agent interface & registry | `internal/agent/agent.go` |
 | Mock agent for testing | `internal/agent/mock.go` |
 | Claude agent adapter | `internal/agent/claude.go` |
+| Codex agent adapter | `internal/agent/codex.go` |
 | Gemini agent stub | `internal/agent/gemini.go` |
 | Rate-limit coordinator | `internal/agent/ratelimit.go` |
+| Prompt template system | `internal/loop/prompt.go` |
 | Implementation loop runner | `internal/loop/runner.go` |
 | Loop recovery (rate-limit, dirty-tree) | `internal/loop/recovery.go` |
+| Implementation CLI command | `internal/cli/implement.go` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -111,6 +145,8 @@
 - `go build ./cmd/raven/` pass
 - `go vet ./...` pass
 - `go test ./...` pass
+- `go test -race ./...` pass
+- `go mod tidy` produces no diff
 
 ---
 
@@ -121,37 +157,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 2: Task System & Agent Adapters (T-016 to T-030)
-
-- **Status:** In Progress
-- **Tasks:** 15 (14 Must Have, 1 Should Have)
-- **Estimated Effort:** 110-175 hours
-- **PRD Roadmap:** Weeks 3-4
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-016 | Task Spec Markdown Parser | Must Have | Medium (6-10hrs) | Completed |
-| T-017 | Task State Management (task-state.conf) | Must Have | Medium (8-12hrs) | Completed |
-| T-018 | Phase Configuration Parser (phases.conf) | Must Have | Small (3-5hrs) | Completed |
-| T-019 | Dependency Resolution & Next-Task Selection | Must Have | Medium (8-12hrs) | Completed |
-| T-020 | Status Command -- raven status | Must Have | Medium (6-10hrs) | Completed |
-| T-021 | Agent Interface & Registry | Must Have | Medium (6-10hrs) | Completed |
-| T-022 | Claude Agent Adapter | Must Have | Medium (8-12hrs) | Completed |
-| T-023 | Codex Agent Adapter | Must Have | Medium (6-10hrs) | Completed |
-| T-024 | Gemini Agent Stub | Should Have | Small (2-3hrs) | Completed |
-| T-025 | Rate-Limit Detection & Coordination | Must Have | Medium (8-12hrs) | Completed |
-| T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Completed |
-| T-027 | Implementation Loop Runner | Must Have | Large (16-24hrs) | Completed |
-| T-028 | Loop Recovery (Rate-Limit Wait, Dirty-Tree) | Must Have | Medium (8-12hrs) | Completed |
-| T-029 | Implementation CLI Command -- raven implement | Must Have | Medium (8-12hrs) | Completed |
-| T-030 | Progress File Generation -- PROGRESS.md | Must Have | Small (4-6hrs) | Completed |
-
-**Deliverable:** `raven implement --agent claude --phase 1` runs the full implementation loop for a phase.
-
----
 
 ### Phase 3: Review Pipeline (T-031 to T-042)
 
@@ -302,4 +307,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-030 completed)
+_Last updated: 2026-02-18_ (Phase 2 complete)
