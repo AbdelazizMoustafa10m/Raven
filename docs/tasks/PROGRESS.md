@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 23 |
+| Completed | 24 |
 | In Progress | 0 |
-| Not Started | 64 |
+| Not Started | 63 |
 
 ---
 
@@ -45,6 +45,7 @@
 | Agent interface & registry | T-021 | `Agent` interface (5 methods: Name, Run, CheckPrerequisites, ParseRateLimit, DryRunCommand); `Registry` type with Register, Get, MustGet, List, Has; `AgentConfig` struct for raven.toml `[agents.*]` sections; `MockAgent` with builder methods (WithRunFunc, WithRateLimit, WithPrereqError); sentinel errors (ErrNotFound, ErrDuplicateName, ErrInvalidName); agent name validation via regex; compile-time interface check |
 | Claude agent adapter | T-022 | `ClaudeAgent` struct implementing `Agent`; `NewClaudeAgent(config, logger)`; `buildCommand` and `buildArgs` helpers; `--permission-mode accept --print` flags; model/allowedTools/outputFormat flag injection with RunOpts-over-config precedence; `CLAUDE_CODE_EFFORT_LEVEL` env var; large-prompt temp-file spill; `ParseRateLimit` with `reClaudeRateLimit`/`reClaudeResetTime`/`reClaudeTryAgain` regexes; `parseResetDuration` unit parser; `DryRunCommand` with prompt truncation; injected `claudeLogger` interface; compile-time `var _ Agent = (*ClaudeAgent)(nil)` |
 | Codex agent adapter | T-023 | `CodexAgent` struct implementing `Agent`; `NewCodexAgent(config, logger)`; `buildCommand` with `codex exec --sandbox --ephemeral -a never` flags; model flag with RunOpts-over-config precedence; prompt via `--prompt` or `--prompt-file`; three-tier `ParseRateLimit`: short decimal-seconds (`5.448s`), long format (`1 days 2 hours`), fallback keyword; `parseCodexDuration` helper; `DryRunCommand` with Unicode-safe prompt truncation; `codexLogger` interface; compile-time `var _ Agent = (*CodexAgent)(nil)` |
+| Gemini agent stub | T-024 | `GeminiAgent` stub struct implementing `Agent`; `NewGeminiAgent(config AgentConfig)`; `Run` and `CheckPrerequisites` return `ErrNotImplemented`; `ParseRateLimit` always returns nil/false; `DryRunCommand` returns placeholder comment; `ErrNotImplemented` sentinel error; compile-time `var _ Agent = (*GeminiAgent)(nil)`; no os/exec imports (pure stub) |
 
 #### Key Technical Decisions
 
@@ -92,6 +93,7 @@
 | Agent interface & registry | `internal/agent/agent.go` |
 | Mock agent for testing | `internal/agent/mock.go` |
 | Claude agent adapter | `internal/agent/claude.go` |
+| Gemini agent stub | `internal/agent/gemini.go` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -129,7 +131,7 @@ _None currently_
 | T-021 | Agent Interface & Registry | Must Have | Medium (6-10hrs) | Completed |
 | T-022 | Claude Agent Adapter | Must Have | Medium (8-12hrs) | Completed |
 | T-023 | Codex Agent Adapter | Must Have | Medium (6-10hrs) | Completed |
-| T-024 | Gemini Agent Stub | Should Have | Small (2-3hrs) | Not Started |
+| T-024 | Gemini Agent Stub | Should Have | Small (2-3hrs) | Completed |
 | T-025 | Rate-Limit Detection & Coordination | Must Have | Medium (8-12hrs) | Not Started |
 | T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Not Started |
 | T-027 | Implementation Loop Runner | Must Have | Large (16-24hrs) | Not Started |
@@ -290,4 +292,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-023 completed)
+_Last updated: 2026-02-18_ (T-024 completed)
