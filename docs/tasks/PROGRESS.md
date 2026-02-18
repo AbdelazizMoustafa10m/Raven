@@ -334,304 +334,65 @@
 
 ---
 
-### T-056: Epic JSON Schema and Types
+### Phase 5: PRD Decomposition (T-056 to T-065)
 
 - **Status:** Completed
 - **Date:** 2026-02-18
-- **What was built:**
-  - `EpicBreakdown` and `Epic` structs for Phase 1 (shred) output with full JSON tags
-  - `EpicTaskResult` and `TaskDef` structs for Phase 2 (scatter) output with full JSON tags
-  - `ValidationError` structured error type for retry prompt augmentation
-  - `(*EpicBreakdown).Validate()` — enforces ID format, required fields, duplicate IDs, cross-epic dep integrity
-  - `(*EpicTaskResult).Validate(knownEpicIDs)` — enforces temp_id format, effort/priority enums, local/cross-epic dep refs
-  - `FormatValidationErrors` — numbered list format suitable for LLM retry prompts
-  - `ParseEpicBreakdown` / `ParseEpicTaskResult` — 10 MB size cap + unmarshal + validate helpers
-  - Comprehensive test suite with 100% statement coverage; golden tests, fuzz tests, benchmarks
-- **Files created/modified:**
-  - `internal/prd/schema.go` — all types, validation methods, and parse helpers
-  - `internal/prd/schema_test.go` — 80+ tests: table-driven, golden, fuzz, benchmarks
-  - `internal/prd/testdata/valid_epic_breakdown.json` — 3-epic valid fixture
-  - `internal/prd/testdata/valid_epic_task_result.json` — 3-task valid fixture for E-001
-  - `internal/prd/testdata/invalid_epic_breakdown.json` — invalid fixture with multiple failure modes
-  - `internal/prd/testdata/invalid_epic_task_result.json` — invalid task result fixture
-  - `internal/prd/testdata/expected-output/epic_breakdown_golden.json` — golden snapshot
-  - `internal/prd/testdata/expected-output/epic_task_result_golden.json` — golden snapshot
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓  coverage: 100%
+- **Tasks Completed:** 10 tasks
 
----
+#### Features Implemented
 
-### T-057: PRD Shredder (Single Agent -> Epic JSON)
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Epic JSON Schema & Types | T-056 | `EpicBreakdown`, `Epic`, `EpicTaskResult`, `TaskDef`, `ValidationError` structs with validation, parse helpers, and golden/fuzz tests |
+| PRD Shredder | T-057 | Single-agent PRD-to-epics call with retry loop, embedded prompt template, event tracking, and JSON extraction from file or stdout |
+| JSON Extraction Utility | T-058 | Multi-strategy `Extract`/`ExtractAll`/`ExtractInto`/`ExtractFromFile` API: markdown fences, brace/bracket matching, ANSI stripping, BOM removal, 10 MB cap |
+| Parallel Epic Workers | T-059 | `ScatterOrchestrator` with bounded `errgroup` concurrency, per-epic retry loop, rate-limiter integration, partial-failure handling, and concurrent-safe `MockAgent` |
+| Merge: Global ID Assignment | T-060 | Kahn's topological sort of epics (`SortEpicsByDependency`) + sequential `T-NNN` assignment (`AssignGlobalIDs`) with deterministic lexicographic ordering |
+| Merge: Dependency Remapping | T-061 | `RemapDependencies` resolving local temp IDs and cross-epic `E-NNN:label` references to global IDs, with unresolved/ambiguous reporting |
+| Merge: Title Deduplication | T-062 | `DeduplicateTasks` with `NormalizeTitle` (prefix stripping, punctuation removal), AC merging, dependency rewriting, and `DedupReport` |
+| Merge: DAG Validation | T-063 | `ValidateDAG` (Kahn + DFS cycle tracing), `TopologicalDepths`, dangling/self/cycle error reporting, 10 000-task guard |
+| Task File Emitter | T-064 | `Emitter` producing per-task `.md` files, `task-state.conf`, `phases.conf`, `PROGRESS.md`, `INDEX.md` (with Mermaid graph), atomic tmp+rename writes |
+| PRD CLI Command | T-065 | `raven prd` Cobra command: 4-phase pipeline (Shred→Scatter→Merge→Emit), single-pass mode, dry-run, partial-success exit code 2, SIGINT/SIGTERM handling |
 
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Shredder` struct orchestrating a single-agent PRD-to-epics call
-  - `ShredOpts` struct for per-call parameters (PRDPath, OutputFile, Model, Effort)
-  - `ShredResult` struct with EpicBreakdown, Duration, Retries, OutputFile
-  - `ShredderOption` functional option type with `WithMaxRetries`, `WithLogger`, `WithEvents`
-  - `ShredEvent` / `ShredEventType` for progress tracking (started, completed, retry, failed)
-  - Embedded prompt template using `[[`/`]]` delimiters; includes schema example and retry error injection
-  - Retry loop: up to `maxRetries` (default 3) attempts; validation errors appended to retry prompt
-  - JSON extraction: output file first, falls back to `jsonutil.ExtractInto` on stdout
-  - 1 MB PRD file size cap; context cancellation honored at every iteration
-  - Non-blocking event sends via `select { case ch <- evt: default: }`
-  - Full test suite: success via file/stdout, retry paths, event ordering, prompt content, size caps, context cancellation
-- **Files created/modified:**
-  - `internal/prd/shredder.go` — Shredder, all option types, prompt template, extraction logic
-  - `internal/prd/shredder_test.go` — 30+ table-driven tests covering all code paths
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/prd/...` ✓
+#### Key Technical Decisions
 
----
+1. **Kahn's algorithm for epic and task DAG** -- produces cleaner cycle reports ("unprocessed nodes") vs DFS; queue re-sorted after each step for lexicographic determinism
+2. **Custom template delimiters `[[` `]]`** -- prevents conflicts when task descriptions/ACs contain Go `{{ }}` template syntax
+3. **`errgroup.SetLimit` for scatter concurrency** -- bounded parallel execution; workers return nil so sibling goroutines continue on partial failure
+4. **`scatterValidationFailure` sentinel** -- distinguishes validation exhaustion (non-fatal) from fatal errors (context cancel, rate-limit exceeded)
+5. **Multi-strategy JSON extraction** -- code fence first, then brace/bracket matching; `fenceSpan` tracking prevents double-emitting fence content via brace scanner
+6. **Single-pass mode as `concurrency=1`** -- reuses all pipeline stages rather than a separate prompt path; simpler and correct
+7. **`errPartialSuccess` custom type** -- carries structured data (totalEpics, failedEpics) for future exit-code mapping; type-asserted (not `errors.As`) since it is never wrapped
+8. **Atomic write via tmp+rename** -- all emitted files written to a temp path then renamed, preventing partial writes on error
+9. **`ResequenceIDs` closes dedup gaps** -- remaps all `Dependencies` references through `IDMapping` after re-sequencing; skips remap when no gaps exist
 
-### T-058: JSON Extraction Utility
+#### Key Files Reference
 
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Extract(text string) (json.RawMessage, error)` — returns first valid JSON object or array using multi-strategy extraction
-  - `ExtractAll(text string) []json.RawMessage` — returns all valid JSON objects/arrays in order of appearance
-  - `ExtractInto(text string, target interface{}) error` — updated to delegate to multi-strategy `Extract`; backward compatible
-  - `ExtractFromFile(path string, target interface{}) error` — reads file from disk and calls `ExtractInto`
-  - `ExtractFirst(text string) (string, bool)` — retained unchanged for backward compatibility (object-only, no arrays)
-  - Extraction strategies (in order): (1) markdown code fence `\`\`\`json` or `\`\`\`` with `TrimSpace` and `json.Valid`, (2) brace/bracket matching for top-level `{}` and `[]` structures
-  - `sanitize()` helper: strips UTF-8 BOM, strips ANSI escape codes (`\x1b[...m`), enforces 10 MB cap
-  - `fenceSpan` range tracking: prevents brace-matching from emitting the same JSON already found in a fence
-  - `matchingDelimiter()`: handles both `{}`/`[]`, nested delimiters, quoted strings, backslash escapes
-  - 40+ unit tests in `extract_test.go`: objects, arrays, code fences, ANSI stripping, BOM removal, empty fences, non-json language tags, file extraction, max size cap, benchmarks, fuzz seeds
-  - All existing tests in `jsonutil_test.go` continue to pass unchanged
-- **Files created/modified:**
-  - `internal/jsonutil/extract.go` — new primary extraction API with multi-strategy engine
-  - `internal/jsonutil/extract_test.go` — comprehensive tests for new API
-  - `internal/jsonutil/jsonutil.go` — updated: removed old `ExtractInto` (now in extract.go), retained `ExtractFirst` and helpers with backward-compat doc comment
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/jsonutil/...` ✓
+| Purpose | Location |
+| ------- | -------- |
+| Epic/task JSON types, validation, parse helpers | `internal/prd/schema.go` |
+| Schema tests, golden snapshots, fuzz seeds | `internal/prd/schema_test.go` |
+| PRD shredder (single-agent, retry, events) | `internal/prd/shredder.go` |
+| Shredder tests | `internal/prd/shredder_test.go` |
+| Parallel scatter orchestrator | `internal/prd/worker.go` |
+| Scatter tests | `internal/prd/worker_test.go` |
+| Merger: ID assignment, dep remapping, dedup, DAG | `internal/prd/merger.go` |
+| Merger tests | `internal/prd/merger_test.go` |
+| Task file emitter | `internal/prd/emitter.go` |
+| Emitter tests | `internal/prd/emitter_test.go` |
+| `raven prd` CLI command | `internal/cli/prd.go` |
+| PRD CLI tests | `internal/cli/prd_test.go` |
+| JSON extraction utility | `internal/jsonutil/extract.go` |
+| JSON extraction tests | `internal/jsonutil/extract_test.go` |
+| Concurrent-safe mock agent | `internal/agent/mock.go` |
+| Test fixtures (valid/invalid JSON) | `internal/prd/testdata/` |
 
----
+#### Verification
 
-### T-059: Parallel Epic Workers
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `ScatterOrchestrator` struct orchestrating bounded-concurrency parallel decomposition of epics into tasks
-  - `ScatterOption` functional option type with `WithScatterMaxRetries`, `WithScatterLogger`, `WithScatterEvents`, `WithConcurrency`, `WithRateLimiter`
-  - `ScatterOpts` struct for per-call parameters (PRDContent, Breakdown, Model, Effort)
-  - `ScatterResult` struct with Results ([]*EpicTaskResult sorted by epic ID), Failures, Duration
-  - `ScatterFailure` struct capturing EpicID, last ValidationErrors, and underlying Err
-  - `ScatterEvent` / `ScatterEventType` for progress tracking (worker_started, worker_completed, worker_retry, worker_failed, rate_limited)
-  - `scatterValidationFailure` sentinel type: distinguishes validation exhaustion (non-fatal, other workers continue) from fatal errors (context cancel, rate-limit exceeded)
-  - `errgroup.WithContext` + `g.SetLimit(concurrency)` for bounded parallel execution; workers always return nil so sibling goroutines are not cancelled on partial failure
-  - `runWithRetry` per-epic worker: honors context cancellation, checks `rateLimiter.ShouldWait` before each attempt, calls `WaitForReset` if needed, emits `rate_limited` events, removes stale output files on retry, injects validation errors into retry prompt
-  - `sanitizeEpicID` helper: strips all non-`[A-Za-z0-9_-]` characters using compiled regexp; `epicFilePath` verifies derived path stays inside `workDir`
-  - `buildScatterPrompt` with embedded template using `[[`/`]]` delimiters; `buildOtherEpicsSummary` builds bulleted cross-epic reference list
-  - `extractTaskResult`: output file first, falls back to `jsonutil.ExtractInto` on stdout, validates via `ParseEpicTaskResult`
-  - Mutex-protected result/failure accumulators; results sorted by EpicID post-wait for determinism
-  - Non-blocking event sends via `select { case ch <- evt: default: }`
-  - Full test suite: success via file/stdout, sorted results, partial/total failure, retry paths, concurrency limiting, event types, stale-file removal, rate-limiter integration, sanitizeEpicID table tests, prompt content assertions
-- **Test augmentation (2026-02-18):**
-  - Fixed `MockAgent.Calls` data race: added `sync.Mutex` protection for concurrent `Run()` calls; added `GetCalls()` safe snapshot helper
-  - Added `TestScatterOrchestrator_Scatter_ConcurrencyOne`: verifies serialized execution with concurrency=1
-  - Added `TestScatterOrchestrator_Scatter_ThreeEpicsWithConcurrencyTwo`: explicit AC test — 3 epics, concurrency=2, all succeed, max concurrent <= 2
-  - Added `TestScatterOrchestrator_Scatter_ContextCancelledMidScatter`: AC test — one fast worker cancels mid-scatter, partial results returned with `context.Canceled`
-  - Added `TestScatterOrchestrator_WithScatterLogger`: verifies `WithScatterLogger` functional option stores logger
-  - Added `TestScatterOrchestrator_Scatter_OneFailAllRetries_TwoSucceed`: AC test — 3 epics, E-001 exhausts all retries, E-002/E-003 succeed; ScatterResult has 2 results, 1 failure
-  - Added `TestScatterOrchestrator_Scatter_OutputFileWritten`: verifies output file path is derived from epic ID, written inside workDir
-  - Added `TestScatterOrchestrator_Scatter_OtherEpicsSummaryInPrompt`: verifies each prompt lists other epics but excludes self
-  - Added `TestScatterValidationFailure_ErrorsPreserved`: verifies `ScatterFailure.Errors` is populated from `scatterValidationFailure` sentinel
-- **Files created/modified:**
-  - `internal/agent/mock.go` — added `sync.Mutex` to `MockAgent` for concurrent-safe `Calls` tracking; added `GetCalls()` helper
-  - `internal/prd/worker.go` — ScatterOrchestrator, all option types, prompt template, per-epic worker logic (unchanged)
-  - `internal/prd/worker_test.go` — 38 test functions (8 new) + 1 benchmark covering all acceptance criteria
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/prd/...` ✓  `go test -race ./internal/prd/...` ✓
-
----
-
-### T-060: Merge -- Global ID Assignment
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `IDMapping` type (`map[string]string`) mapping temp_id to global_id (e.g., "E001-T01" -> "T-001")
-  - `MergedTask` struct retaining all TaskDef fields plus `GlobalID` and `EpicID`
-  - `SortEpicsByDependency(breakdown *EpicBreakdown) ([]string, error)` — Kahn's algorithm topological sort with deterministic lexicographic ordering of same-level epics; returns descriptive error on cycle detection
-  - `AssignGlobalIDs(epicOrder []string, results map[string]*EpicTaskResult) ([]MergedTask, IDMapping)` — sequential T-001/T-002/... assignment across epics in topological order; 3-digit format for <1000 tasks, 4-digit for >=1000; skips epics not in results; appends extras (in results but not in epicOrder) sorted by ID
-  - Cycle error message format: `"cyclic epic dependency detected: [E-002 E-003] form a cycle"` using sorted slice for determinism
-  - No new external dependencies; pure stdlib (`fmt`, `sort`)
-- **Files created/modified:**
-  - `internal/prd/merger.go` — `IDMapping`, `MergedTask`, `SortEpicsByDependency`, `AssignGlobalIDs`
-  - `internal/prd/merger_test.go` — 20 test functions covering: single epic, linear chain, multiple roots, cycle detection, empty/nil inputs, zero-task epics, extras handling, 4-digit padding at 1000 tasks, field preservation, integration tests
-- **Key Decisions:**
-  - Kahn's algorithm chosen over DFS for cycle detection — produces cleaner "unprocessed nodes" cycle report
-  - Queue re-sorted after each processing step to guarantee lexicographic determinism when multiple epics become simultaneously available
-  - `AssignGlobalIDs` is lenient about empty TempIDs (skips them) since validation is the schema layer's responsibility
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
-
----
-
-### T-061: Merge -- Dependency Remapping
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Dependencies []string` field added to `MergedTask` — populated after `RemapDependencies` runs; nil/empty until then
-  - `RemapReport` struct — `Remapped int`, `Unresolved []UnresolvedRef`, `Ambiguous []AmbiguousRef`
-  - `UnresolvedRef` struct — `TaskID string`, `Reference string`
-  - `AmbiguousRef` struct — `TaskID string`, `Reference string`, `Candidates []string`
-  - `RemapDependencies(tasks []MergedTask, idMapping IDMapping, epicTasks map[string][]MergedTask) ([]MergedTask, *RemapReport)`:
-    - Builds per-epic title index (normalised lower-case titles) from `epicTasks`
-    - Resolves `LocalDependencies` (temp_id -> global_id via `idMapping`)
-    - Resolves `CrossEpicDeps` (`E-NNN:label` format, split on first colon, substring title match)
-    - Removes self-references (task.GlobalID == resolved ID)
-    - Deduplicates via `seen` map; cross-epic/local IDs merged into a single `Dependencies` slice
-    - On zero matches: adds to `Unresolved`; on multiple matches: adds to `Ambiguous` and uses first candidate (sorted) as best guess
-    - Returns updated tasks (copy, originals unmutated) and the `RemapReport`
-  - New `strings` import added to `merger.go`
-- **Files created/modified:**
-  - `internal/prd/merger.go` — new types (`RemapReport`, `UnresolvedRef`, `AmbiguousRef`), `Dependencies` field on `MergedTask`, `RemapDependencies` function
-  - `internal/prd/merger_test.go` — 14 new test functions covering: empty input, no deps, local dep resolve, local dep unresolved, self-reference (local + cross-epic), cross-epic exact title, slug label, unknown epic, unknown label, ambiguous multi-match, deduplication, multiple local deps, colon-in-label, mixed local+cross-epic, immutability, title normalisation, multiple unresolved
-- **Key Decisions:**
-  - `strings.SplitN(ref, ":", 2)` on first colon only — preserves colons in labels (e.g., `E-002:http: server setup`)
-  - Substring match in both directions (`contains(title, label) || contains(label, title)`) — handles slug-style labels vs full-title keys
-  - Candidates sorted before selection — guarantees deterministic `best` choice when ambiguous
-  - Returns a copy of the tasks slice — original `MergedTask` values are not mutated
-  - `seen` map per task — prevents duplicates arising from same ID referenced via both local and cross-epic paths
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
-
----
-
-### T-062: Merge -- Title Deduplication
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `DedupGroup` struct — `NormalizedTitle string`, `Tasks []MergedTask` (sorted by GlobalID, keeper first)
-  - `DedupReport` struct — `OriginalCount`, `RemovedCount`, `FinalCount`, `Merges []DedupMerge`, `RewrittenDeps int`
-  - `DedupMerge` struct — `KeptTaskID`, `KeptTitle`, `RemovedTaskIDs`, `RemovedTitles`, `MergedCriteria int`
-  - `NormalizeTitle(title string) string` — lowercase, word-boundary-aware prefix stripping (10 prefixes including multi-word "set up"), whitespace collapsing, punctuation removal via `rePunct` regexp; empty-result fallback to original lowercased form
-  - `findDuplicateGroups(tasks []MergedTask) []DedupGroup` — groups tasks by normalized title, insertion-order stable, only returns groups with 2+ tasks
-  - `DeduplicateTasks(tasks []MergedTask) ([]MergedTask, *DedupReport)` — identifies duplicate groups, keeps lowest GlobalID as keeper, merges unique ACs from removed tasks, rewrites dependency references pointing to removed tasks to keeper IDs, drops self-references post-rewrite, deduplicates rewritten dep lists, preserves original order of keeper tasks
-  - `actionPrefixes` package-level slice and `rePunct` package-level compiled regexp added
-  - `regexp` and `unicode` imports added to `merger.go`
-  - Defensive copy of keeper's `AcceptanceCriteria` before appending (DC-1 compliance)
-- **Files created/modified:**
-  - `internal/prd/merger.go` — new types, package-level vars, and three new functions appended
-  - `internal/prd/merger_test.go` — 35+ new test functions for `NormalizeTitle` (individual prefix tests, table-driven, edge cases) and `DeduplicateTasks` (empty input, no dups, single task, prefix variants, AC merge, dep rewrite, self-ref avoidance, dep dedup, order preservation, multiple groups, report counts, input non-mutation)
-- **Key Decisions:**
-  - Word-boundary detection via `rest[0] == ' '` check (byte-level for ASCII prefix list) avoids regexp overhead for the common case
-  - `rePunct = regexp.MustCompile("[^\\p{L}\\p{N} ]+")` handles Unicode letters/digits, removing all punctuation including hyphens, slashes, periods
-  - Multi-word prefix "set up" listed first in `actionPrefixes` so it's attempted before single-word "set" is present (there is no "set" prefix, but order matters if prefixes share roots)
-  - `findDuplicateGroups` tracks insertion order via `order` slice to make `DeduplicateTasks` output deterministic regardless of map iteration order
-  - Acceptance criteria from removed tasks merged in order of appearance; duplicates detected via a set built from the keeper's criteria
-  - `RewrittenDeps` counts every rewrite (even if the rewritten dep is then deduplicated out), matching the spec
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
-
----
-
-### T-063: Merge -- DAG Validation
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `DAGErrorType int` with three constants: `DanglingReference` (0), `SelfReference` (1), `CycleDetected` (2)
-  - `DAGError` struct — `Type DAGErrorType`, `TaskID string`, `Details string`, `Cycle []string`
-  - `DAGValidation` struct — `Valid bool`, `TopologicalOrder []string`, `Depths map[string]int`, `MaxDepth int`, `Errors []DAGError`
-  - `ValidateDAG(tasks []MergedTask) *DAGValidation` — three-phase validation: (1) first pass collects all self-references and dangling references, marking invalid edges; (2) Kahn's algorithm over valid edges with deterministic sorted queue for topological ordering; (3) DFS cycle tracing on remaining unprocessed nodes, reporting each independent cycle separately
-  - `TopologicalDepths(tasks []MergedTask) map[string]int` — convenience wrapper delegating to `ValidateDAG`; returns nil if invalid
-  - Depth computation: iterates tasks in topological order, computing `depth[t] = max(depth[dep]+1 for dep in deps)` — yields longest path from root, not shortest
-  - Security guard: graphs with more than 10 000 tasks (`maxDAGTasks` constant) are rejected immediately
-  - Error message format: `"task T-NNN has dangling dependency on T-MMM (task does not exist)"`, `"task T-NNN depends on itself"`, `"cycle detected involving tasks: [T-001 T-002 T-003]"` (sorted IDs)
-  - Multiple independent errors are all reported together in one `DAGValidation`
-- **Files created/modified:**
-  - `internal/prd/merger.go` — `maxDAGTasks` constant, `DAGErrorType`, `DAGError`, `DAGValidation` types, `ValidateDAG`, `TopologicalDepths` functions (appended before `DeduplicateTasks`)
-  - `internal/prd/merger_test.go` — 20 new test functions: empty graph, single task, linear chain topological order, diamond longest-path depth, deterministic ordering, dangling ref, self-ref, self-ref + cycle non-interaction, two-node cycle, three-node cycle, partial cycle, multiple dangling refs, mixed errors (self+dangling+cycle), too-large graph, dangling ref not counted as cycle, longest path vs shortest path, nil/empty topoOrder for invalid graph, two independent cycles; plus `TopologicalDepths` tests (nil input, linear chain, invalid DAG returns nil, all-zero depths)
-- **Key Decisions:**
-  - Invalid edges (self-ref, dangling) are tracked per `edgeKey{from, to}` struct and excluded from Kahn's algorithm — prevents invalid edges from contributing false positive cycle detection
-  - DFS for cycle tracing uses path backtracking with a `visited` index map; when a back-edge is found, the cycle is the path slice from the revisited node onwards
-  - Cycle node IDs are sorted before inclusion in `DAGError.Cycle` for deterministic output; independently detected cycles each get their own `DAGError` entry
-  - `reported` set in cycle DFS prevents double-reporting nodes that appear in multiple cycle paths
-  - When `Valid = false`, `TopologicalOrder` and `Depths` are nil (not populated)
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
-
----
-
-### T-064: Task File Emitter
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Emitter` struct with `outputDir string`, `force bool`, `logger *log.Logger` fields
-  - `EmitterOption` functional option type with `WithEmitterLogger(logger)` and `WithForce(bool)` options
-  - `EmitOpts` struct — `Tasks []MergedTask`, `Validation *DAGValidation`, `Epics *EpicBreakdown`, `StartID int`
-  - `EmitResult` struct — `OutputDir`, `TaskFiles []string`, `TaskStateFile`, `PhasesFile`, `ProgressFile`, `IndexFile`, `TotalTasks int`, `TotalPhases int`
-  - `PhaseInfo` struct — `ID int`, `Name string`, `StartTask string`, `EndTask string`, `Tasks []MergedTask`
-  - `NewEmitter(outputDir string, opts ...EmitterOption) *Emitter` constructor
-  - `Emit(opts EmitOpts) (*EmitResult, error)` — orchestrates all file generation
-  - `ResequenceIDs(tasks []MergedTask) ([]MergedTask, IDMapping)` — closes ID gaps from deduplication; uses T-%03d or T-%04d format based on task count; remaps all Dependencies references
-  - `AssignPhases(tasks []MergedTask, depths map[string]int, epics *EpicBreakdown) []PhaseInfo` — groups tasks by topological depth; phase names from most common epic title per depth group; falls back to "Phase N"
-  - `Slugify(title string) string` — lowercase, spaces-to-hyphens, strip non-ASCII, replace non-alphanumeric with hyphens, collapse hyphens, trim, truncate to 50 chars at word boundary
-  - Slug collision handling via `uniqueSlug` — appends "-2", "-3", etc. for duplicate slugs using per-call tracked `usedSlugs` map
-  - Task file template using `[[` `]]` custom delimiters to avoid conflicts with `{{` `}}` in task content
-  - `task-state.conf` generation: comment header + one `TASK_ID|not_started|` line per task
-  - `phases.conf` generation: comment header + `ID|Name|T-start|T-end` four-field format (parseable by `task.ParsePhaseLine`)
-  - `PROGRESS.md` generation: summary table, phase sections with not-started status, empty completion log
-  - `INDEX.md` generation: task summary table, phase groupings, Mermaid `graph TD` dependency graph (omitted when tasks >= 100)
-  - Atomic write via tmp+rename for all generated files
-  - Safety guard: errors when file exists and force=false
-  - Output directory created via `os.MkdirAll` if absent
-  - Large-task warning logged at > 1000 tasks
-  - Pipe characters in Markdown tables escaped as `&#124;`
-- **Files created/modified:**
-  - `internal/prd/emitter.go` — full implementation (668 lines)
-  - `internal/prd/emitter_test.go` — 21 test functions covering Slugify, ResequenceIDs, AssignPhases, Emit integration, uniqueSlug, renderTaskFile
-- **Key Decisions:**
-  - Custom template delimiters `[[` `]]` prevent conflicts when task descriptions/acceptance criteria contain Go template syntax
-  - `ResequenceIDs` returns empty `IDMapping` when no gaps exist, avoiding unnecessary depth-map remapping work in `Emit`
-  - Depth map from `DAGValidation` is remapped through `IDMapping` after re-sequencing so phase assignments reflect new IDs
-  - `phaseNameFromEpics` uses frequency counting + lexicographic tie-breaking for deterministic phase names
-  - Mermaid graph edges sorted before joining for deterministic output
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
-
----
-
-### T-065: PRD CLI Command -- raven prd
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `NewPRDCmd() *cobra.Command` — `raven prd` command registered on root via `init()`
-  - `prdFlags` struct — holds all parsed flag values: File (required), Concurrent (default true), Concurrency (default 3), SinglePass (default false), OutputDir, AgentName, DryRun, Force, StartID (default 1)
-  - `prdPipeline` struct — internal orchestrator with cfg, agent, logger, prdPath, outputDir, workDir, concurrent, concurrency, singlePass, dryRun, force, startID fields
-  - `errPartialSuccess` error type — signals exit code 2 (some epics failed but output was produced); `isErrPartialSuccess` helper for type assertion
-  - `runPRD(cmd, flags)` — full RunE handler: validates --file, loads config, resolves agent name (flag > config > "claude"), builds agent registry, checks prerequisites (skipped in dry-run), resolves output dir (flag > config.TasksDir > "docs/tasks"), creates `raven-prd-*` temp dir with 0700 permissions
-  - `prdPipeline.run(ctx)` — dispatch to runSinglePass or runConcurrent based on singlePass flag
-  - `prdPipeline.runConcurrent(ctx)` — full 4-phase pipeline:
-    - Phase 1 (Shred): `prd.NewShredder` + `Shred()` -> `EpicBreakdown`
-    - Phase 2 (Scatter): reads PRD content, `prd.NewScatterOrchestrator` + `Scatter()` -> `ScatterResult`
-    - Phase 3 (Merge): `SortEpicsByDependency` + `AssignGlobalIDs` + `buildEpicTasksMap` + `RemapDependencies` + `DeduplicateTasks` + `ValidateDAG`; DAG errors terminate pipeline
-    - Phase 4 (Emit): `prd.NewEmitter` + `Emit()` -> `EmitResult`
-    - Returns `errPartialSuccess` when scatter had failures but produced output
-  - `prdPipeline.runSinglePass(ctx)` — sequential mode: logs single-pass intent, flips `singlePass=false` (defer-restores), delegates to `runConcurrent` with `concurrency=1`
-  - `prdPipeline.printDryRun()` — writes plan to stderr: PRD file, output dir, agent, concurrency, mode, start ID, force, all 4 phase descriptions with output paths, agent dry-run command
-  - `prdPipeline.printSummary()` — writes success summary to stderr: output dir, total tasks/phases, file list, 4-phase timing breakdown + total
-  - `validatePRDFile(path)` — checks path is non-empty, file exists, is not a directory, is readable
-  - `resolveDefaultAgentName(agents)` — prefers "claude" if configured; falls back to first configured agent; hard default "claude"
-  - `buildEpicTasksMap(tasks)` — groups MergedTask slice by EpicID for use in RemapDependencies
-  - `countTotalTasks(results)` — sum of task counts across EpicTaskResult slice
-  - Shell completion for --agent: ["claude", "codex", "gemini"]
-  - Honors global `flagDryRun` via `flags.DryRun || flagDryRun`
-  - Temp dir preserved on fatal error (deleted on success and partial success)
-  - Signal handling: `signal.NotifyContext` for SIGINT/SIGTERM
-- **Files created:**
-  - `internal/cli/prd.go` — full implementation (~648 lines)
-  - `internal/cli/prd_test.go` — 30+ test functions covering command setup, flag defaults, validation helpers, errPartialSuccess, dry-run, resolveDefaultAgentName, buildEpicTasksMap, countTotalTasks
-- **Key Decisions:**
-  - Single-pass mode implemented as `runConcurrent(concurrency=1)` rather than a separate prompt — reuses all pipeline stages, simpler, correct; logged for clarity
-  - `buildAgentRegistry` reused from `implement.go` with a zero-value `implementFlags{Agent: agentName}` (no model override needed for PRD)
-  - `errPartialSuccess` custom error type (not `errors.New`) to carry structured data (totalEpics, failedEpics, succeededWith) for potential future exit-code mapping in main.go
-  - `isErrPartialSuccess` helper uses direct type assertion (not `errors.As`) since `errPartialSuccess` is a concrete type without wrapping
-  - Output directory resolves to `cfg.Project.TasksDir` if `--output-dir` not set, falling back to "docs/tasks" for a sensible default without requiring raven.toml
-  - DAG validation errors are fatal (no partial output when the dependency graph is corrupt)
-  - Unresolved dependency references from RemapDependencies are warnings only (logged) — the emitter still runs
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/cli/...` ✓
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
 
 ---
 
@@ -642,32 +403,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 5: PRD Decomposition (T-056 to T-065)
-
-- **Status:** Completed (all 10 tasks done)
-- **Tasks:** 10 (10 Must Have)
-- **Estimated Effort:** 70-110 hours
-- **PRD Roadmap:** Weeks 9-10
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Completed |
-| T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Completed |
-| T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Completed |
-| T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Completed |
-| T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Completed |
-| T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Completed |
-| T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Completed |
-| T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Completed |
-| T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Completed |
-| T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Completed |
-
-**Deliverable:** `raven prd --file docs/prd/PRD.md --concurrent` produces a complete task breakdown.
-
----
 
 ### Phase 6: TUI Command Center (T-066 to T-078, T-089)
 
