@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 41 |
+| Completed | 42 |
 | In Progress | 0 |
-| Not Started | 48 |
+| Not Started | 47 |
 
 ---
 
@@ -406,6 +406,28 @@
 
 ---
 
+### T-040: PR Creation via gh CLI
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `PRCreator` struct wrapping `gh pr create` subprocess execution via `os/exec`
+  - `PRCreateOpts` struct supporting title, body, base branch, draft, labels, assignees, and dry-run
+  - `PRCreateResult` struct with URL, number, draft flag, created flag, and command string
+  - `CheckPrerequisites` verifying gh CLI installed, authenticated, and current branch != base branch
+  - `EnsureBranchPushed` checking remote tracking ref and pushing if absent
+  - `Create` writing body to a 0600 temp file, building gh args, executing, parsing PR URL
+  - `dryRun` helper returning planned command string without executing
+  - Pure helper functions: `extractPRURL`, `extractPRNumber`, `buildCommandString`
+  - Branch name injection guard via `validBranchNameRe` allowlist regex
+  - 93.3% test coverage via fake binary scripts in `t.TempDir()` + dry-run tests + pure-logic tests
+- **Files created/modified:**
+  - `internal/review/pr.go` -- PRCreator and all supporting types, methods, and helpers
+  - `internal/review/pr_test.go` -- comprehensive tests with fake gh/git scripts, dry-run, and pure-logic coverage
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -434,7 +456,7 @@ _None currently_
 | T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Completed |
 | T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Completed |
 | T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Completed |
-| T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Not Started |
+| T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Completed |
 | T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Not Started |
 | T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Not Started |
 
