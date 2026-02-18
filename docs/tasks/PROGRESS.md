@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 25 |
+| Completed | 26 |
 | In Progress | 0 |
-| Not Started | 62 |
+| Not Started | 60 |
 
 ---
 
@@ -47,6 +47,7 @@
 | Codex agent adapter | T-023 | `CodexAgent` struct implementing `Agent`; `NewCodexAgent(config, logger)`; `buildCommand` with `codex exec --sandbox --ephemeral -a never` flags; model flag with RunOpts-over-config precedence; prompt via `--prompt` or `--prompt-file`; three-tier `ParseRateLimit`: short decimal-seconds (`5.448s`), long format (`1 days 2 hours`), fallback keyword; `parseCodexDuration` helper; `DryRunCommand` with Unicode-safe prompt truncation; `codexLogger` interface; compile-time `var _ Agent = (*CodexAgent)(nil)` |
 | Gemini agent stub | T-024 | `GeminiAgent` stub struct implementing `Agent`; `NewGeminiAgent(config AgentConfig)`; `Run` and `CheckPrerequisites` return `ErrNotImplemented`; `ParseRateLimit` always returns nil/false; `DryRunCommand` returns placeholder comment; `ErrNotImplemented` sentinel error; compile-time `var _ Agent = (*GeminiAgent)(nil)`; no os/exec imports (pure stub) |
 | Rate-limit detection & coordination | T-025 | `RateLimitCoordinator` with `sync.RWMutex` for thread safety; `ProviderState` per-provider tracking (IsLimited, ResetAt, WaitCount, LastMessage, UpdatedAt); `BackoffConfig` (DefaultWait, MaxWaits, JitterFactor); `DefaultBackoffConfig()` (60s/5/0.1); provider constants (ProviderAnthropic/OpenAI/Google); `AgentProvider` map (claude->anthropic, codex->openai, gemini->google); `providerForAgent` fallback to agent name; `RecordRateLimit` (creates/updates state, increments WaitCount, extends ResetAt to max, captures callback before unlock); `ClearRateLimit` (sets IsLimited=false, preserves WaitCount); `ShouldWait` (read lock, returns copy if limited and reset is future); `WaitForReset` (checks ShouldWait, ExceededMaxWaits, timer+ctx.Done select); `ExceededMaxWaits` (MaxWaits=0 always true, WaitCount>=MaxWaits); `GetState`/`AllStates` (sorted snapshot); `computeWaitDuration` with jitter; `ErrMaxWaitsExceeded` sentinel; callback captured under lock (race-free) |
+| Prompt template system | T-026 | `PromptContext` struct (task, phase, project, verification, progress, agent fields); `PromptGenerator` with custom `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts in task spec content); `NewPromptGenerator(templateDir)` with directory validation; `LoadTemplate(name)` with directory-traversal guard and LRU caching; `Generate(templateName, ctx)` (empty name falls back to built-in default); `GenerateFromString(tmplStr, ctx)` for inline templates; `BuildContext(spec, phase, cfg, selector, agentName)` populating all fields from live state; `DefaultImplementTemplate` const; `formatIDSummary` helper ("None" for empty, ", "-joined otherwise); `VerificationString` = `strings.Join(cmds, " && ")`; model lookup from `cfg.Agents[agentName].Model`; debug logging of rendered output |
 
 #### Key Technical Decisions
 
@@ -135,7 +136,7 @@ _None currently_
 | T-023 | Codex Agent Adapter | Must Have | Medium (6-10hrs) | Completed |
 | T-024 | Gemini Agent Stub | Should Have | Small (2-3hrs) | Completed |
 | T-025 | Rate-Limit Detection & Coordination | Must Have | Medium (8-12hrs) | Completed |
-| T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Not Started |
+| T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Completed |
 | T-027 | Implementation Loop Runner | Must Have | Large (16-24hrs) | Not Started |
 | T-028 | Loop Recovery (Rate-Limit Wait, Dirty-Tree) | Must Have | Medium (8-12hrs) | Not Started |
 | T-029 | Implementation CLI Command -- raven implement | Must Have | Medium (8-12hrs) | Not Started |
@@ -294,4 +295,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-025 completed)
+_Last updated: 2026-02-18_ (T-026 completed)
