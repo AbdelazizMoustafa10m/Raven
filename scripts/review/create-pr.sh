@@ -37,6 +37,21 @@ PR_TITLE=""
 ARTIFACTS_DIR=""
 DRY_RUN="false"
 
+# ── PR Checkbox State ─────────────────────────────────────────────────
+VERIFY_BUILD="false"
+VERIFY_VET="false"
+VERIFY_TEST="false"
+VERIFY_TEST_RACE="false"
+VERIFY_MOD_TIDY="false"
+
+CHANGE_BUGFIX="false"
+CHANGE_FEATURE="false"
+CHANGE_BREAKING="false"
+CHANGE_REFACTOR="false"
+CHANGE_DOCS="false"
+
+PROGRESS_UPDATED="false"
+
 TEMP_BODY_FILE=""
 
 usage() {
@@ -265,6 +280,145 @@ consolidate_progress() {
     "$consolidate_script" --phase "$PHASE_ID"
 }
 
+# ── PR Checkbox Helpers ───────────────────────────────────────────────
+
+# Replace "- [ ] <suffix>" with "- [x] <suffix>" in the body file.
+# Uses Python for exact-string matching so backticks and parens need no escaping.
+tick_checkbox() {
+    local file="$1"
+    local suffix="$2"
+    python3 - "$file" "$suffix" << 'PYEOF'
+import sys
+path, suffix = sys.argv[1], sys.argv[2]
+content = open(path).read()
+open(path, 'w').write(content.replace('- [ ] ' + suffix, '- [x] ' + suffix, 1))
+PYEOF
+}
+
+run_go_verifications() {
+    if [[ ! -f "$PROJECT_ROOT/go.mod" ]]; then
+        return 0
+    fi
+
+    log_step "$_SYM_ARROW" "Running Go verification checks"
+
+    local out=""
+
+    # go build
+    if out="$(cd "$PROJECT_ROOT" && go build ./cmd/raven/ 2>&1)"; then
+        VERIFY_BUILD="true"
+        log_step "$_SYM_CHECK" "go build ./cmd/raven/"
+    else
+        log_step "$_SYM_CROSS" "go build ./cmd/raven/  ${_DIM}${out}${_RESET}"
+    fi
+
+    # go vet
+    if out="$(cd "$PROJECT_ROOT" && go vet ./... 2>&1)"; then
+        VERIFY_VET="true"
+        log_step "$_SYM_CHECK" "go vet ./..."
+    else
+        log_step "$_SYM_CROSS" "go vet ./..."
+    fi
+
+    # go test
+    if out="$(cd "$PROJECT_ROOT" && go test ./... 2>&1)"; then
+        VERIFY_TEST="true"
+        log_step "$_SYM_CHECK" "go test ./..."
+    else
+        log_step "$_SYM_CROSS" "go test ./..."
+    fi
+
+    # go test -race
+    if out="$(cd "$PROJECT_ROOT" && go test -race ./... 2>&1)"; then
+        VERIFY_TEST_RACE="true"
+        log_step "$_SYM_CHECK" "go test -race ./..."
+    else
+        log_step "$_SYM_CROSS" "go test -race ./..."
+    fi
+
+    # go mod tidy: run, compare originals, restore if drift detected
+    local tmp_dir
+    tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/raven-modtidy-XXXXXX")"
+    cp "$PROJECT_ROOT/go.mod" "$tmp_dir/go.mod"
+    if [[ -f "$PROJECT_ROOT/go.sum" ]]; then
+        cp "$PROJECT_ROOT/go.sum" "$tmp_dir/go.sum"
+    else
+        touch "$tmp_dir/go.sum"
+    fi
+
+    (cd "$PROJECT_ROOT" && go mod tidy 2>/dev/null)
+
+    if cmp -s "$PROJECT_ROOT/go.mod" "$tmp_dir/go.mod" && \
+       cmp -s "$PROJECT_ROOT/go.sum" "$tmp_dir/go.sum"; then
+        VERIFY_MOD_TIDY="true"
+        log_step "$_SYM_CHECK" "go mod tidy produces no diff"
+    else
+        log_step "$_SYM_CROSS" "go mod tidy produced changes ${_DIM}(restoring)${_RESET}"
+        cp "$tmp_dir/go.mod" "$PROJECT_ROOT/go.mod"
+        cp "$tmp_dir/go.sum" "$PROJECT_ROOT/go.sum"
+    fi
+    rm -rf "$tmp_dir"
+}
+
+detect_change_types() {
+    local base_ref="$1"
+    local subjects
+    subjects="$(git log --pretty='%s' "${base_ref}..${HEAD_BRANCH}" 2>/dev/null || true)"
+
+    if printf '%s\n' "$subjects" | grep -qE '^fix(\([^)]+\))?!?:'; then
+        CHANGE_BUGFIX="true"
+    fi
+    if printf '%s\n' "$subjects" | grep -qE '^feat(\([^)]+\))?!?:'; then
+        CHANGE_FEATURE="true"
+    fi
+    if printf '%s\n' "$subjects" | grep -qE '^refactor(\([^)]+\))?!?:'; then
+        CHANGE_REFACTOR="true"
+    fi
+    if printf '%s\n' "$subjects" | grep -qE '^docs(\([^)]+\))?!?:'; then
+        CHANGE_DOCS="true"
+    fi
+    # Breaking change: scope with ! before the colon
+    if printf '%s\n' "$subjects" | grep -qE '^[a-z]+(\([^)]+\))?!:'; then
+        CHANGE_BREAKING="true"
+    fi
+
+    # PROGRESS.md touched anywhere in the branch commits
+    if git log --name-only "${base_ref}..${HEAD_BRANCH}" 2>/dev/null \
+            | grep -q "docs/tasks/PROGRESS\.md"; then
+        PROGRESS_UPDATED="true"
+    fi
+}
+
+fill_pr_checkboxes() {
+    # Type of Change
+    [[ "$CHANGE_BUGFIX"   == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        "Bug fix (non-breaking change fixing an issue)"
+    [[ "$CHANGE_FEATURE"  == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        "New feature (non-breaking change adding functionality)"
+    [[ "$CHANGE_BREAKING" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        "Breaking change (fix or feature causing existing functionality to change)"
+    [[ "$CHANGE_REFACTOR" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        "Refactor (code change that neither fixes a bug nor adds a feature)"
+    [[ "$CHANGE_DOCS"     == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        "Documentation / config update"
+
+    # Verification
+    [[ "$VERIFY_BUILD"     == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        '`go build ./cmd/raven/` passes'
+    [[ "$VERIFY_VET"       == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        '`go vet ./...` passes'
+    [[ "$VERIFY_TEST"      == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        '`go test ./...` passes'
+    [[ "$VERIFY_TEST_RACE" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        '`go test -race ./...` passes'
+    [[ "$VERIFY_MOD_TIDY"  == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        '`go mod tidy` produces no diff'
+
+    # Task Tracking
+    [[ "$PROGRESS_UPDATED" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
+        '`docs/tasks/PROGRESS.md` updated if task completion status changed'
+}
+
 create_pr() {
     local title="$PR_TITLE"
     if [[ -z "$title" ]]; then
@@ -349,6 +503,9 @@ EOF_BODY
 
     ensure_has_commits "$base_ref"
     render_pr_body "$base_ref"
+    detect_change_types "$base_ref"
+    run_go_verifications
+    fill_pr_checkboxes
     persist_artifact_metadata
     consolidate_progress
     create_pr
