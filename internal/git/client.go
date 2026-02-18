@@ -454,6 +454,19 @@ func parseOneline(output string) []LogEntry {
 	return entries
 }
 
+// --- Fetch Operations ---
+
+// Fetch fetches from the named remote. If remote is empty, fetches from "origin".
+func (g *GitClient) Fetch(ctx context.Context, remote string) error {
+	if remote == "" {
+		remote = "origin"
+	}
+	if _, err := g.run(ctx, "fetch", remote); err != nil {
+		return fmt.Errorf("git: fetch %s: %w", remote, err)
+	}
+	return nil
+}
+
 // --- Push Operations ---
 
 // Push pushes the current branch to the named remote.

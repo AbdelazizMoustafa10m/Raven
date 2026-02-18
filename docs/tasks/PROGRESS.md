@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 45 |
+| Completed | 58 |
 | In Progress | 0 |
-| Not Started | 44 |
+| Not Started | 31 |
 
 ---
 
@@ -268,6 +268,72 @@
 ---
 
 
+---
+
+### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 12 tasks
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Workflow Event Types & Constants | T-043 | Six transition events, nine lifecycle constants, `StepHandler` interface, `WorkflowEvent`/`WorkflowDefinition`/`StepDefinition` types |
+| Step Handler Registry | T-044 | `Registry` struct with register/get/list/has, `ErrStepNotFound` sentinel, `DefaultRegistry` singleton and delegation functions |
+| Workflow Engine (State Machine) | T-045 | `Engine` struct with functional options, `Run`/`RunStep`/`Validate` methods, panic-safe `safeExecute`, non-blocking event emission |
+| State Checkpointing & Persistence | T-046 | `StateStore` with atomic file writes (tmp→fsync→rename), `RunSummary`, `StatusFromState`, `WithCheckpointing` engine option |
+| Resume Command | T-047 | `resume` Cobra command with list/clean/clean-all/resume modes, tabwriter output, TTY detection, `runIDPattern` path-traversal guard |
+| Workflow Definition Validation | T-048 | `ValidateDefinition` with 6-phase BFS/DFS analysis, nine `Issue*` constants, `ValidationResult`/`ValidationIssue` structs, cycles as warnings |
+| Built-in Workflows & Step Handlers | T-049 | Four built-in workflow definitions, 11 step handlers (`ImplementHandler`, `ReviewHandler`, `FixHandler`, `PRHandler`, phase handlers, PRD stubs), `RegisterBuiltinHandlers` |
+| Pipeline Orchestrator Core | T-050 | `PipelineOrchestrator` with multi-phase lifecycle, `PipelineOpts`/`PhaseResult`/`PipelineResult`, skip flags, resume-from-checkpoint, dry-run plan |
+| Pipeline Branch Management | T-051 | `BranchManager` with template-based branch naming, `slugify`, `EnsureBranch` idempotent create-or-switch, integration + fuzz tests |
+| Pipeline Metadata Tracking | T-052 | `PipelineMetadata`/`PhaseMetadata` structs, JSON round-trip for `WorkflowState.Metadata`, stage-level status updates, `NextIncompletePhase`/`IsComplete`/`Summary` |
+| Pipeline Interactive Wizard | T-053 | `RunWizard` with 4 sequential `huh.Form` pages for phase mode, agent selection, options, and confirmation; `ErrWizardCancelled` sentinel |
+| Dry-Run Formatting | T-054 | `DryRunFormatter` with BFS graph walk, cycle annotation, `FormatWorkflowDryRun`/`FormatPipelineDryRun`, styled/plain output, `PipelineDryRunInfo` decoupling struct |
+| Pipeline CLI Command | T-055 | `pipeline` Cobra command with 15 flags, wizard integration, TTY detection, flag validation, shell completions, exit-code mapping (0/1/2/3), dry-run mode |
+
+#### Key Technical Decisions
+
+1. **Cycles as warnings, not errors** -- `review → fix → review` loops are intentional; `ValidateDefinition` emits `IssueCycleDetected` as a warning so `IsValid()` remains true
+2. **Atomic checkpoint writes** -- `StateStore.Save` marshals to `<id>.json.tmp`, fsyncs, then renames; crash-safe without external locking
+3. **`applySkipFlags` deep-copies builtin definition** -- `GetDefinition` returns a pointer into a package-level singleton; mutation would corrupt all subsequent calls
+4. **`PipelineDryRunInfo` plain struct breaks import cycle** -- `pipeline` imports `workflow`; a plain struct in `workflow` avoids the reverse dependency
+5. **Multiple sequential `huh.Form` runs in wizard** -- Conditional pages (phase picker, agent selection) are cleanest as separate forms; avoids complex `HideFunc` logic
+6. **`int64` nanoseconds for `PhaseMetadata.Duration`** -- Explicit `_ns` suffix makes unit unambiguous for non-Go consumers; avoids silent precision loss
+7. **Fresh `workflow.NewRegistry()` per pipeline run** -- Prevents registration panics from the package-level `DefaultRegistry` singleton being populated by `init()` functions
+8. **TTY detection via `os.ModeCharDevice`** -- Avoids adding `golang.org/x/term`; stdlib-only `os.Stdin.Stat()` / `os.Stdout.Stat()` suffice
+9. **`runIDPattern` allowlist in resume command** -- Only `[a-zA-Z0-9_-]` permitted in `--run`/`--clean` to prevent path traversal to arbitrary JSON files
+10. **Terminal pseudo-steps excluded from adjacency graph** -- `StepDone`/`StepFailed` have no outgoing transitions; including them would incorrectly suppress reachability warnings
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Workflow event constants, `StepHandler` interface, `WorkflowEvent`/`WorkflowDefinition` types | `internal/workflow/events.go` |
+| Step handler `Registry`, `ErrStepNotFound`, `DefaultRegistry` | `internal/workflow/registry.go` |
+| `Engine` state machine runner with functional options | `internal/workflow/engine.go` |
+| `StateStore` atomic persistence, `WithCheckpointing` option | `internal/workflow/state.go` |
+| `ValidateDefinition` BFS/DFS validation, `ValidationResult` | `internal/workflow/validate.go` |
+| Built-in workflow definitions and name constants | `internal/workflow/builtin.go` |
+| 11 built-in step handlers (`ImplementHandler`, `ReviewHandler`, etc.) | `internal/workflow/handlers.go` |
+| `DryRunFormatter`, `FormatWorkflowDryRun`, `FormatPipelineDryRun` | `internal/workflow/dryrun.go` |
+| `PipelineOrchestrator`, `PipelineOpts`, `PhaseResult`, `PipelineResult` | `internal/pipeline/orchestrator.go` |
+| `BranchManager`, `slugify`, `EnsureBranch` | `internal/pipeline/branch.go` |
+| `PipelineMetadata`, `PhaseMetadata`, stage-level status helpers | `internal/pipeline/metadata.go` |
+| `RunWizard` interactive pipeline configuration wizard | `internal/pipeline/wizard.go` |
+| `pipeline` Cobra command with 15 flags and wizard integration | `internal/cli/pipeline.go` |
+| `resume` Cobra command with list/clean/resume modes | `internal/cli/resume.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -275,35 +341,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
-
-- **Status:** Not Started
-- **Tasks:** 13 (12 Must Have, 1 Should Have)
-- **Estimated Effort:** 96-144 hours
-- **PRD Roadmap:** Weeks 7-8
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Not Started |
-| T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Not Started |
-| T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Not Started |
-| T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Not Started |
-| T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Not Started |
-| T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Not Started |
-| T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Not Started |
-| T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Not Started |
-| T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Not Started |
-| T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Not Started |
-| T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Not Started |
-| T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Not Started |
-| T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Not Started |
-
-**Deliverable:** `raven pipeline --phase all` orchestrates the full lifecycle with checkpoint/resume.
-
----
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
