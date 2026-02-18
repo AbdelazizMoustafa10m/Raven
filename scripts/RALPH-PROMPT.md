@@ -39,10 +39,14 @@ This will:
 
 If `/implement-task` is not available, implement directly:
 1. Read the task spec carefully
-2. Read skills/*.md for GO, Cobra, and CLI best practices.
+2. Read skills/*.md for GO, Cobra, and CLI conventions, and best practices.
 3. Create/modify files per the spec
+   - Spawn a Go engineer subagent for implementation
+   - check if implementation tasks are independent and can be paralleized without affecting each other
+   - if they can be paralleized, spawn multiple Go engineer subagents for implementation
 4. Write tests alongside implementation
-5. Follow Go conventions from skills/*.md
+   - Spawn a testing engineer subagent for tests
+5. Run final verification
 
 ### Step 3: Verify
 
@@ -96,7 +100,8 @@ Update `docs/tasks/task-state.conf`:
 
 Stage and commit the changes.
 
-This is critical: do not exit after updating code/`PROGRESS.md` unless a commit was created for `{{TASK_ID}}`.
+- **This is critical:** do not exit after updating code/`PROGRESS.md` unless a commit was created for `{{TASK_ID}}`.
+- **If you find that you are denied the permission to commit**, leave the commit message in your logs and the auto commit recovery of the pipeline will commit it for you and exit. 
 
 ```bash
 git add <specific-files>

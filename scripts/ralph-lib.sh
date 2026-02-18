@@ -447,6 +447,28 @@ count_remaining_tasks() {
     task_state_count_remaining "$range" "$TASK_STATE_FILE"
 }
 
+# Extract the first explicit control signal line from agent output.
+# Matches only standalone signal lines (optionally timestamp-prefixed), e.g.:
+#   PHASE_COMPLETE
+#   TASK_BLOCKED: T-016 requires T-001
+#   [2026-02-18 04:29:13] RALPH_ERROR: <description>
+_extract_control_signal_line() {
+    local signal="$1"
+    local output="$2"
+
+    local line=""
+    local normalized=""
+    while IFS= read -r line; do
+        normalized="$(printf '%s' "$line" | sed -E 's/^\[[^]]+\][[:space:]]*//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+        if [[ "$normalized" == "$signal" || "$normalized" == "$signal:"* ]]; then
+            printf '%s\n' "$normalized"
+            return 0
+        fi
+    done <<< "$output"
+
+    return 1
+}
+
 # =============================================================================
 # Logging
 # =============================================================================
@@ -1367,17 +1389,23 @@ run_ralph_loop() {
             continue
         fi
 
-        # Check for completion signals
-        if echo "$output" | grep -q "PHASE_COMPLETE"; then
-            log_success "PHASE_COMPLETE signal received!"
-            log_success "All tasks in $phase_name are done."
-            break
+        # Check for completion signals (strict standalone line matching only).
+        local phase_complete_line
+        phase_complete_line=$(_extract_control_signal_line "PHASE_COMPLETE" "$output" || true)
+        if [[ -n "$phase_complete_line" ]]; then
+            local remaining_after_signal
+            remaining_after_signal=$(count_remaining_tasks "$task_range")
+            if [[ "$remaining_after_signal" -eq 0 ]]; then
+                log_success "PHASE_COMPLETE signal received!"
+                log_success "All tasks in $phase_name are done."
+                break
+            fi
+            log_warn "Ignoring PHASE_COMPLETE signal; $remaining_after_signal task(s) still remain in $phase_name."
         fi
 
-        if echo "$output" | grep -q "RALPH_ERROR"; then
-            local error_msg
-            error_msg=$(echo "$output" | grep "RALPH_ERROR" | head -1)
-
+        local error_msg
+        error_msg=$(_extract_control_signal_line "RALPH_ERROR" "$output" || true)
+        if [[ -n "$error_msg" ]]; then
             # Special case: "commit missing" means the agent completed the task
             # but couldn't create a git commit (e.g., permission denial in
             # dontAsk mode). Check if progress was actually made and attempt
@@ -1416,9 +1444,9 @@ run_ralph_loop() {
             continue
         fi
 
-        if echo "$output" | grep -q "TASK_BLOCKED"; then
-            local blocked_msg
-            blocked_msg=$(echo "$output" | grep "TASK_BLOCKED" | head -1)
+        local blocked_msg
+        blocked_msg=$(_extract_control_signal_line "TASK_BLOCKED" "$output" || true)
+        if [[ -n "$blocked_msg" ]]; then
             log_blocked "$blocked_msg"
             log_blocked "No more tasks available in this phase."
             _ralph_render_banner "blocked" "Task Blocked" \

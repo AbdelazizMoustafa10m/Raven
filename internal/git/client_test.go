@@ -1219,3 +1219,203 @@ func TestEnsureClean_ErrorPrefixInCleanupFailure(t *testing.T) {
 	require.Error(t, cleanupErr)
 	assert.Contains(t, cleanupErr.Error(), "git: ensure clean: restoring stash:")
 }
+
+// ---------------------------------------------------------------------------
+// DiffNumStat tests
+// ---------------------------------------------------------------------------
+
+func TestDiffNumStat_AddedFile(t *testing.T) {
+	c := newTestRepo(t)
+	ctx := context.Background()
+
+	base, err := c.HeadCommit(ctx)
+	require.NoError(t, err)
+
+	writeFile(t, c.WorkDir, "newfile.go", "package main\n\nfunc main() {}\n")
+	mustRun(t, c.WorkDir, "git", "add", ".")
+	mustRun(t, c.WorkDir, "git", "commit", "-m", "Add file")
+
+	entries, err := c.DiffNumStat(ctx, base)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "newfile.go", entries[0].Path)
+	assert.Equal(t, 3, entries[0].Added)
+	assert.Equal(t, 0, entries[0].Deleted)
+}
+
+func TestDiffNumStat_ModifiedFile(t *testing.T) {
+	c := newTestRepo(t)
+	ctx := context.Background()
+
+	base, err := c.HeadCommit(ctx)
+	require.NoError(t, err)
+
+	writeFile(t, c.WorkDir, "README.md", "# Modified\nNew line\n")
+	mustRun(t, c.WorkDir, "git", "add", ".")
+	mustRun(t, c.WorkDir, "git", "commit", "-m", "Modify README")
+
+	entries, err := c.DiffNumStat(ctx, base)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+
+	// Find README.md entry.
+	var readme *NumStatEntry
+	for i := range entries {
+		if entries[i].Path == "README.md" {
+			readme = &entries[i]
+			break
+		}
+	}
+	require.NotNil(t, readme, "README.md should be in numstat output")
+	assert.Greater(t, readme.Added+readme.Deleted, 0, "there should be some changed lines")
+}
+
+func TestDiffNumStat_ErrorWrapping(t *testing.T) {
+	c := newTestRepo(t)
+	_, err := c.DiffNumStat(context.Background(), "nonexistent-ref")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git: diff numstat from")
+}
+
+func TestDiffNumStat_AcceptsContext(t *testing.T) {
+	c := newTestRepo(t)
+	sha, err := c.HeadCommit(context.Background())
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = c.DiffNumStat(ctx, sha)
+}
+
+// ---------------------------------------------------------------------------
+// parseNumStat unit tests
+// ---------------------------------------------------------------------------
+
+func TestParseNumStat(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []NumStatEntry
+	}{
+		{
+			name:  "empty input",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "single added file",
+			input: "3\t0\tnew.go\n",
+			want:  []NumStatEntry{{Path: "new.go", Added: 3, Deleted: 0}},
+		},
+		{
+			name:  "modified file",
+			input: "5\t2\texisting.go\n",
+			want:  []NumStatEntry{{Path: "existing.go", Added: 5, Deleted: 2}},
+		},
+		{
+			name:  "binary file",
+			input: "-\t-\timage.png\n",
+			want:  []NumStatEntry{{Path: "image.png", Added: -1, Deleted: -1}},
+		},
+		{
+			name:  "multiple files",
+			input: "3\t0\ta.go\n10\t5\tb.go\n0\t7\tc.go\n",
+			want: []NumStatEntry{
+				{Path: "a.go", Added: 3, Deleted: 0},
+				{Path: "b.go", Added: 10, Deleted: 5},
+				{Path: "c.go", Added: 0, Deleted: 7},
+			},
+		},
+		{
+			name:  "rename with brace notation",
+			input: "2\t1\t{old => new}.go\n",
+			want:  []NumStatEntry{{Path: "new.go", OldPath: "old.go", Added: 2, Deleted: 1}},
+		},
+		{
+			name:  "rename simple arrow",
+			input: "4\t2\told.go => new.go\n",
+			want:  []NumStatEntry{{Path: "new.go", OldPath: "old.go", Added: 4, Deleted: 2}},
+		},
+		{
+			name:  "missing tab separator skipped",
+			input: "invalid line\n3\t0\tvalid.go\n",
+			want:  []NumStatEntry{{Path: "valid.go", Added: 3, Deleted: 0}},
+		},
+		{
+			name:  "blank lines ignored",
+			input: "3\t0\ta.go\n\n\n5\t1\tb.go\n",
+			want: []NumStatEntry{
+				{Path: "a.go", Added: 3, Deleted: 0},
+				{Path: "b.go", Added: 5, Deleted: 1},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := parseNumStat(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseRenamePath unit tests
+// ---------------------------------------------------------------------------
+
+func TestParseRenamePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantOldPath string
+		wantNewPath string
+	}{
+		{
+			name:        "simple arrow",
+			input:       "old.go => new.go",
+			wantOldPath: "old.go",
+			wantNewPath: "new.go",
+		},
+		{
+			name:        "brace notation at root",
+			input:       "{old => new}.go",
+			wantOldPath: "old.go",
+			wantNewPath: "new.go",
+		},
+		{
+			name:        "brace notation with prefix",
+			input:       "src/{old => new}/file.go",
+			wantOldPath: "src/old/file.go",
+			wantNewPath: "src/new/file.go",
+		},
+		{
+			name:        "no rename — fallback",
+			input:       "plain/path.go",
+			wantOldPath: "",
+			wantNewPath: "plain/path.go",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			oldPath, newPath := parseRenamePath(tt.input)
+			assert.Equal(t, tt.wantOldPath, oldPath)
+			assert.Equal(t, tt.wantNewPath, newPath)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Client interface compliance
+// ---------------------------------------------------------------------------
+
+// TestClientInterface verifies that *GitClient satisfies the Client interface
+// at compile time. This is the runtime companion to the var _ check in client.go.
+func TestClientInterface(t *testing.T) {
+	t.Parallel()
+
+	var _ Client = (*GitClient)(nil)
+}

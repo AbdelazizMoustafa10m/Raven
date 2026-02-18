@@ -1,0 +1,56 @@
+You are a code fix agent. Apply the following review findings to fix the codebase.
+
+## Review Findings
+
+[[ range .Findings ]]
+### Finding: [[ .File ]]:[[ .Line ]] ([[ .Severity ]])
+**Category:** [[ .Category ]]
+**Description:** [[ .Description ]]
+**Suggestion:** [[ .Suggestion ]]
+
+[[ end ]]
+
+## Changed Files (Diff)
+
+```
+[[ .Diff ]]
+```
+
+[[ if .Conventions ]]
+## Project Conventions
+
+[[ range .Conventions ]]
+- [[ . ]]
+[[ end ]]
+[[ end ]]
+
+## Verification Commands
+
+After applying fixes, run these commands to verify:
+[[ range .VerifyCommands ]]
+- `[[ . ]]`
+[[ end ]]
+
+[[ if .PreviousFailures ]]
+## Previous Fix Attempt Results
+
+The following verification failures occurred in the previous cycle. Please address these:
+
+[[ range .PreviousFailures ]]
+### Cycle [[ .Cycle ]] Failures
+[[ if .Verification ]]
+[[ range .Verification.Results ]]
+[[ if not .Passed ]]
+**Command:** `[[ .Command ]]`
+**Exit Code:** [[ .ExitCode ]]
+**Output:**
+```
+[[ .Stderr ]]
+```
+[[ end ]]
+[[ end ]]
+[[ end ]]
+[[ end ]]
+[[ end ]]
+
+Apply fixes directly to the files. Do not explain what you are doing; just make the changes.

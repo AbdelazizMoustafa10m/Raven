@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 30 |
+| Completed | 44 |
 | In Progress | 0 |
-| Not Started | 56 |
+| Not Started | 45 |
 
 ---
 
@@ -150,6 +150,75 @@
 
 ---
 
+### Phase 3: Review Pipeline (T-031 to T-042)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 12 tasks (T-031 to T-042, including T-058)
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Review Types & Schema | T-031 | `Verdict`, `Severity`, `Finding`, `ReviewResult`, `ConsolidatedReview`, `ReviewConfig`, `ReviewOpts` types with validation and JSON round-trip support |
+| Git Diff Generation | T-032 | `git.Client` interface, `DiffGenerator` with extension filtering, risk classification, `SplitFiles` round-robin distribution |
+| Review Prompt Synthesis | T-033 | `ContextLoader`, `PromptBuilder`, embedded template with `[[`/`]]` delimiters, project brief/rules injection, diff truncation, path security |
+| Finding Consolidation | T-034 | `Consolidator` with O(n) deduplication, severity escalation, verdict aggregation, agent attribution, `ConsolidationStats` |
+| Multi-Agent Orchestrator | T-035 | `ReviewOrchestrator` fan-out via errgroup, per-agent error capture, `ReviewEvent` streaming, `DryRun` support |
+| JSON Extraction | T-058 | `internal/jsonutil` package: `ExtractInto`/`ExtractFirst` brace-counting extraction from freeform AI output |
+| Review Report Generation | T-036 | `ReportGenerator` producing markdown reports with findings table, by-file/severity breakdowns, agent breakdown, consolidation stats |
+| Verification Runner | T-037 | `VerificationRunner` executing shell commands with per-command timeouts, `FormatReport()`/`FormatMarkdown()` output, two-tier truncation |
+| Fix Engine | T-038 | `FixEngine` iterative fix-verify cycles, `FixPromptBuilder`, `FixEvent` streaming, `FixReport` aggregation |
+| PR Body Generation | T-039 | `PRBodyGenerator` with AI summary, `GenerateTitle`, heading adjustment, 65,536-byte GitHub limit enforcement |
+| PR Creation | T-040 | `PRCreator` wrapping `gh pr create`, `CheckPrerequisites`, `EnsureBranchPushed`, branch-name injection guard |
+| `raven review` CLI | T-041 | Cobra command wiring full review pipeline; `--agents`, `--mode`, `--concurrency`, `--base`, `--output` flags; exit code semantics |
+| `raven fix` & `raven pr` CLI | T-042 | Cobra commands for fix-verify cycles and PR creation; auto-detect review report; `StringArrayVar` for repeatable flags |
+
+#### Key Technical Decisions
+
+1. **`[[`/`]]` template delimiters** -- avoids conflicts with `{{`/`}}` appearing in JSON/code snippets within AI-generated finding descriptions; used consistently across all embedded templates in the review package
+2. **`git.Client` interface in `git` package** -- prevents import cycles when `review` package injects mocks; compile-time checked via `var _ Client = (*GitClient)(nil)`
+3. **Per-agent errors never abort the pipeline** -- errgroup workers always return `nil`; failures captured in `AgentError` slices so one flaky agent cannot cancel the others
+4. **`collectCandidates` outer-first ordering** -- `jsonutil.ExtractInto` naturally prefers the outermost JSON blob, matching the typical AI response structure
+5. **Pre-sorted key slices in report/PR body data structs** -- makes template rendering deterministic without requiring template-side logic
+6. **Two-tier output truncation in `VerificationRunner`** -- byte-based for large-line inputs, line-based head+tail for high-line-count inputs
+7. **`sh -c` / `cmd /c` shell wrapper** -- handles glob patterns (`./...`), pipes, and redirects in verification commands without custom parsing
+8. **Agent errors in `GenerateSummary` silently swallowed** -- callers always receive a usable summary string; `PRBodyGenerator` never propagates agent failures to the caller
+9. **`DiffNumStat` added to `git.Client` interface** -- `Generate` requires per-file line counts for `DiffStats`; binary files (`-1` sentinel) clamped to 0
+10. **Branch-name injection guard via allowlist regex** -- `^[a-zA-Z0-9_./-]+$` prevents shell injection in `DiffGenerator` and `PRCreator`
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Review types, `Verdict`, `Severity`, `Finding`, `ReviewResult` | `internal/review/types.go` |
+| `git.Client` interface, `DiffNumStat`, numstat parsers | `internal/git/client.go` |
+| `DiffGenerator`, `SplitFiles`, `ChangedFile`, `DiffResult` | `internal/review/diff.go` |
+| `ContextLoader`, `PromptBuilder`, `PromptData` | `internal/review/prompt.go` |
+| Default review prompt template | `internal/review/review_template.tmpl` |
+| `Consolidator`, `AggregateVerdicts`, `EscalateSeverity` | `internal/review/consolidate.go` |
+| `ReviewOrchestrator`, `ReviewEvent`, `OrchestratorResult` | `internal/review/orchestrator.go` |
+| `ExtractInto`, `ExtractFirst` JSON extraction | `internal/jsonutil/jsonutil.go` |
+| `ReportGenerator`, `ReportData` | `internal/review/report.go` |
+| Markdown report template | `internal/review/report_template.tmpl` |
+| `VerificationRunner`, `CommandResult`, `VerificationReport` | `internal/review/verify.go` |
+| `FixEngine`, `FixPromptBuilder`, `FixEvent`, `FixReport` | `internal/review/fix.go` |
+| Fix prompt template | `internal/review/fix_template.tmpl` |
+| `PRBodyGenerator`, `GenerateTitle`, `GenerateSummary` | `internal/review/prbody.go` |
+| PR body template | `internal/review/prbody_template.tmpl` |
+| `PRCreator`, `PRCreateOpts`, `EnsureBranchPushed` | `internal/review/pr.go` |
+| `raven review` Cobra command | `internal/cli/review.go` |
+| `raven fix` Cobra command | `internal/cli/fix.go` |
+| `raven pr` Cobra command | `internal/cli/pr.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -157,34 +226,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 3: Review Pipeline (T-031 to T-042)
-
-- **Status:** Not Started
-- **Tasks:** 12 (12 Must Have)
-- **Estimated Effort:** 96-136 hours
-- **PRD Roadmap:** Weeks 5-6
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Not Started |
-| T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Not Started |
-| T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Not Started |
-| T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Not Started |
-| T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Not Started |
-| T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Not Started |
-| T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Not Started |
-| T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Not Started |
-| T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Not Started |
-| T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Not Started |
-| T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Not Started |
-| T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Not Started |
-
-**Deliverable:** `raven review --agents claude,codex --concurrency 4` produces a consolidated review report.
-
----
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
@@ -241,17 +282,18 @@ _None currently_
 
 ---
 
-### Phase 6: TUI Command Center (T-066 to T-078)
+### Phase 6: TUI Command Center (T-066 to T-078, T-089)
 
 - **Status:** Not Started
-- **Tasks:** 13 (12 Must Have, 1 Should Have)
-- **Estimated Effort:** 88-136 hours
+- **Tasks:** 14 (13 Must Have, 1 Should Have)
+- **Estimated Effort:** 96-148 hours
 - **PRD Roadmap:** Weeks 11-13
 
 #### Task List
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
+| T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Not Started |
 | T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Not Started |
 | T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Not Started |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Not Started |
@@ -292,6 +334,45 @@ _None currently_
 | T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Not Started |
 
 **Deliverable:** Published v2.0.0 with signed binaries for all platforms.
+
+---
+
+### Phase 8: Headless Observability (T-088)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 1 task
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Stream-JSON event types & JSONL decoder | T-088 | `StreamEvent`, `StreamMessage`, `ContentBlock`, `StreamUsage` types mapping to Claude Code's `--output-format stream-json` JSONL schema; `StreamDecoder` with `Next()` iterator and `Decode()` channel producer; helper methods (`ToolUseBlocks()`, `TextContent()`, `ToolResultBlocks()`, `IsText()`, `IsToolUse()`, `IsToolResult()`, `InputString()`, `ContentString()`); `OutputFormatJSON` and `OutputFormatStreamJSON` constants; `StreamEvents` channel field in `RunOpts` for real-time event delivery |
+
+#### Key Technical Decisions
+
+1. **`--output-format stream-json` over `--output-format json`** -- Real-time JSONL streaming gives per-tool-call observability without direct API access, staying within the v2.0 "shell out to CLI" architecture
+2. **`json.RawMessage` for `Input` and `Content` fields** -- Tool inputs and results have varying JSON shapes; `RawMessage` defers parsing to consumers
+3. **1MB scanner buffer** -- Claude Code tool results can exceed the default 64KB `bufio.Scanner` limit
+4. **Non-blocking `Decode()` with context cancellation** -- Prevents goroutine leaks when the TUI or automation script stops consuming events
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Stream event types & decoder | `internal/agent/stream.go` |
+| Stream decoder tests (35 tests) | `internal/agent/stream_test.go` |
+| Agent types with streaming support | `internal/agent/types.go` |
+| Full session JSONL fixture | `testdata/stream-json/session-full.jsonl` |
+| Error session fixture | `testdata/stream-json/session-error.jsonl` |
+| Malformed/mixed fixture | `testdata/stream-json/malformed-mixed.jsonl` |
+| Task specification | `docs/tasks/T-088-headless-observability.md` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./internal/agent/` pass (35 tests, 0 failures)
 
 ---
 

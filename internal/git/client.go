@@ -9,6 +9,26 @@ import (
 	"strings"
 )
 
+// Client is the interface for git operations used by the review pipeline.
+// It exposes only the diff-related methods required by diff generation.
+type Client interface {
+	// DiffFiles returns the list of files changed between base and HEAD.
+	DiffFiles(ctx context.Context, base string) ([]DiffEntry, error)
+
+	// DiffStat returns aggregate line-change statistics between base and HEAD.
+	DiffStat(ctx context.Context, base string) (*DiffStats, error)
+
+	// DiffUnified returns the full unified diff between base and HEAD.
+	DiffUnified(ctx context.Context, base string) (string, error)
+
+	// DiffNumStat returns per-file line-change counts between base and HEAD.
+	// Each NumStatEntry holds the path, lines added, and lines deleted.
+	DiffNumStat(ctx context.Context, base string) ([]NumStatEntry, error)
+}
+
+// Compile-time check: *GitClient must satisfy Client.
+var _ Client = (*GitClient)(nil)
+
 // GitClient wraps git CLI operations. All methods use os/exec to call
 // the git binary, following the same pattern as gh, lazygit, and k9s.
 type GitClient struct {
@@ -281,6 +301,112 @@ func (g *GitClient) DiffUnified(ctx context.Context, base string) (string, error
 		return "", fmt.Errorf("git: diff unified from %q: %w", base, err)
 	}
 	return out, nil
+}
+
+// NumStatEntry holds per-file line-change counts from git diff --numstat.
+type NumStatEntry struct {
+	// Path is the file path relative to the repository root.
+	// For renames, Path is the destination path.
+	Path string
+
+	// OldPath is non-empty for renamed files and holds the source path.
+	OldPath string
+
+	// Added is the number of lines added. -1 if the file is binary.
+	Added int
+
+	// Deleted is the number of lines deleted. -1 if the file is binary.
+	Deleted int
+}
+
+// DiffNumStat returns per-file line-change counts between base and HEAD using
+// git diff --numstat. Binary files are returned with Added and Deleted set to -1.
+func (g *GitClient) DiffNumStat(ctx context.Context, base string) ([]NumStatEntry, error) {
+	out, err := g.run(ctx, "diff", "--numstat", base+"...HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("git: diff numstat from %q: %w", base, err)
+	}
+	return parseNumStat(out), nil
+}
+
+// parseNumStat parses the output of `git diff --numstat`.
+// Each normal line is: "<added>\t<deleted>\t<path>".
+// Binary files produce:   "-\t-\t<path>".
+// Renamed files produce:  "<added>\t<deleted>\t{old => new}" or two path variants.
+func parseNumStat(output string) []NumStatEntry {
+	var entries []NumStatEntry
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		addedStr := strings.TrimSpace(parts[0])
+		deletedStr := strings.TrimSpace(parts[1])
+		rawPath := strings.TrimSpace(parts[2])
+
+		entry := NumStatEntry{}
+
+		// Parse lines added/deleted; "-" means binary file.
+		if addedStr == "-" {
+			entry.Added = -1
+		} else {
+			n, err := strconv.Atoi(addedStr)
+			if err == nil {
+				entry.Added = n
+			}
+		}
+		if deletedStr == "-" {
+			entry.Deleted = -1
+		} else {
+			n, err := strconv.Atoi(deletedStr)
+			if err == nil {
+				entry.Deleted = n
+			}
+		}
+
+		// Handle rename notation "{old => new}" embedded in path.
+		// Example: "src/{foo => bar}/file.go" or "old.go => new.go"
+		if strings.Contains(rawPath, " => ") {
+			oldPath, newPath := parseRenamePath(rawPath)
+			entry.OldPath = oldPath
+			entry.Path = newPath
+		} else {
+			entry.Path = rawPath
+		}
+
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// parseRenamePath splits a git rename path like "{old => new}" or "old => new"
+// into its source and destination components.
+func parseRenamePath(rawPath string) (oldPath, newPath string) {
+	// Handle inline brace notation: "prefix/{old => new}/suffix"
+	openBrace := strings.Index(rawPath, "{")
+	closeBrace := strings.Index(rawPath, "}")
+	if openBrace >= 0 && closeBrace > openBrace {
+		prefix := rawPath[:openBrace]
+		suffix := rawPath[closeBrace+1:]
+		inner := rawPath[openBrace+1 : closeBrace]
+		halves := strings.SplitN(inner, " => ", 2)
+		if len(halves) == 2 {
+			oldPath = strings.TrimSuffix(prefix+halves[0]+suffix, "/")
+			newPath = strings.TrimSuffix(prefix+halves[1]+suffix, "/")
+			return oldPath, newPath
+		}
+	}
+	// Simple "old => new" without braces.
+	halves := strings.SplitN(rawPath, " => ", 2)
+	if len(halves) == 2 {
+		return strings.TrimSpace(halves[0]), strings.TrimSpace(halves[1])
+	}
+	// Fallback: treat as non-rename.
+	return "", rawPath
 }
 
 // --- Log Operations ---

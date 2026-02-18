@@ -1,0 +1,11 @@
+Test review prompt for [[ .AgentName ]].
+Files: [[ .Stats.TotalFiles ]]
+Mode: [[ .ReviewMode ]]
+[[ if .ProjectBrief -]]
+Brief: [[ .ProjectBrief ]]
+[[ end -]]
+[[ if .Diff -]]
+Diff:
+[[ .Diff ]]
+[[ end -]]
+Schema: [[ .JSONSchema ]]
