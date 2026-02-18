@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 34 |
+| Completed | 35 |
 | In Progress | 0 |
-| Not Started | 52 |
+| Not Started | 51 |
 
 ---
 
@@ -219,6 +219,36 @@
 
 ---
 
+### T-034: Finding Consolidation and Deduplication
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Consolidator` struct with `NewConsolidator(logger)` constructor accepting an optional charmbracelet/log logger
+  - `Consolidate(results []AgentReviewResult)` method implementing O(n) map-based deduplication using `Finding.DeduplicationKey()` as the composite key
+  - Severity escalation: when two agents report the same finding, the higher severity is kept; `EscalateSeverity(a, b Severity) Severity` helper (never downgrades)
+  - `AggregateVerdicts(verdicts []Verdict) Verdict` with BLOCKING > CHANGES_NEEDED > APPROVED priority; short-circuits on first BLOCKING
+  - Agent attribution: each finding in the output tracks all agents that reported it as a comma-separated string in the `Agent` field
+  - Description merging: `mergeDescriptions` keeps the longer description as the primary, appends a truncated note (max 120 chars) when the secondary adds unique content, avoids duplicating content already present in the primary
+  - `ConsolidationStats` with `TotalInputFindings`, `UniqueFindings`, `DuplicatesRemoved`, `SeverityEscalations`, `OverlapRate` (percentage of findings from 2+ agents), `FindingsPerAgent`, `FindingsPerSeverity`
+  - Errored agents (non-nil Err or nil Result) are excluded from finding aggregation; their effective verdict is CHANGES_NEEDED; logged as warning when logger is non-nil
+  - Findings sorted: critical-first (descending severity rank), then file path alphabetically, then line number ascending
+  - `severityRank` unexported helper for consistent numeric ordering (info=1 through critical=5; unknown=0)
+  - 50+ table-driven test functions covering deduplication, severity escalation, verdict aggregation, error handling, sorting, stats accuracy, logger paths, edge cases (nil results, line=0, zero findings with BLOCKING), and a multi-agent integration scenario
+  - Benchmark `BenchmarkConsolidate` for regression detection
+- **Files created:**
+  - `internal/review/consolidate.go` -- Consolidator, ConsolidationStats, AggregateVerdicts, EscalateSeverity, severityRank, mergeDescriptions
+  - `internal/review/consolidate_test.go` -- 50+ test functions and 1 benchmark; table-driven, parallel-safe
+- **Key Decisions:**
+  1. Two-pass approach: first pass builds `findingMap` and `agentsByKey` in O(n); second pass attaches agent names and computes overlap rate
+  2. `mergeDescriptions` does not accept an agent parameter -- agent attribution is handled separately via `agentsByKey` to keep concerns separated
+  3. Severity escalation is tracked per-merge (not per-finding) to give an accurate count of how many promotion events occurred
+  4. `nil` `AgentReviewResult.Result` (with no error) is treated defensively as an error to avoid nil-pointer panics downstream
+  5. Empty `results` slice returns `VerdictApproved` with zero stats (neutral safe default)
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/review/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -241,7 +271,7 @@ _None currently_
 | T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Completed |
 | T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Completed |
 | T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Completed |
-| T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Not Started |
+| T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Completed |
 | T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Not Started |
 | T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Not Started |
 | T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Not Started |
