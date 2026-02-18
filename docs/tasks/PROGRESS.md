@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 71 |
+| Completed | 72 |
 | In Progress | 0 |
-| Not Started | 18 |
+| Not Started | 17 |
 
 ---
 
@@ -496,6 +496,28 @@
 
 ---
 
+### T-069: Split-Pane Layout Manager
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - 6 exported constants: `MinTerminalWidth=80`, `MinTerminalHeight=24`, `DefaultSidebarWidth=22`, `TitleBarHeight=1`, `StatusBarHeight=1`, `BorderWidth=1`
+  - `PanelDimensions` struct holding `Width` and `Height` in terminal cell units
+  - `Layout` struct with unexported `termWidth`, `termHeight`, `sidebarWidth`, `agentSplit` fields and 5 exported `PanelDimensions` fields (`TitleBar`, `Sidebar`, `AgentPanel`, `EventLog`, `StatusBar`)
+  - `NewLayout()` constructor initializing `sidebarWidth=22` and `agentSplit=0.65` with all panel dimensions zero-initialised
+  - `Resize(width, height int) bool` method recording terminal dimensions and recalculating all panel dimensions with clamping (`contentHeight`, `mainWidth`, `agentHeight`, `eventHeight` all min-1); returns false without updating panels when below minimum dimensions
+  - `IsTooSmall() bool` method checking recorded terminal dimensions against minimums
+  - `TerminalSize() (int, int)` returning last recorded terminal width and height
+  - `Render(theme Theme, titleBar, sidebar, agentPanel, eventLog, statusBar string) string` assembling the 5-panel frame using lipgloss styles for sizing, a `"|"` vertical divider with `ColorBorder` foreground, `JoinVertical`/`JoinHorizontal` composition
+  - `RenderTooSmall(theme Theme) string` rendering a centered resize message via `lipgloss.Place` when terminal size is known, or plain `theme.ErrorText` when not
+  - 25-test suite covering defaults, resize success/failure/clamping, IsTooSmall, TerminalSize, Render, RenderTooSmall
+- **Files created/modified:**
+  - `internal/tui/layout.go` -- Layout type, constants, PanelDimensions, all 6 exported methods
+  - `internal/tui/layout_test.go` -- 25 table-driven tests covering all acceptance criteria and edge cases
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -519,7 +541,7 @@ _None currently_
 | T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Completed |
 | T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Completed |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Completed |
-| T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Not Started |
+| T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Completed |
 | T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Not Started |
 | T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Not Started |
 | T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Not Started |
