@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 46 |
+| Completed | 47 |
 | In Progress | 0 |
-| Not Started | 43 |
+| Not Started | 42 |
 
 ---
 
@@ -289,6 +289,28 @@
 
 ---
 
+### T-044: Step Handler Registry
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Registry` struct with internal `map[string]StepHandler` (no mutex -- single-threaded init-time registration)
+  - `NewRegistry() *Registry` constructor
+  - `Register(handler StepHandler)` -- panics on nil handler, empty name, or duplicate name with clear messages
+  - `Get(name string) (StepHandler, error)` -- returns `ErrStepNotFound` wrapped with step name for `errors.Is` detection
+  - `Has(name string) bool` -- O(1) map presence check
+  - `List() []string` -- alphabetically sorted handler names via `sort.Strings`
+  - `MustGet(name string) StepHandler` -- panics on missing handler, for use in init code
+  - `ErrStepNotFound` sentinel error (`errors.New`)
+  - `DefaultRegistry` package-level singleton and four delegation functions: `Register`, `GetHandler`, `HasHandler`, `ListHandlers`
+  - 20 table-driven unit tests covering all methods, all panic paths, sentinel unwrapping via `errors.Is`, and DefaultRegistry delegation with hermetic restore pattern
+- **Files created/modified:**
+  - `internal/workflow/registry.go` -- full implementation with godoc
+  - `internal/workflow/registry_test.go` -- 275-line comprehensive test suite
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -299,7 +321,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** In Progress (1/13 complete)
+- **Status:** In Progress (2/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -309,7 +331,7 @@ _None currently_
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
 | T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Completed |
-| T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Not Started |
+| T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Completed |
 | T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Not Started |
 | T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Not Started |
 | T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Not Started |
