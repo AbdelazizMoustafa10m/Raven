@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 62 |
+| Completed | 63 |
 | In Progress | 0 |
-| Not Started | 27 |
+| Not Started | 26 |
 
 ---
 
@@ -445,6 +445,28 @@
 
 ---
 
+### T-060: Merge -- Global ID Assignment
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `IDMapping` type (`map[string]string`) mapping temp_id to global_id (e.g., "E001-T01" -> "T-001")
+  - `MergedTask` struct retaining all TaskDef fields plus `GlobalID` and `EpicID`
+  - `SortEpicsByDependency(breakdown *EpicBreakdown) ([]string, error)` — Kahn's algorithm topological sort with deterministic lexicographic ordering of same-level epics; returns descriptive error on cycle detection
+  - `AssignGlobalIDs(epicOrder []string, results map[string]*EpicTaskResult) ([]MergedTask, IDMapping)` — sequential T-001/T-002/... assignment across epics in topological order; 3-digit format for <1000 tasks, 4-digit for >=1000; skips epics not in results; appends extras (in results but not in epicOrder) sorted by ID
+  - Cycle error message format: `"cyclic epic dependency detected: [E-002 E-003] form a cycle"` using sorted slice for determinism
+  - No new external dependencies; pure stdlib (`fmt`, `sort`)
+- **Files created/modified:**
+  - `internal/prd/merger.go` — `IDMapping`, `MergedTask`, `SortEpicsByDependency`, `AssignGlobalIDs`
+  - `internal/prd/merger_test.go` — 20 test functions covering: single epic, linear chain, multiple roots, cycle detection, empty/nil inputs, zero-task epics, extras handling, 4-digit padding at 1000 tasks, field preservation, integration tests
+- **Key Decisions:**
+  - Kahn's algorithm chosen over DFS for cycle detection — produces cleaner "unprocessed nodes" cycle report
+  - Queue re-sorted after each processing step to guarantee lexicographic determinism when multiple epics become simultaneously available
+  - `AssignGlobalIDs` is lenient about empty TempIDs (skips them) since validation is the schema layer's responsibility
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -468,7 +490,7 @@ _None currently_
 | T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Completed |
 | T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Completed |
 | T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Completed |
-| T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Not Started |
+| T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Completed |
 | T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Not Started |
 | T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Not Started |
 | T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Not Started |

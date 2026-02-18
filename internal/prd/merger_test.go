@@ -1,0 +1,1248 @@
+package prd
+
+import (
+	"fmt"
+	"sort"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// --- SortEpicsByDependency tests ---
+
+func TestSortEpicsByDependency_SingleEpicNoDeps(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "Only", Description: "The only epic"},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"E-001"}, order)
+}
+
+func TestSortEpicsByDependency_NilBreakdown(t *testing.T) {
+	t.Parallel()
+
+	order, err := SortEpicsByDependency(nil)
+	require.NoError(t, err)
+	assert.Empty(t, order)
+}
+
+func TestSortEpicsByDependency_EmptyEpics(t *testing.T) {
+	t.Parallel()
+
+	order, err := SortEpicsByDependency(&EpicBreakdown{Epics: []Epic{}})
+	require.NoError(t, err)
+	assert.Empty(t, order)
+}
+
+func TestSortEpicsByDependency_LinearChain(t *testing.T) {
+	t.Parallel()
+
+	// E-001 <- E-002 <- E-003 (each depends on the prior)
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "First", Description: "No deps"},
+			{ID: "E-002", Title: "Second", Description: "Depends on E-001", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-003", Title: "Third", Description: "Depends on E-002", DependenciesOnEpics: []string{"E-002"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"E-001", "E-002", "E-003"}, order)
+}
+
+func TestSortEpicsByDependency_MultipleRoots(t *testing.T) {
+	t.Parallel()
+
+	// E-001 and E-002 have no deps; E-003 depends on both
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "A", Description: "D"},
+			{ID: "E-002", Title: "B", Description: "D"},
+			{ID: "E-003", Title: "C", Description: "D", DependenciesOnEpics: []string{"E-001", "E-002"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	require.Len(t, order, 3)
+	// E-001 and E-002 come before E-003
+	assert.Equal(t, "E-003", order[2])
+	// First two should be E-001 and E-002 in sorted order
+	assert.Equal(t, "E-001", order[0])
+	assert.Equal(t, "E-002", order[1])
+}
+
+func TestSortEpicsByDependency_Deterministic_SortedOrder(t *testing.T) {
+	t.Parallel()
+
+	// All three epics are roots (no deps) — they should come out sorted by ID.
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-003", Title: "C", Description: "D"},
+			{ID: "E-001", Title: "A", Description: "D"},
+			{ID: "E-002", Title: "B", Description: "D"},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"E-001", "E-002", "E-003"}, order)
+}
+
+func TestSortEpicsByDependency_CycleDetected(t *testing.T) {
+	t.Parallel()
+
+	// E-002 depends on E-003, E-003 depends on E-002 — cycle
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "A", Description: "D"},
+			{ID: "E-002", Title: "B", Description: "D", DependenciesOnEpics: []string{"E-003"}},
+			{ID: "E-003", Title: "C", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.Error(t, err)
+	assert.Nil(t, order)
+	assert.Contains(t, err.Error(), "cyclic epic dependency detected")
+	assert.Contains(t, err.Error(), "E-002")
+	assert.Contains(t, err.Error(), "E-003")
+}
+
+func TestSortEpicsByDependency_CycleErrorMessage_Informative(t *testing.T) {
+	t.Parallel()
+
+	// Three-node cycle: E-001 -> E-002 -> E-003 -> E-001
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "A", Description: "D", DependenciesOnEpics: []string{"E-003"}},
+			{ID: "E-002", Title: "B", Description: "D", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-003", Title: "C", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+		},
+	}
+
+	_, err := SortEpicsByDependency(breakdown)
+	require.Error(t, err)
+	// The error must mention "form a cycle" and include the involved epic IDs.
+	assert.Contains(t, err.Error(), "form a cycle")
+	assert.Contains(t, err.Error(), "E-001")
+	assert.Contains(t, err.Error(), "E-002")
+	assert.Contains(t, err.Error(), "E-003")
+}
+
+func TestSortEpicsByDependency_PartialCycle_RootEpicsOrdered(t *testing.T) {
+	t.Parallel()
+
+	// E-001 is a root; E-002 and E-003 form a cycle.
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "Root", Description: "D"},
+			{ID: "E-002", Title: "CycleA", Description: "D", DependenciesOnEpics: []string{"E-003"}},
+			{ID: "E-003", Title: "CycleB", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+		},
+	}
+
+	_, err := SortEpicsByDependency(breakdown)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cyclic epic dependency detected")
+}
+
+// --- AssignGlobalIDs tests ---
+
+func TestAssignGlobalIDs_SingleEpic_ThreeTasks(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "First task", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T02", Title: "Second task", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "medium", Priority: "should-have"},
+				{TempID: "E001-T03", Title: "Third task", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "large", Priority: "nice-to-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 3)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E001-T01", merged[0].TempID)
+	assert.Equal(t, "E-001", merged[0].EpicID)
+
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E001-T02", merged[1].TempID)
+
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+	assert.Equal(t, "E001-T03", merged[2].TempID)
+
+	// Verify mapping
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-002", mapping["E001-T02"])
+	assert.Equal(t, "T-003", mapping["E001-T03"])
+}
+
+func TestAssignGlobalIDs_LinearChain_EpicOrder(t *testing.T) {
+	t.Parallel()
+
+	// E-001 has 2 tasks, E-002 has 3 tasks, E-003 has 1 task.
+	order := []string{"E-001", "E-002", "E-003"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T02", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+		"E-002": {
+			EpicID: "E-002",
+			Tasks: []TaskDef{
+				{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E002-T02", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E002-T03", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+		"E-003": {
+			EpicID: "E-003",
+			Tasks: []TaskDef{
+				{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 6)
+
+	// E-001 tasks get T-001, T-002
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E001-T01", merged[0].TempID)
+	assert.Equal(t, "E-001", merged[0].EpicID)
+
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E001-T02", merged[1].TempID)
+
+	// E-002 tasks get T-003, T-004, T-005
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+	assert.Equal(t, "E002-T01", merged[2].TempID)
+	assert.Equal(t, "E-002", merged[2].EpicID)
+
+	assert.Equal(t, "T-004", merged[3].GlobalID)
+	assert.Equal(t, "T-005", merged[4].GlobalID)
+
+	// E-003 task gets T-006
+	assert.Equal(t, "T-006", merged[5].GlobalID)
+	assert.Equal(t, "E003-T01", merged[5].TempID)
+	assert.Equal(t, "E-003", merged[5].EpicID)
+
+	// Verify IDMapping completeness
+	assert.Len(t, mapping, 6)
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-003", mapping["E002-T01"])
+	assert.Equal(t, "T-006", mapping["E003-T01"])
+}
+
+func TestAssignGlobalIDs_EpicWithNoTasks_SkippedNoGap(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001", "E-002", "E-003"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+		"E-002": {
+			EpicID: "E-002",
+			Tasks:  []TaskDef{}, // zero tasks
+		},
+		"E-003": {
+			EpicID: "E-003",
+			Tasks: []TaskDef{
+				{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	// E-002 has no tasks, so total is 2; no gap in numbering.
+	require.Len(t, merged, 2)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E001-T01", merged[0].TempID)
+
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E003-T01", merged[1].TempID)
+
+	assert.Len(t, mapping, 2)
+}
+
+func TestAssignGlobalIDs_EpicInResultsNotInOrder_AppendedSorted(t *testing.T) {
+	t.Parallel()
+
+	// epicOrder only includes E-001; E-002 is extra (not in order)
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+		"E-002": {
+			EpicID: "E-002",
+			Tasks: []TaskDef{
+				{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 2)
+	// E-001 tasks first (in epicOrder), then E-002 appended.
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E-001", merged[0].EpicID)
+
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E-002", merged[1].EpicID)
+
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-002", mapping["E002-T01"])
+}
+
+func TestAssignGlobalIDs_EpicInOrderNotInResults_Skipped(t *testing.T) {
+	t.Parallel()
+
+	// E-002 is in epicOrder but not in results
+	order := []string{"E-001", "E-002", "E-003"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+		"E-003": {
+			EpicID: "E-003",
+			Tasks: []TaskDef{
+				{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 2)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E001-T01", merged[0].TempID)
+
+	// E-002 skipped; E-003 gets T-002 with no gap.
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E003-T01", merged[1].TempID)
+
+	assert.Len(t, mapping, 2)
+}
+
+func TestAssignGlobalIDs_EmptyResults(t *testing.T) {
+	t.Parallel()
+
+	merged, mapping := AssignGlobalIDs([]string{}, map[string]*EpicTaskResult{})
+
+	assert.Empty(t, merged)
+	assert.Empty(t, mapping)
+}
+
+func TestAssignGlobalIDs_NilResults(t *testing.T) {
+	t.Parallel()
+
+	merged, mapping := AssignGlobalIDs(nil, map[string]*EpicTaskResult{})
+
+	assert.Empty(t, merged)
+	assert.Empty(t, mapping)
+}
+
+func TestAssignGlobalIDs_FourDigitPadding_1000Tasks(t *testing.T) {
+	t.Parallel()
+
+	// Build exactly 1000 tasks across two epics to trigger 4-digit padding.
+	tasks1 := make([]TaskDef, 500)
+	for i := range tasks1 {
+		tasks1[i] = TaskDef{
+			TempID:             fmt.Sprintf("E001-T%02d-%03d", i/100+1, i),
+			Title:              "T",
+			Description:        "D",
+			AcceptanceCriteria: []string{"ac"},
+			Effort:             "small",
+			Priority:           "must-have",
+		}
+	}
+	tasks2 := make([]TaskDef, 500)
+	for i := range tasks2 {
+		tasks2[i] = TaskDef{
+			TempID:             fmt.Sprintf("E002-T%02d-%03d", i/100+1, i),
+			Title:              "T",
+			Description:        "D",
+			AcceptanceCriteria: []string{"ac"},
+			Effort:             "small",
+			Priority:           "must-have",
+		}
+	}
+
+	order := []string{"E-001", "E-002"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: tasks1},
+		"E-002": {EpicID: "E-002", Tasks: tasks2},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 1000)
+	// First task should be T-0001 (4-digit padding).
+	assert.Equal(t, "T-0001", merged[0].GlobalID)
+	// Last task should be T-1000.
+	assert.Equal(t, "T-1000", merged[999].GlobalID)
+
+	// All 1000 tasks should be in the mapping.
+	assert.Len(t, mapping, 1000)
+}
+
+func TestAssignGlobalIDs_999Tasks_ThreeDigitPadding(t *testing.T) {
+	t.Parallel()
+
+	tasks := make([]TaskDef, 999)
+	for i := range tasks {
+		tasks[i] = TaskDef{
+			TempID:             fmt.Sprintf("E001-T%02d-%03d", i/100+1, i),
+			Title:              "T",
+			Description:        "D",
+			AcceptanceCriteria: []string{"ac"},
+			Effort:             "small",
+			Priority:           "must-have",
+		}
+	}
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: tasks},
+	}
+
+	merged, _ := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 999)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "T-999", merged[998].GlobalID)
+}
+
+func TestAssignGlobalIDs_TaskFieldsPreserved(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{
+					TempID:             "E001-T01",
+					Title:              "Implement auth middleware",
+					Description:        "Auth middleware implementation",
+					AcceptanceCriteria: []string{"Tokens validated", "Expired tokens rejected"},
+					LocalDependencies:  []string{"E001-T00"},
+					CrossEpicDeps:      []string{"E-002:db-schema"},
+					Effort:             "medium",
+					Priority:           "must-have",
+				},
+			},
+		},
+	}
+
+	merged, _ := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 1)
+	mt := merged[0]
+	assert.Equal(t, "T-001", mt.GlobalID)
+	assert.Equal(t, "E001-T01", mt.TempID)
+	assert.Equal(t, "E-001", mt.EpicID)
+	assert.Equal(t, "Implement auth middleware", mt.Title)
+	assert.Equal(t, "Auth middleware implementation", mt.Description)
+	assert.Equal(t, []string{"Tokens validated", "Expired tokens rejected"}, mt.AcceptanceCriteria)
+	assert.Equal(t, []string{"E001-T00"}, mt.LocalDependencies)
+	assert.Equal(t, []string{"E-002:db-schema"}, mt.CrossEpicDeps)
+	assert.Equal(t, "medium", mt.Effort)
+	assert.Equal(t, "must-have", mt.Priority)
+}
+
+// --- Integration: SortEpicsByDependency + AssignGlobalIDs ---
+
+func TestSortAndAssign_LinearChain(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "First", Description: "No deps"},
+			{ID: "E-002", Title: "Second", Description: "Depends on E-001", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-003", Title: "Third", Description: "Depends on E-002", DependenciesOnEpics: []string{"E-002"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	require.Equal(t, []string{"E-001", "E-002", "E-003"}, order)
+
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: []TaskDef{
+			{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			{TempID: "E001-T02", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-002": {EpicID: "E-002", Tasks: []TaskDef{
+			{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-003": {EpicID: "E-003", Tasks: []TaskDef{
+			{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			{TempID: "E003-T02", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 5)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+	assert.Equal(t, "T-004", merged[3].GlobalID)
+	assert.Equal(t, "T-005", merged[4].GlobalID)
+
+	assert.Equal(t, "E-001", merged[0].EpicID)
+	assert.Equal(t, "E-001", merged[1].EpicID)
+	assert.Equal(t, "E-002", merged[2].EpicID)
+	assert.Equal(t, "E-003", merged[3].EpicID)
+	assert.Equal(t, "E-003", merged[4].EpicID)
+
+	assert.Len(t, mapping, 5)
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-002", mapping["E001-T02"])
+	assert.Equal(t, "T-003", mapping["E002-T01"])
+	assert.Equal(t, "T-004", mapping["E003-T01"])
+	assert.Equal(t, "T-005", mapping["E003-T02"])
+}
+
+func TestSortAndAssign_CycleError(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "A", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+			{ID: "E-002", Title: "B", Description: "D", DependenciesOnEpics: []string{"E-001"}},
+		},
+	}
+
+	_, err := SortEpicsByDependency(breakdown)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cyclic epic dependency detected")
+}
+
+func TestAssignGlobalIDs_MultipleExtrasAppendedSorted(t *testing.T) {
+	t.Parallel()
+
+	// epicOrder is empty; all epics are extras — should be sorted by ID.
+	order := []string{}
+	results := map[string]*EpicTaskResult{
+		"E-003": {EpicID: "E-003", Tasks: []TaskDef{
+			{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-001": {EpicID: "E-001", Tasks: []TaskDef{
+			{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-002": {EpicID: "E-002", Tasks: []TaskDef{
+			{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 3)
+	// All epics are extras; sorted by ID => E-001, E-002, E-003.
+	assert.Equal(t, "E-001", merged[0].EpicID)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+
+	assert.Equal(t, "E-002", merged[1].EpicID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+
+	assert.Equal(t, "E-003", merged[2].EpicID)
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+
+	assert.Len(t, mapping, 3)
+}
+
+// --- Additional tests for T-060 ---
+
+// TestSortEpicsByDependency_DiamondDependency verifies the four-epic diamond shape:
+// E-001 has no deps; E-002 and E-003 both depend on E-001; E-004 depends on E-002 and E-003.
+func TestSortEpicsByDependency_DiamondDependency(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "Root", Description: "No deps"},
+			{ID: "E-002", Title: "Left", Description: "Depends on E-001", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-003", Title: "Right", Description: "Depends on E-001", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-004", Title: "Sink", Description: "Depends on E-002 and E-003", DependenciesOnEpics: []string{"E-002", "E-003"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	require.Len(t, order, 4)
+
+	// E-001 must be first.
+	assert.Equal(t, "E-001", order[0])
+
+	// E-002 and E-003 must both appear before E-004; their relative order is determined
+	// lexicographically (E-002 before E-003).
+	assert.Equal(t, "E-002", order[1])
+	assert.Equal(t, "E-003", order[2])
+
+	// E-004 must be last (depends on E-002 and E-003).
+	assert.Equal(t, "E-004", order[3])
+}
+
+// TestSortEpicsByDependency_DiamondDependency_IDMapping verifies that IDs are assigned
+// sequentially after topological sort of a diamond dependency graph.
+func TestSortEpicsByDependency_DiamondDependency_IDMapping(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "Root", Description: "No deps"},
+			{ID: "E-002", Title: "Left", Description: "Depends on E-001", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-003", Title: "Right", Description: "Depends on E-001", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-004", Title: "Sink", Description: "Depends on E-002 and E-003", DependenciesOnEpics: []string{"E-002", "E-003"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: []TaskDef{
+			{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-002": {EpicID: "E-002", Tasks: []TaskDef{
+			{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-003": {EpicID: "E-003", Tasks: []TaskDef{
+			{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-004": {EpicID: "E-004", Tasks: []TaskDef{
+			{TempID: "E004-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 4)
+	// IDs are sequential starting at T-001.
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+	assert.Equal(t, "T-004", merged[3].GlobalID)
+
+	// E-001 is first in topo order.
+	assert.Equal(t, "E-001", merged[0].EpicID)
+	// E-004 is last in topo order.
+	assert.Equal(t, "E-004", merged[3].EpicID)
+
+	// Mapping completeness: all 4 temp_ids present.
+	assert.Len(t, mapping, 4)
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-004", mapping["E004-T01"])
+}
+
+// TestAssignGlobalIDs_SingleEpic_FiveTasks verifies a single epic with exactly 5 tasks
+// receives sequential IDs T-001 through T-005, as specified in T-060.
+func TestAssignGlobalIDs_SingleEpic_FiveTasks(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "Task 1", Description: "First", AcceptanceCriteria: []string{"ac1"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T02", Title: "Task 2", Description: "Second", AcceptanceCriteria: []string{"ac2"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T03", Title: "Task 3", Description: "Third", AcceptanceCriteria: []string{"ac3"}, Effort: "medium", Priority: "should-have"},
+				{TempID: "E001-T04", Title: "Task 4", Description: "Fourth", AcceptanceCriteria: []string{"ac4"}, Effort: "large", Priority: "nice-to-have"},
+				{TempID: "E001-T05", Title: "Task 5", Description: "Fifth", AcceptanceCriteria: []string{"ac5"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 5)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+	assert.Equal(t, "T-004", merged[3].GlobalID)
+	assert.Equal(t, "T-005", merged[4].GlobalID)
+
+	// Original order within the epic is preserved.
+	assert.Equal(t, "E001-T01", merged[0].TempID)
+	assert.Equal(t, "E001-T02", merged[1].TempID)
+	assert.Equal(t, "E001-T03", merged[2].TempID)
+	assert.Equal(t, "E001-T04", merged[3].TempID)
+	assert.Equal(t, "E001-T05", merged[4].TempID)
+
+	// All 5 temp_ids must be in the mapping.
+	assert.Len(t, mapping, 5)
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-002", mapping["E001-T02"])
+	assert.Equal(t, "T-003", mapping["E001-T03"])
+	assert.Equal(t, "T-004", mapping["E001-T04"])
+	assert.Equal(t, "T-005", mapping["E001-T05"])
+}
+
+// TestSortEpicsByDependency_SelfDependencyCycle verifies that an epic listed as depending
+// on itself is treated as a cycle and returns a clear error. The schema validator rejects
+// self-references before reaching this function, but SortEpicsByDependency ignores
+// self-references (epicSet[dep] is true for self) so the self-loop raises the in-degree
+// and the epic is never enqueued — producing a cycle error.
+func TestSortEpicsByDependency_SelfDependencyCycle(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			// E-001 depends on itself — schema would reject this, but merger must handle it.
+			{ID: "E-001", Title: "Self", Description: "Self-referential", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-002", Title: "Other", Description: "No deps"},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.Error(t, err)
+	assert.Nil(t, order)
+	assert.Contains(t, err.Error(), "cyclic epic dependency detected")
+	assert.Contains(t, err.Error(), "E-001")
+}
+
+// TestSortEpicsByDependency_Deterministic verifies that running SortEpicsByDependency
+// multiple times with identical input always produces the same result (no map iteration
+// non-determinism leaks into the output).
+func TestSortEpicsByDependency_Deterministic(t *testing.T) {
+	t.Parallel()
+
+	// Mix of root epics and epics with shared dependencies to exercise multiple
+	// simultaneously-available-nodes code paths.
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "A", Description: "D"},
+			{ID: "E-002", Title: "B", Description: "D"},
+			{ID: "E-003", Title: "C", Description: "D", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-004", Title: "D", Description: "D", DependenciesOnEpics: []string{"E-001"}},
+			{ID: "E-005", Title: "E", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+			{ID: "E-006", Title: "F", Description: "D", DependenciesOnEpics: []string{"E-003", "E-004"}},
+		},
+	}
+
+	const iterations = 20
+	first, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+
+	for i := 1; i < iterations; i++ {
+		got, err := SortEpicsByDependency(breakdown)
+		require.NoError(t, err)
+		assert.Equal(t, first, got, "iteration %d produced different order", i)
+	}
+}
+
+// TestAssignGlobalIDs_IDMappingCompleteness verifies that every temp_id across all epics
+// appears in the returned IDMapping with the correct sequential global_id.
+func TestAssignGlobalIDs_IDMappingCompleteness(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001", "E-002", "E-003"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: []TaskDef{
+			{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			{TempID: "E001-T02", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-002": {EpicID: "E-002", Tasks: []TaskDef{
+			{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			{TempID: "E002-T02", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			{TempID: "E002-T03", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-003": {EpicID: "E-003", Tasks: []TaskDef{
+			{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+	}
+
+	// Collect all expected temp_ids.
+	expectedTempIDs := []string{
+		"E001-T01", "E001-T02",
+		"E002-T01", "E002-T02", "E002-T03",
+		"E003-T01",
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	// Mapping must contain every temp_id.
+	require.Len(t, mapping, len(expectedTempIDs))
+	for _, tempID := range expectedTempIDs {
+		_, ok := mapping[tempID]
+		assert.True(t, ok, "IDMapping missing temp_id %q", tempID)
+	}
+
+	// Mapping values must be the correct global IDs (sequential, no gaps).
+	// Build expected mapping from merged slice.
+	for _, mt := range merged {
+		assert.Equal(t, mapping[mt.TempID], mt.GlobalID,
+			"mapping[%q] should equal GlobalID %q", mt.TempID, mt.GlobalID)
+	}
+
+	// All global IDs must be unique and sequential.
+	globalIDs := make([]string, len(merged))
+	for i, mt := range merged {
+		globalIDs[i] = mt.GlobalID
+	}
+	for i, id := range globalIDs {
+		assert.Equal(t, fmt.Sprintf("T-%03d", i+1), id,
+			"global ID at position %d should be T-%03d", i, i+1)
+	}
+}
+
+// TestAssignGlobalIDs_TaskFieldsPreserved_AllFields verifies that ALL TaskDef fields
+// (AcceptanceCriteria with multiple items, LocalDependencies, CrossEpicDeps) are correctly
+// copied to MergedTask without truncation or mutation.
+func TestAssignGlobalIDs_TaskFieldsPreserved_AllFields(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{
+					TempID:      "E001-T01",
+					Title:       "Implement OAuth2 login flow",
+					Description: "End-to-end OAuth2 with PKCE extension",
+					AcceptanceCriteria: []string{
+						"Authorization code flow works",
+						"PKCE challenge validated server-side",
+						"Tokens stored securely",
+						"Refresh tokens rotated on use",
+					},
+					LocalDependencies: []string{"E001-T00"},
+					CrossEpicDeps:     []string{"E-002:user-schema", "E-003:audit-log"},
+					Effort:            "large",
+					Priority:          "must-have",
+				},
+				{
+					TempID:             "E001-T02",
+					Title:              "Rate-limit login attempts",
+					Description:        "Exponential back-off on failed attempts",
+					AcceptanceCriteria: []string{"Five failures trigger lockout", "Lockout clears after 15 minutes"},
+					LocalDependencies:  []string{},
+					CrossEpicDeps:      []string{},
+					Effort:             "medium",
+					Priority:           "should-have",
+				},
+			},
+		},
+	}
+
+	merged, _ := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 2)
+
+	// First task: full field verification.
+	mt1 := merged[0]
+	assert.Equal(t, "T-001", mt1.GlobalID)
+	assert.Equal(t, "E001-T01", mt1.TempID)
+	assert.Equal(t, "E-001", mt1.EpicID)
+	assert.Equal(t, "Implement OAuth2 login flow", mt1.Title)
+	assert.Equal(t, "End-to-end OAuth2 with PKCE extension", mt1.Description)
+	assert.Equal(t, []string{
+		"Authorization code flow works",
+		"PKCE challenge validated server-side",
+		"Tokens stored securely",
+		"Refresh tokens rotated on use",
+	}, mt1.AcceptanceCriteria)
+	assert.Equal(t, []string{"E001-T00"}, mt1.LocalDependencies)
+	assert.Equal(t, []string{"E-002:user-schema", "E-003:audit-log"}, mt1.CrossEpicDeps)
+	assert.Equal(t, "large", mt1.Effort)
+	assert.Equal(t, "must-have", mt1.Priority)
+
+	// Second task: verify empty slices are preserved faithfully.
+	mt2 := merged[1]
+	assert.Equal(t, "T-002", mt2.GlobalID)
+	assert.Equal(t, "E001-T02", mt2.TempID)
+	assert.Equal(t, "Rate-limit login attempts", mt2.Title)
+	assert.Equal(t, []string{"Five failures trigger lockout", "Lockout clears after 15 minutes"}, mt2.AcceptanceCriteria)
+	assert.Equal(t, []string{}, mt2.LocalDependencies)
+	assert.Equal(t, []string{}, mt2.CrossEpicDeps)
+	assert.Equal(t, "medium", mt2.Effort)
+	assert.Equal(t, "should-have", mt2.Priority)
+}
+
+// TestAssignGlobalIDs_EmptyTempID_Skipped verifies the lenient path: tasks with an empty
+// TempID are silently skipped and do not consume a global ID slot.
+func TestAssignGlobalIDs_EmptyTempID_Skipped(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T01", Title: "Valid", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "", Title: "Invalid (no temp_id)", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T03", Title: "Also Valid", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	// The empty-TempID task is skipped; only 2 valid tasks are merged.
+	require.Len(t, merged, 2)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E001-T01", merged[0].TempID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E001-T03", merged[1].TempID)
+
+	// Mapping contains only the two valid tasks.
+	assert.Len(t, mapping, 2)
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-002", mapping["E001-T03"])
+}
+
+// TestAssignGlobalIDs_ThreeNoDeps_AllValidOrderings verifies that when three epics have
+// no dependencies, the result is deterministic (lexicographic) and IDs are sequential.
+func TestAssignGlobalIDs_ThreeNoDeps_AllValidOrderings(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-003", Title: "C", Description: "D"},
+			{ID: "E-001", Title: "A", Description: "D"},
+			{ID: "E-002", Title: "B", Description: "D"},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	// Sorted lexicographically when all are roots.
+	require.Equal(t, []string{"E-001", "E-002", "E-003"}, order)
+
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: []TaskDef{
+			{TempID: "E001-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-002": {EpicID: "E-002", Tasks: []TaskDef{
+			{TempID: "E002-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+		"E-003": {EpicID: "E-003", Tasks: []TaskDef{
+			{TempID: "E003-T01", Title: "T", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+		}},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 3)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+	assert.Equal(t, "E-001", merged[0].EpicID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+	assert.Equal(t, "E-002", merged[1].EpicID)
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+	assert.Equal(t, "E-003", merged[2].EpicID)
+
+	assert.Len(t, mapping, 3)
+	assert.Equal(t, "T-001", mapping["E001-T01"])
+	assert.Equal(t, "T-002", mapping["E002-T01"])
+	assert.Equal(t, "T-003", mapping["E003-T01"])
+}
+
+// TestSortEpicsByDependency_UnknownDependencyIgnored verifies that a dependency on an
+// unknown epic ID (not in the breakdown) is silently ignored and does not inflate in-degree.
+func TestSortEpicsByDependency_UnknownDependencyIgnored(t *testing.T) {
+	t.Parallel()
+
+	breakdown := &EpicBreakdown{
+		Epics: []Epic{
+			{ID: "E-001", Title: "A", Description: "D"},
+			// E-002 lists E-999 which does not exist; it should be treated as a no-op dep.
+			{ID: "E-002", Title: "B", Description: "D", DependenciesOnEpics: []string{"E-999"}},
+		},
+	}
+
+	order, err := SortEpicsByDependency(breakdown)
+	require.NoError(t, err)
+	// Both epics have effective in-degree 0 (unknown dep ignored), sorted lexicographically.
+	assert.Equal(t, []string{"E-001", "E-002"}, order)
+}
+
+// TestAssignGlobalIDs_LargeCount_IDFormat verifies the ID format boundary:
+// 999 tasks use T-NNN (3 digits), 1000 tasks use T-NNNN (4 digits), and
+// values above 1000 keep the 4-digit format.
+func TestAssignGlobalIDs_LargeCount_IDFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		taskCount     int
+		wantFirstID   string
+		wantLastID    string
+	}{
+		{name: "boundary_999_three_digits", taskCount: 999, wantFirstID: "T-001", wantLastID: "T-999"},
+		{name: "boundary_1000_four_digits", taskCount: 1000, wantFirstID: "T-0001", wantLastID: "T-1000"},
+		{name: "above_1000_four_digits", taskCount: 1001, wantFirstID: "T-0001", wantLastID: "T-1001"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tasks := make([]TaskDef, tt.taskCount)
+			for i := range tasks {
+				tasks[i] = TaskDef{
+					TempID:             fmt.Sprintf("E001-T%05d", i),
+					Title:              "T",
+					Description:        "D",
+					AcceptanceCriteria: []string{"ac"},
+					Effort:             "small",
+					Priority:           "must-have",
+				}
+			}
+
+			// Use unique TempIDs (the format above may collide at 100+ for the original
+			// test helper pattern, so we use 5-digit suffix here).
+			// Deduplicate in the unlikely case of collision.
+			seen := make(map[string]bool, len(tasks))
+			unique := tasks[:0]
+			for _, task := range tasks {
+				if !seen[task.TempID] {
+					seen[task.TempID] = true
+					unique = append(unique, task)
+				}
+			}
+			tasks = unique
+
+			order := []string{"E-001"}
+			results := map[string]*EpicTaskResult{
+				"E-001": {EpicID: "E-001", Tasks: tasks},
+			}
+
+			merged, _ := AssignGlobalIDs(order, results)
+
+			require.Len(t, merged, tt.taskCount)
+			assert.Equal(t, tt.wantFirstID, merged[0].GlobalID)
+			assert.Equal(t, tt.wantLastID, merged[len(merged)-1].GlobalID)
+		})
+	}
+}
+
+// TestAssignGlobalIDs_GlobalIDsAreUnique verifies that every MergedTask receives a unique
+// GlobalID even across multiple epics with many tasks.
+func TestAssignGlobalIDs_GlobalIDsAreUnique(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001", "E-002", "E-003"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: buildTasks(t, "E001", 10)},
+		"E-002": {EpicID: "E-002", Tasks: buildTasks(t, "E002", 15)},
+		"E-003": {EpicID: "E-003", Tasks: buildTasks(t, "E003", 5)},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 30)
+	assert.Len(t, mapping, 30)
+
+	// Collect all global IDs and verify they are unique.
+	globalIDSet := make(map[string]bool, len(merged))
+	for _, mt := range merged {
+		assert.False(t, globalIDSet[mt.GlobalID], "duplicate GlobalID: %s", mt.GlobalID)
+		globalIDSet[mt.GlobalID] = true
+	}
+}
+
+// TestAssignGlobalIDs_TaskOrderWithinEpicPreserved verifies that tasks within a single
+// epic retain their original declaration order after global ID assignment.
+func TestAssignGlobalIDs_TaskOrderWithinEpicPreserved(t *testing.T) {
+	t.Parallel()
+
+	// Define tasks in a deliberately non-alphabetical temp_id order to confirm
+	// the function does not sort them internally.
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {
+			EpicID: "E-001",
+			Tasks: []TaskDef{
+				{TempID: "E001-T03", Title: "Third declared", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T01", Title: "First declared", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+				{TempID: "E001-T02", Title: "Second declared", Description: "D", AcceptanceCriteria: []string{"ac"}, Effort: "small", Priority: "must-have"},
+			},
+		},
+	}
+
+	merged, _ := AssignGlobalIDs(order, results)
+
+	require.Len(t, merged, 3)
+	// The original declaration order must be preserved.
+	assert.Equal(t, "E001-T03", merged[0].TempID)
+	assert.Equal(t, "T-001", merged[0].GlobalID)
+
+	assert.Equal(t, "E001-T01", merged[1].TempID)
+	assert.Equal(t, "T-002", merged[1].GlobalID)
+
+	assert.Equal(t, "E001-T02", merged[2].TempID)
+	assert.Equal(t, "T-003", merged[2].GlobalID)
+}
+
+// TestSortEpicsByDependency_NoDeps_LexicographicOrder verifies that epics with no
+// dependencies are always sorted lexicographically regardless of declaration order.
+func TestSortEpicsByDependency_NoDeps_LexicographicOrder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		epicIDs   []string
+		wantOrder []string
+	}{
+		{
+			name:      "already sorted",
+			epicIDs:   []string{"E-001", "E-002", "E-003"},
+			wantOrder: []string{"E-001", "E-002", "E-003"},
+		},
+		{
+			name:      "reverse sorted",
+			epicIDs:   []string{"E-003", "E-002", "E-001"},
+			wantOrder: []string{"E-001", "E-002", "E-003"},
+		},
+		{
+			name:      "single epic",
+			epicIDs:   []string{"E-042"},
+			wantOrder: []string{"E-042"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			epics := make([]Epic, len(tt.epicIDs))
+			for i, id := range tt.epicIDs {
+				epics[i] = Epic{ID: id, Title: "T", Description: "D"}
+			}
+
+			order, err := SortEpicsByDependency(&EpicBreakdown{Epics: epics})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOrder, order)
+		})
+	}
+}
+
+// TestSortEpicsByDependency_CycleError_ContainsAllCyclicEpics verifies that when multiple
+// epics form a cycle, the error message contains ALL epic IDs involved in the cycle.
+func TestSortEpicsByDependency_CycleError_ContainsAllCyclicEpics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		breakdown     *EpicBreakdown
+		wantInMessage []string
+	}{
+		{
+			name: "two-node cycle",
+			breakdown: &EpicBreakdown{
+				Epics: []Epic{
+					{ID: "E-001", Title: "A", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+					{ID: "E-002", Title: "B", Description: "D", DependenciesOnEpics: []string{"E-001"}},
+				},
+			},
+			wantInMessage: []string{"E-001", "E-002", "cyclic epic dependency detected"},
+		},
+		{
+			name: "three-node cycle",
+			breakdown: &EpicBreakdown{
+				Epics: []Epic{
+					{ID: "E-001", Title: "A", Description: "D", DependenciesOnEpics: []string{"E-003"}},
+					{ID: "E-002", Title: "B", Description: "D", DependenciesOnEpics: []string{"E-001"}},
+					{ID: "E-003", Title: "C", Description: "D", DependenciesOnEpics: []string{"E-002"}},
+				},
+			},
+			wantInMessage: []string{"E-001", "E-002", "E-003", "form a cycle"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := SortEpicsByDependency(tt.breakdown)
+			require.Error(t, err)
+			for _, want := range tt.wantInMessage {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+}
+
+// TestAssignGlobalIDs_IDMapping_ValuesSorted verifies that the values in IDMapping
+// are sorted consistently (T-001 < T-002 < ... T-NNN) when sorted by their keys.
+func TestAssignGlobalIDs_IDMapping_ValuesSorted(t *testing.T) {
+	t.Parallel()
+
+	order := []string{"E-001"}
+	results := map[string]*EpicTaskResult{
+		"E-001": {EpicID: "E-001", Tasks: buildTasks(t, "E001", 10)},
+	}
+
+	merged, mapping := AssignGlobalIDs(order, results)
+	require.Len(t, merged, 10)
+
+	// Collect all mapping values and verify they are the same set as the global IDs.
+	values := make([]string, 0, len(mapping))
+	for _, v := range mapping {
+		values = append(values, v)
+	}
+	sort.Strings(values)
+
+	expected := make([]string, len(merged))
+	for i, mt := range merged {
+		expected[i] = mt.GlobalID
+	}
+	sort.Strings(expected)
+
+	assert.Equal(t, expected, values)
+}
+
+// buildTasks is a test helper that creates n TaskDef instances with unique TempIDs
+// derived from the provided epic prefix.
+func buildTasks(t *testing.T, epicPrefix string, n int) []TaskDef {
+	t.Helper()
+
+	tasks := make([]TaskDef, n)
+	for i := range tasks {
+		tasks[i] = TaskDef{
+			TempID:             fmt.Sprintf("%s-T%02d", epicPrefix, i+1),
+			Title:              fmt.Sprintf("Task %d", i+1),
+			Description:        fmt.Sprintf("Description for task %d", i+1),
+			AcceptanceCriteria: []string{fmt.Sprintf("criterion %d", i+1)},
+			Effort:             "small",
+			Priority:           "must-have",
+		}
+	}
+	return tasks
+}
