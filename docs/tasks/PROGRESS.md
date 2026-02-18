@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 51 |
+| Completed | 52 |
 | In Progress | 0 |
-| Not Started | 38 |
+| Not Started | 37 |
 
 ---
 
@@ -410,6 +410,34 @@
 
 ---
 
+### T-049: Built-in Workflow Definitions and Step Handlers
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - Four built-in workflow name constants (`WorkflowImplement`, `WorkflowImplementReview`, `WorkflowPipeline`, `WorkflowPRDDecompose`)
+  - `BuiltinDefinitions()` returning all four workflow definitions as a shallow-copy map
+  - `GetDefinition(name string)` returning a workflow definition by name (nil if not found)
+  - `RegisterBuiltinHandlers(registry)` registering all 11 built-in step handlers
+  - `ImplementHandler` wrapping the loop runner for single-task or phase-based implementation
+  - `ReviewHandler` wrapping the multi-agent review orchestrator
+  - `CheckReviewHandler` mapping review verdict to `EventSuccess` (approved) or `EventNeedsHuman` (changes needed/blocking)
+  - `FixHandler` wrapping the review fix engine
+  - `PRHandler` wrapping PR creation via `review.PRCreator`
+  - `InitPhaseHandler`, `RunPhaseWorkflowHandler`, `AdvancePhaseHandler` for multi-phase pipeline iteration
+  - `ShredHandler`, `ScatterHandler`, `GatherHandler` as stubs for future PRD decomposition (T-056+)
+  - Metadata helpers: `metaString`, `metaInt`, `metaBool`, `resolveAgents` for safe cross-step data passing
+  - All handlers use compile-time interface checks (`var _ StepHandler = (*Handler)(nil)`)
+  - 86.9% test coverage (exceeds 80% requirement)
+- **Files created/modified:**
+  - `internal/workflow/builtin.go` -- workflow definitions, constants, and registration
+  - `internal/workflow/handlers.go` -- all 11 step handler implementations
+  - `internal/workflow/builtin_test.go` -- tests for definitions and registry
+  - `internal/workflow/handlers_test.go` -- tests for all handlers
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -435,7 +463,7 @@ _None currently_
 | T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Completed |
 | T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Completed |
 | T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Completed |
-| T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Not Started |
+| T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Completed |
 | T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Not Started |
 | T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Not Started |
 | T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Not Started |
