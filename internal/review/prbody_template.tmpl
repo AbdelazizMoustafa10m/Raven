@@ -1,0 +1,52 @@
+## Summary
+
+[[ .PRBodyData.Summary ]]
+
+---
+
+## Tasks Completed
+
+[[ if .PRBodyData.TasksCompleted -]]
+| Task | Title |
+|------|-------|
+[[ range .PRBodyData.TasksCompleted -]]
+| `[[ .ID ]]` | [[ .Title | escapeCell ]] |
+[[ end -]]
+[[ else -]]
+No tasks recorded for this PR.
+[[ end ]]
+
+---
+
+[[ if .HasReviewReport -]]
+## Review Results
+
+**Verdict:** [[ .VerdictIndicator ]] **[[ .PRBodyData.ReviewVerdict ]]**
+
+**Findings:** [[ .PRBodyData.ReviewFindingsCount ]]
+
+<details>
+<summary>Full Review Report[[ if .ReviewReportTruncated ]] (truncated)[[ end ]]</summary>
+
+[[ .TruncatedReviewReport ]]
+
+</details>
+
+---
+
+[[ end -]]
+[[ if .HasFixReport -]]
+## Fix Cycles
+
+**Total Cycles:** [[ .PRBodyData.FixReport.TotalCycles ]]
+
+**Final Status:** [[ .FixFinalStatusLabel ]]
+
+**Fixes Applied:** [[ .PRBodyData.FixReport.FixesApplied ]]
+
+---
+
+[[ end -]]
+[[ if .HasVerificationReport -]]
+[[ .VerificationMarkdown ]]
+[[ end -]]

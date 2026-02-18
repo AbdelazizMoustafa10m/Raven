@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 39 |
+| Completed | 41 |
 | In Progress | 0 |
-| Not Started | 50 |
+| Not Started | 48 |
 
 ---
 
@@ -373,6 +373,39 @@
 
 ---
 
+### T-039: PR Body Generation with AI Summary
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `PRBodyGenerator` struct with `agent.Agent` (optional), `templatePath`, charmbracelet logger, and an embedded `text/template`
+  - `PRBodyData` struct: Summary, TasksCompleted, DiffStats, ReviewVerdict, ReviewFindingsCount, ReviewReport, FixReport, VerificationReport, BranchName, BaseBranch, PhaseName
+  - `TaskSummary` struct: ID + Title
+  - `prBodyTemplateData` unexported struct pre-computing HasReviewReport, HasFixReport, HasVerificationReport, VerdictIndicator, TruncatedReviewReport, VerificationMarkdown, FixFinalStatusLabel for the template
+  - `NewPRBodyGenerator(ag, templatePath, logger)` constructor: compiles embedded template with `[[`/`]]` delimiters and `escapeCell` FuncMap
+  - `Generate(ctx, data)`: renders template, enforces 65,536-byte GitHub limit (truncates with notice)
+  - `GenerateSummary(ctx, diff, tasks)`: calls agent to produce 2-4 sentence prose summary; falls back to structured "This PR implements N task(s): ..." on agent nil/error (no error propagated)
+  - `GenerateTitle(data)`: single-task `"T-007: Title"`; phase branch `"Phase 3: Core Impl (T-035 - T-039)"`; multi-task `"Tasks T-001, T-002, T-003 and N more"`
+  - ReviewReport truncated at 10,000 chars with "see full report" notice; truncation flag exposed to template
+  - `adjustSummaryHeadings`: demotes `#` h1→h3, h2→h4, ..., capped at h6 via regex to avoid conflict with PR body `##` sections
+  - `extractPhaseNumber`: regex parser for branch names like `phase/3-...`, `phase-2-...`, `phase_5`
+  - `hasPRTemplate()`: best-effort check for `.github/PULL_REQUEST_TEMPLATE.md` existence (failure is silently a no-op)
+  - Embedded `prbody_template.tmpl` with `[[`/`]]` delimiters: Summary, Tasks Completed table, conditional Review Results (with `<details>` block), conditional Fix Cycles, conditional Verification (via `VerificationReport.FormatMarkdown()`)
+  - 30+ table-driven unit tests covering title generation, summary fallback paths, agent success/error, body sections, truncation, heading adjustment, phase-number extraction
+- **Files created:**
+  - `internal/review/prbody.go` -- PRBodyGenerator and all supporting types and helpers
+  - `internal/review/prbody_template.tmpl` -- embedded template with `[[`/`]]` delimiters
+  - `internal/review/prbody_test.go` -- 30+ table-driven tests covering all acceptance criteria
+- **Key Decisions:**
+  1. `prBodyTemplateData` pre-computes conditional boolean flags and pre-renders `VerificationMarkdown` so the template stays logic-free
+  2. Agent errors in `GenerateSummary` are silently swallowed and logged; callers always get a usable summary string (never an error)
+  3. `adjustSummaryHeadings` uses `strings.TrimRight(match, " ")` to isolate the `#` sequence from the trailing space, then adds 2 levels (capped at h6)
+  4. Phase title detection uses `extractPhaseNumber(BranchName)` rather than trusting just `PhaseName != ""` to avoid miscategorizing feature branches with a phase name set
+  5. `[[`/`]]` delimiters consistent with all other review package templates
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/review/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -400,7 +433,7 @@ _None currently_
 | T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Completed |
 | T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Completed |
 | T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Completed |
-| T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Not Started |
+| T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Completed |
 | T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Not Started |
 | T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Not Started |
 | T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Not Started |
