@@ -1293,6 +1293,984 @@ func TestSidebarModel_View_BarWidth_ConstrainedToSidebarWidth(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T-072: formatCountdown
+// ---------------------------------------------------------------------------
+
+func TestFormatCountdown(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		d    time.Duration
+		want string
+	}{
+		{name: "zero duration", d: 0, want: "0:00"},
+		{name: "negative duration", d: -5 * time.Second, want: "0:00"},
+		{name: "one second", d: time.Second, want: "0:01"},
+		{name: "59 seconds", d: 59 * time.Second, want: "0:59"},
+		{name: "one minute", d: 60 * time.Second, want: "1:00"},
+		{name: "one minute 42 seconds", d: 102 * time.Second, want: "1:42"},
+		{name: "59 minutes 59 seconds", d: 59*time.Minute + 59*time.Second, want: "59:59"},
+		{name: "exactly one hour", d: time.Hour, want: "1:00:00"},
+		{name: "one hour 2 minutes 3 seconds", d: time.Hour + 2*time.Minute + 3*time.Second, want: "1:02:03"},
+		{name: "two hours", d: 2 * time.Hour, want: "2:00:00"},
+		{name: "10 hours 5 minutes 7 seconds", d: 10*time.Hour + 5*time.Minute + 7*time.Second, want: "10:05:07"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := formatCountdown(tt.d)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T-072: NewRateLimitSection
+// ---------------------------------------------------------------------------
+
+func TestNewRateLimitSection_EmptyProviders(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	assert.Empty(t, rl.providers)
+	assert.Empty(t, rl.order)
+}
+
+func TestNewRateLimitSection_HasActiveLimit_False(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	assert.False(t, rl.HasActiveLimit())
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection.Update — RateLimitMsg
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_Update_RateLimitMsg_AddsProvider(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(2 * time.Minute)
+	msg := RateLimitMsg{
+		Provider: "anthropic",
+		Agent:    "claude",
+		ResetAt:  resetAt,
+	}
+	updated, cmd := rl.Update(msg)
+	require.NotNil(t, cmd, "RateLimitMsg must return a TickCmd")
+	require.Len(t, updated.providers, 1)
+	require.Len(t, updated.order, 1)
+	assert.Equal(t, "anthropic", updated.order[0])
+	prl := updated.providers["anthropic"]
+	require.NotNil(t, prl)
+	assert.True(t, prl.Active)
+	assert.Equal(t, "anthropic", prl.Provider)
+	assert.Equal(t, "claude", prl.Agent)
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_UpdatesExistingProvider(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+
+	// First message.
+	resetAt1 := time.Now().Add(time.Minute)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: resetAt1})
+	require.Len(t, rl.order, 1)
+
+	// Second message — same provider, new reset time.
+	resetAt2 := time.Now().Add(3 * time.Minute)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: resetAt2})
+
+	// Must not grow order.
+	assert.Len(t, rl.order, 1)
+	assert.Len(t, rl.providers, 1)
+	prl := rl.providers["anthropic"]
+	require.NotNil(t, prl)
+	// ResetAt should reflect the new value.
+	assert.Equal(t, resetAt2, prl.ResetAt)
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_MultipleProviders_StableOrder(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(time.Minute)
+
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "openai", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "google", ResetAt: resetAt})
+
+	require.Len(t, rl.order, 3)
+	assert.Equal(t, "anthropic", rl.order[0])
+	assert.Equal(t, "openai", rl.order[1])
+	assert.Equal(t, "google", rl.order[2])
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_ResetAfter_UsedWhenResetAtZero(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	before := time.Now()
+	msg := RateLimitMsg{
+		Provider:   "anthropic",
+		ResetAfter: 90 * time.Second,
+		Timestamp:  before,
+	}
+	rl, _ = rl.Update(msg)
+
+	prl := rl.providers["anthropic"]
+	require.NotNil(t, prl)
+	// ResetAt should be approximately before + 90s.
+	wantResetAt := before.Add(90 * time.Second)
+	diff := prl.ResetAt.Sub(wantResetAt)
+	assert.Less(t, diff.Abs(), time.Second, "ResetAt derived from ResetAfter must be close to expected")
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_FallbackKeyToAgent(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	msg := RateLimitMsg{
+		Provider: "", // empty provider
+		Agent:    "codex",
+		ResetAt:  time.Now().Add(time.Minute),
+	}
+	rl, _ = rl.Update(msg)
+	assert.Contains(t, rl.providers, "codex", "agent name must be used as key when provider is empty")
+	assert.Len(t, rl.order, 1)
+	assert.Equal(t, "codex", rl.order[0])
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_SetsHasActiveLimit(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	msg := RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(time.Minute)}
+	rl, _ = rl.Update(msg)
+	assert.True(t, rl.HasActiveLimit())
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection.Update — TickMsg
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_Update_TickMsg_NoProviders_NilCmd(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	_, cmd := rl.Update(TickMsg{Time: time.Now()})
+	assert.Nil(t, cmd, "TickMsg with no providers must return nil cmd")
+}
+
+func TestRateLimitSection_Update_TickMsg_ActiveProvider_ReturnsTickCmd(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// Set a provider that expires far in the future.
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(2 * time.Minute)})
+	require.True(t, rl.HasActiveLimit())
+
+	_, cmd := rl.Update(TickMsg{Time: time.Now()})
+	assert.NotNil(t, cmd, "TickMsg with active limit must return TickCmd")
+}
+
+func TestRateLimitSection_Update_TickMsg_ExpiredProvider_DeactivatesAndNilCmd(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// Set a provider whose reset time is in the past.
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(-1 * time.Second)})
+
+	rl, cmd := rl.Update(TickMsg{Time: time.Now()})
+	prl := rl.providers["anthropic"]
+	require.NotNil(t, prl)
+	assert.False(t, prl.Active, "provider must be deactivated when ResetAt has passed")
+	assert.Equal(t, time.Duration(0), prl.Remaining)
+	assert.Nil(t, cmd, "TickMsg after expiry must return nil cmd")
+}
+
+func TestRateLimitSection_Update_TickMsg_MixedProviders_ContinuesWhileAnyActive(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// One expired, one still active.
+	rl, _ = rl.Update(RateLimitMsg{Provider: "expired", ResetAt: time.Now().Add(-time.Second)})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "active", ResetAt: time.Now().Add(2 * time.Minute)})
+
+	rl, cmd := rl.Update(TickMsg{Time: time.Now()})
+	assert.False(t, rl.providers["expired"].Active)
+	assert.True(t, rl.providers["active"].Active)
+	assert.NotNil(t, cmd, "TickCmd must continue while any provider is still active")
+}
+
+func TestRateLimitSection_Update_TickMsg_AllExpired_NilCmd(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// Both providers expired.
+	rl, _ = rl.Update(RateLimitMsg{Provider: "a", ResetAt: time.Now().Add(-time.Second)})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "b", ResetAt: time.Now().Add(-time.Second)})
+
+	_, cmd := rl.Update(TickMsg{Time: time.Now()})
+	assert.Nil(t, cmd, "TickCmd must be nil when all providers have expired")
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection.View
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_View_HeaderAlwaysPresent(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	view := stripANSISidebar(rl.View(40))
+	assert.Contains(t, view, "Rate Limits")
+}
+
+func TestRateLimitSection_View_NoProviders_ShowsPlaceholder(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	view := stripANSISidebar(rl.View(40))
+	assert.Contains(t, view, "No limits")
+}
+
+func TestRateLimitSection_View_ActiveProvider_ShowsWait(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(2 * time.Minute)})
+	view := stripANSISidebar(rl.View(40))
+	assert.Contains(t, view, "anthropic")
+	assert.Contains(t, view, "WAIT")
+}
+
+func TestRateLimitSection_View_InactiveProvider_ShowsOK(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// Provider with ResetAt in the past is inactive.
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(-time.Second)})
+	// Tick to deactivate.
+	rl, _ = rl.Update(TickMsg{Time: time.Now()})
+	view := stripANSISidebar(rl.View(40))
+	assert.Contains(t, view, "anthropic")
+	assert.Contains(t, view, "OK")
+	assert.NotContains(t, view, "WAIT")
+}
+
+func TestRateLimitSection_View_CountdownFormat_MinuteSeconds(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// 1 minute 42 seconds remaining.
+	rl, _ = rl.Update(RateLimitMsg{Provider: "codex", ResetAt: time.Now().Add(102 * time.Second)})
+	view := stripANSISidebar(rl.View(50))
+	// The format should be M:SS; check for the pattern.
+	assert.Contains(t, view, "WAIT")
+	assert.Contains(t, view, "codex")
+}
+
+func TestRateLimitSection_View_MultipleProviders_AllRendered(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(time.Minute)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "openai", ResetAt: resetAt})
+
+	view := stripANSISidebar(rl.View(50))
+	assert.Contains(t, view, "anthropic")
+	assert.Contains(t, view, "openai")
+}
+
+func TestRateLimitSection_View_StableOrder(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(time.Minute)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "zzz", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "aaa", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "mmm", ResetAt: resetAt})
+
+	view := stripANSISidebar(rl.View(50))
+	// Insertion order: zzz, aaa, mmm — check positions.
+	zzzIdx := strings.Index(view, "zzz")
+	aaaIdx := strings.Index(view, "aaa")
+	mmmIdx := strings.Index(view, "mmm")
+	require.NotEqual(t, -1, zzzIdx)
+	require.NotEqual(t, -1, aaaIdx)
+	require.NotEqual(t, -1, mmmIdx)
+	assert.Less(t, zzzIdx, aaaIdx, "insertion order: zzz must appear before aaa")
+	assert.Less(t, aaaIdx, mmmIdx, "insertion order: aaa must appear before mmm")
+}
+
+func TestRateLimitSection_View_ZeroWidth_NoPanic(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(time.Minute)})
+	assert.NotPanics(t, func() {
+		_ = rl.View(0)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T-072: HasActiveLimit
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_HasActiveLimit_FalseWhenEmpty(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	assert.False(t, rl.HasActiveLimit())
+}
+
+func TestRateLimitSection_HasActiveLimit_TrueWhenActive(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(time.Minute)})
+	assert.True(t, rl.HasActiveLimit())
+}
+
+func TestRateLimitSection_HasActiveLimit_FalseAfterExpiry(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(-time.Second)})
+	rl, _ = rl.Update(TickMsg{Time: time.Now()})
+	assert.False(t, rl.HasActiveLimit())
+}
+
+// ---------------------------------------------------------------------------
+// T-072: SidebarModel integration — RateLimitMsg and TickMsg
+// ---------------------------------------------------------------------------
+
+func TestSidebarModel_Update_RateLimitMsg_ReturnsCmd(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	msg := RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(2 * time.Minute)}
+	_, cmd := applySidebarMsg(m, msg)
+	assert.NotNil(t, cmd, "SidebarModel must propagate TickCmd from RateLimitMsg")
+}
+
+func TestSidebarModel_Update_RateLimitMsg_SetsActiveLimit(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	msg := RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(2 * time.Minute)}
+	m, _ = applySidebarMsg(m, msg)
+	assert.True(t, m.rateLimits.HasActiveLimit())
+}
+
+func TestSidebarModel_Update_TickMsg_PropagatesCmd(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	// Add an active provider first.
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(2 * time.Minute)})
+	// TickMsg should return another TickCmd while provider is still active.
+	_, cmd := applySidebarMsg(m, TickMsg{Time: time.Now()})
+	assert.NotNil(t, cmd, "SidebarModel must propagate TickCmd from TickMsg while limit active")
+}
+
+func TestSidebarModel_Update_TickMsg_NilCmdWhenNoLimits(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	// No rate limit set; TickMsg should return nil.
+	_, cmd := applySidebarMsg(m, TickMsg{Time: time.Now()})
+	assert.Nil(t, cmd, "SidebarModel must return nil cmd from TickMsg when no active limits")
+}
+
+func TestSidebarModel_View_ContainsRateLimitsHeader(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "Rate Limits", "Rate Limits header must appear in sidebar view")
+}
+
+func TestSidebarModel_View_RateLimitsSection_NoLimits_ShowsPlaceholder(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "No limits", "No limits placeholder must appear when no providers are known")
+}
+
+func TestSidebarModel_View_RateLimitsSection_WithActiveLimit(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(2 * time.Minute)})
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "anthropic", "provider name must appear in sidebar view")
+	assert.Contains(t, view, "WAIT", "WAIT indicator must appear for active rate limit")
+}
+
+func TestSidebarModel_View_RateLimitsSection_AfterExpiry_ShowsOK(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	// Set expired provider.
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "anthropic", ResetAt: time.Now().Add(-time.Second)})
+	// Tick to deactivate.
+	m, _ = applySidebarMsg(m, TickMsg{Time: time.Now()})
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "anthropic")
+	assert.Contains(t, view, "OK")
+}
+
+func TestSidebarModel_Integration_RateLimitCountdownSequence(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+
+	// Apply a rate limit for two providers.
+	future := time.Now().Add(5 * time.Minute)
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "anthropic", ResetAt: future})
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "openai", ResetAt: time.Now().Add(-time.Second)})
+
+	// Tick once — openai should deactivate, anthropic remains active.
+	m, cmd := applySidebarMsg(m, TickMsg{Time: time.Now()})
+	assert.False(t, m.rateLimits.providers["openai"].Active)
+	assert.True(t, m.rateLimits.providers["anthropic"].Active)
+	assert.NotNil(t, cmd)
+
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "anthropic")
+	assert.Contains(t, view, "WAIT")
+	assert.Contains(t, view, "openai")
+	assert.Contains(t, view, "OK")
+}
+
+// ---------------------------------------------------------------------------
+// T-072: formatCountdown — additional edge cases
+// ---------------------------------------------------------------------------
+
+func TestFormatCountdown_SubSecond(t *testing.T) {
+	t.Parallel()
+	// Duration less than one full second but positive must show "0:00"
+	// because int(d.Seconds()) truncates to 0.
+	got := formatCountdown(500 * time.Millisecond)
+	assert.Equal(t, "0:00", got)
+}
+
+func TestFormatCountdown_ExactlyOneMinute(t *testing.T) {
+	t.Parallel()
+	got := formatCountdown(60 * time.Second)
+	assert.Equal(t, "1:00", got)
+}
+
+func TestFormatCountdown_ExactlyOneHour(t *testing.T) {
+	t.Parallel()
+	got := formatCountdown(time.Hour)
+	assert.Equal(t, "1:00:00", got)
+}
+
+func TestFormatCountdown_LargeHours(t *testing.T) {
+	t.Parallel()
+	// 25 hours 3 minutes 7 seconds
+	d := 25*time.Hour + 3*time.Minute + 7*time.Second
+	got := formatCountdown(d)
+	assert.Equal(t, "25:03:07", got)
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection.Update — TickMsg decrements Remaining
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_Update_TickMsg_DecrementsRemaining(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// Provider resets 5 minutes from now.
+	resetAt := time.Now().Add(5 * time.Minute)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "anthropic", ResetAt: resetAt})
+
+	before := rl.providers["anthropic"].Remaining
+
+	// Tick once — Remaining should have decreased (or stayed the same in a
+	// fast machine, but certainly not increased).
+	rl, _ = rl.Update(TickMsg{Time: time.Now()})
+	after := rl.providers["anthropic"].Remaining
+
+	assert.LessOrEqual(t, after, before,
+		"Remaining must not increase after a TickMsg")
+	assert.True(t, rl.providers["anthropic"].Active,
+		"provider must still be active when reset time has not passed")
+}
+
+func TestRateLimitSection_Update_TickMsg_MultipleTicks_CountsDown(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	// Reset time is 2 seconds in the future.
+	resetAt := time.Now().Add(2 * time.Second)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "codex", ResetAt: resetAt})
+	require.True(t, rl.providers["codex"].Active)
+
+	// Simulate time passing by manipulating ResetAt directly (we cannot sleep
+	// in unit tests reliably). Instead, set ResetAt to the past and tick.
+	rl.providers["codex"].ResetAt = time.Now().Add(-time.Millisecond)
+
+	rl, cmd := rl.Update(TickMsg{Time: time.Now()})
+	prl := rl.providers["codex"]
+	require.NotNil(t, prl)
+	assert.False(t, prl.Active, "provider must be inactive once ResetAt has passed")
+	assert.Equal(t, time.Duration(0), prl.Remaining, "Remaining must be zero after expiry")
+	assert.Nil(t, cmd, "no further TickCmd needed when all providers are expired")
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection.Update — RateLimitMsg edge cases
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_Update_RateLimitMsg_BothProviderAndAgentEmpty_KeyIsEmpty(t *testing.T) {
+	t.Parallel()
+	// When both Provider and Agent are empty the key becomes "".
+	// The implementation should not panic; it should insert under key "".
+	rl := NewRateLimitSection(DefaultTheme())
+	msg := RateLimitMsg{
+		Provider: "",
+		Agent:    "",
+		ResetAt:  time.Now().Add(time.Minute),
+	}
+	assert.NotPanics(t, func() {
+		rl, _ = rl.Update(msg)
+	})
+	assert.Len(t, rl.order, 1)
+	// Key is "", provider entry exists.
+	assert.Contains(t, rl.providers, "")
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_ResetAfterWithZeroTimestamp(t *testing.T) {
+	t.Parallel()
+	// When both ResetAt and Timestamp are zero, Timestamp defaults to time.Now()
+	// and ResetAt = time.Now() + ResetAfter. The resulting Remaining should be
+	// approximately equal to ResetAfter.
+	rl := NewRateLimitSection(DefaultTheme())
+	before := time.Now()
+	msg := RateLimitMsg{
+		Provider:   "openai",
+		ResetAfter: 3 * time.Minute,
+		// ResetAt and Timestamp are zero
+	}
+	rl, _ = rl.Update(msg)
+	after := time.Now()
+
+	prl := rl.providers["openai"]
+	require.NotNil(t, prl)
+
+	// ResetAt should be between (before + 3min) and (after + 3min).
+	assert.True(t, prl.ResetAt.After(before.Add(3*time.Minute).Add(-time.Second)),
+		"ResetAt must be at least before+ResetAfter")
+	assert.True(t, prl.ResetAt.Before(after.Add(3*time.Minute).Add(time.Second)),
+		"ResetAt must be at most after+ResetAfter")
+	assert.True(t, prl.Active)
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_ResetAtInPast_ActiveButRemainingZero(t *testing.T) {
+	t.Parallel()
+	// When ResetAt is already in the past at message receipt, Remaining is
+	// clamped to 0 but the provider is still set Active=true. The next tick
+	// will deactivate it.
+	rl := NewRateLimitSection(DefaultTheme())
+	msg := RateLimitMsg{
+		Provider: "gemini",
+		ResetAt:  time.Now().Add(-10 * time.Second), // already expired
+	}
+	rl, cmd := rl.Update(msg)
+	require.NotNil(t, cmd, "TickCmd must still be returned on RateLimitMsg even when past")
+	prl := rl.providers["gemini"]
+	require.NotNil(t, prl)
+	assert.True(t, prl.Active, "provider must be Active=true immediately after RateLimitMsg")
+	assert.Equal(t, time.Duration(0), prl.Remaining, "Remaining must be 0 when ResetAt is in the past")
+}
+
+func TestRateLimitSection_Update_RateLimitMsg_PreservesExistingInactiveProviders(t *testing.T) {
+	t.Parallel()
+	// Adding a second provider must not disturb an already-inactive first.
+	rl := NewRateLimitSection(DefaultTheme())
+	// Insert and then expire "alpha".
+	rl, _ = rl.Update(RateLimitMsg{Provider: "alpha", ResetAt: time.Now().Add(-time.Second)})
+	rl, _ = rl.Update(TickMsg{Time: time.Now()})
+	require.False(t, rl.providers["alpha"].Active)
+
+	// Now insert "beta".
+	rl, _ = rl.Update(RateLimitMsg{Provider: "beta", ResetAt: time.Now().Add(time.Minute)})
+
+	// "alpha" must still be present and inactive.
+	alphaEntry, ok := rl.providers["alpha"]
+	require.True(t, ok, "alpha must still exist after inserting beta")
+	assert.False(t, alphaEntry.Active, "alpha must remain inactive")
+	assert.Len(t, rl.order, 2, "order must contain both providers")
+	assert.Equal(t, "alpha", rl.order[0])
+	assert.Equal(t, "beta", rl.order[1])
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection.View — format and layout verification
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_View_LineFormat_NameColonStatus(t *testing.T) {
+	t.Parallel()
+	// Active provider line must contain "name: WAIT M:SS".
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{
+		Provider: "mycloud",
+		ResetAt:  time.Now().Add(time.Hour), // far future ensures Active=true
+	})
+	view := stripANSISidebar(rl.View(60))
+
+	// Must contain provider name followed by ": WAIT".
+	assert.Contains(t, view, "mycloud: WAIT",
+		"active provider line must use format 'name: WAIT M:SS'")
+}
+
+func TestRateLimitSection_View_LineFormat_NameColonOK(t *testing.T) {
+	t.Parallel()
+	// Inactive provider line must contain "name: OK".
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "cloudapi", ResetAt: time.Now().Add(-time.Second)})
+	rl, _ = rl.Update(TickMsg{Time: time.Now()})
+	view := stripANSISidebar(rl.View(60))
+
+	assert.Contains(t, view, "cloudapi: OK",
+		"inactive provider line must use format 'name: OK'")
+}
+
+func TestRateLimitSection_View_EachProviderOnSeparateLine(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(time.Minute)
+	rl, _ = rl.Update(RateLimitMsg{Provider: "alpha", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "beta", ResetAt: resetAt})
+	rl, _ = rl.Update(RateLimitMsg{Provider: "gamma", ResetAt: resetAt})
+	view := stripANSISidebar(rl.View(60))
+
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	var providerLines []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.Contains(l, "alpha") ||
+			strings.Contains(l, "beta") ||
+			strings.Contains(l, "gamma") {
+			providerLines = append(providerLines, l)
+		}
+	}
+	assert.Len(t, providerLines, 3,
+		"each of the three providers must appear on its own separate line")
+}
+
+func TestRateLimitSection_View_LongProviderName_Truncated(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	longName := strings.Repeat("a", 100)
+	rl, _ = rl.Update(RateLimitMsg{Provider: longName, ResetAt: time.Now().Add(time.Minute)})
+	view := stripANSISidebar(rl.View(20))
+
+	// The full name must not appear verbatim.
+	assert.NotContains(t, view, longName,
+		"long provider names must be truncated to fit within the configured width")
+	// Ellipsis must appear.
+	assert.Contains(t, view, "…",
+		"truncated provider name must include ellipsis")
+}
+
+func TestRateLimitSection_View_FallbackNameToAgent(t *testing.T) {
+	t.Parallel()
+	// When Provider is empty, Agent is used as both the key and the display name.
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{
+		Provider: "",
+		Agent:    "myagent",
+		ResetAt:  time.Now().Add(time.Minute),
+	})
+	view := stripANSISidebar(rl.View(50))
+	assert.Contains(t, view, "myagent",
+		"agent name must be used as display name when provider is empty")
+}
+
+func TestRateLimitSection_View_CountdownFormat_InView_MinSec(t *testing.T) {
+	t.Parallel()
+	// 2 minutes 30 seconds should render as "2:30" inside WAIT.
+	// We set Remaining directly on the provider pointer after Update to avoid
+	// any sub-second timing jitter between construction and View.
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{
+		Provider: "svc",
+		ResetAt:  time.Now().Add(time.Hour), // far future — ensures Active=true
+	})
+	// Pin Remaining to an exact value so formatCountdown is deterministic.
+	rl.providers["svc"].Remaining = 2*time.Minute + 30*time.Second
+	view := stripANSISidebar(rl.View(60))
+	// The countdown string appears inside "WAIT M:SS".
+	assert.Contains(t, view, "WAIT 2:30",
+		"countdown in view must use M:SS format for durations under 1 hour")
+}
+
+func TestRateLimitSection_View_CountdownFormat_InView_HourMinSec(t *testing.T) {
+	t.Parallel()
+	// 1 hour 5 minutes 3 seconds should render as "1:05:03" inside WAIT.
+	// We set Remaining directly to avoid sub-second timing jitter.
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{
+		Provider: "svc",
+		ResetAt:  time.Now().Add(2 * time.Hour), // far future — ensures Active=true
+	})
+	// Pin Remaining to an exact value.
+	rl.providers["svc"].Remaining = time.Hour + 5*time.Minute + 3*time.Second
+	view := stripANSISidebar(rl.View(60))
+	assert.Contains(t, view, "WAIT 1:05:03",
+		"countdown in view must use H:MM:SS format for durations of 1 hour or more")
+}
+
+func TestRateLimitSection_View_NegativeRemaining_ShowsZeroCountdown(t *testing.T) {
+	t.Parallel()
+	// If somehow Remaining ended up negative (should not happen in practice),
+	// formatCountdown must return "0:00" and Active must be handled by tick.
+	// Test via View after tick with already-expired provider.
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "svc", ResetAt: time.Now().Add(-5 * time.Minute)})
+	rl, _ = rl.Update(TickMsg{Time: time.Now()})
+
+	// Provider is now inactive; view must not contain WAIT.
+	view := stripANSISidebar(rl.View(50))
+	assert.NotContains(t, view, "WAIT",
+		"expired provider must not show WAIT")
+	assert.Contains(t, view, "OK",
+		"expired provider must show OK")
+}
+
+func TestRateLimitSection_View_NoPlaceholderWhenProvidersExist(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "svc", ResetAt: time.Now().Add(time.Minute)})
+	view := stripANSISidebar(rl.View(50))
+	assert.NotContains(t, view, "No limits",
+		"No limits placeholder must not appear when providers exist")
+}
+
+// ---------------------------------------------------------------------------
+// T-072: RateLimitSection value semantics (immutability)
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_Update_ValueSemantics_OriginalUnchanged(t *testing.T) {
+	t.Parallel()
+	original := NewRateLimitSection(DefaultTheme())
+	updated, _ := original.Update(RateLimitMsg{
+		Provider: "anthropic",
+		ResetAt:  time.Now().Add(time.Minute),
+	})
+
+	// original must still have zero providers.
+	assert.Empty(t, original.providers,
+		"Update must not mutate the original RateLimitSection (value semantics)")
+	assert.Empty(t, original.order,
+		"Update must not mutate the original order slice (value semantics)")
+	assert.Len(t, updated.providers, 1)
+}
+
+func TestRateLimitSection_Tick_ValueSemantics_OriginalUnchanged(t *testing.T) {
+	t.Parallel()
+	rl := NewRateLimitSection(DefaultTheme())
+	rl, _ = rl.Update(RateLimitMsg{Provider: "svc", ResetAt: time.Now().Add(time.Minute)})
+
+	snap := rl.providers["svc"].Remaining
+
+	ticked, _ := rl.Update(TickMsg{Time: time.Now()})
+	_ = ticked
+
+	// rl.providers["svc"].Remaining may have changed because tick returns a
+	// new map; the original rl must still reference its own snapshot. Since
+	// value semantics copy the map pointer (not the values), both rl and
+	// ticked point to different maps. We can verify the two are independent
+	// by checking that ticked has a separate map.
+	assert.Equal(t, snap, rl.providers["svc"].Remaining,
+		"original RateLimitSection's Remaining must not be modified by tick (value semantics)")
+}
+
+// ---------------------------------------------------------------------------
+// T-072: HasActiveLimit — comprehensive table test
+// ---------------------------------------------------------------------------
+
+func TestRateLimitSection_HasActiveLimit_TableDriven(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		setupFn     func() RateLimitSection
+		wantActive  bool
+	}{
+		{
+			name:       "empty section",
+			setupFn:    func() RateLimitSection { return NewRateLimitSection(DefaultTheme()) },
+			wantActive: false,
+		},
+		{
+			name: "single active provider",
+			setupFn: func() RateLimitSection {
+				rl := NewRateLimitSection(DefaultTheme())
+				rl, _ = rl.Update(RateLimitMsg{Provider: "p1", ResetAt: time.Now().Add(time.Minute)})
+				return rl
+			},
+			wantActive: true,
+		},
+		{
+			name: "single expired provider after tick",
+			setupFn: func() RateLimitSection {
+				rl := NewRateLimitSection(DefaultTheme())
+				rl, _ = rl.Update(RateLimitMsg{Provider: "p1", ResetAt: time.Now().Add(-time.Second)})
+				rl, _ = rl.Update(TickMsg{Time: time.Now()})
+				return rl
+			},
+			wantActive: false,
+		},
+		{
+			name: "multiple providers — at least one active",
+			setupFn: func() RateLimitSection {
+				rl := NewRateLimitSection(DefaultTheme())
+				rl, _ = rl.Update(RateLimitMsg{Provider: "p1", ResetAt: time.Now().Add(-time.Second)})
+				rl, _ = rl.Update(RateLimitMsg{Provider: "p2", ResetAt: time.Now().Add(time.Minute)})
+				rl, _ = rl.Update(TickMsg{Time: time.Now()})
+				return rl
+			},
+			wantActive: true,
+		},
+		{
+			name: "multiple providers — all expired after tick",
+			setupFn: func() RateLimitSection {
+				rl := NewRateLimitSection(DefaultTheme())
+				rl, _ = rl.Update(RateLimitMsg{Provider: "p1", ResetAt: time.Now().Add(-time.Second)})
+				rl, _ = rl.Update(RateLimitMsg{Provider: "p2", ResetAt: time.Now().Add(-time.Second)})
+				rl, _ = rl.Update(TickMsg{Time: time.Now()})
+				return rl
+			},
+			wantActive: false,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rl := tt.setupFn()
+			assert.Equal(t, tt.wantActive, rl.HasActiveLimit())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T-072: SidebarModel integration — additional rate-limit scenarios
+// ---------------------------------------------------------------------------
+
+func TestSidebarModel_Update_RateLimitMsg_AgentOnlyKey(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	// RateLimitMsg with only Agent set (no Provider).
+	m, cmd := applySidebarMsg(m, RateLimitMsg{
+		Provider: "",
+		Agent:    "codex",
+		ResetAt:  time.Now().Add(time.Minute),
+	})
+	require.NotNil(t, cmd, "SidebarModel must propagate TickCmd when RateLimitMsg arrives")
+	assert.True(t, m.rateLimits.HasActiveLimit(),
+		"HasActiveLimit must be true after RateLimitMsg with agent-only key")
+	assert.Contains(t, m.rateLimits.providers, "codex",
+		"codex must be registered in providers map")
+}
+
+func TestSidebarModel_Update_RateLimitMsg_MultipleProviders(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	future := time.Now().Add(time.Minute)
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "anthropic", ResetAt: future})
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "openai", ResetAt: future})
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "google", ResetAt: future})
+
+	assert.Len(t, m.rateLimits.providers, 3)
+	assert.Len(t, m.rateLimits.order, 3)
+	assert.True(t, m.rateLimits.HasActiveLimit())
+}
+
+func TestSidebarModel_Update_TickMsg_ExpiresProvider_StopsCmd(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 40, 60)
+	// Set a provider that has already expired.
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "svc", ResetAt: time.Now().Add(-time.Second)})
+	// Tick — provider should deactivate and cmd should be nil.
+	m, cmd := applySidebarMsg(m, TickMsg{Time: time.Now()})
+	assert.False(t, m.rateLimits.providers["svc"].Active)
+	assert.Nil(t, cmd,
+		"SidebarModel must return nil cmd when all providers have expired after tick")
+}
+
+func TestSidebarModel_View_RateLimitsSection_CountdownInView(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 50, 60)
+	// Set ResetAt far in future so Active=true, then pin Remaining to a known value.
+	m, _ = applySidebarMsg(m, RateLimitMsg{
+		Provider: "testprov",
+		ResetAt:  time.Now().Add(time.Hour),
+	})
+	// Pin Remaining to 3:15 for a deterministic countdown string.
+	m.rateLimits.providers["testprov"].Remaining = 3*time.Minute + 15*time.Second
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "testprov", "provider name must appear in sidebar view")
+	assert.Contains(t, view, "WAIT 3:15",
+		"countdown in sidebar view must show M:SS format")
+}
+
+func TestSidebarModel_View_RateLimitsSection_MultipleProvidersInView(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 50, 80)
+	future := time.Now().Add(time.Minute)
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "anthropic", ResetAt: future})
+	m, _ = applySidebarMsg(m, RateLimitMsg{Provider: "openai", ResetAt: time.Now().Add(-time.Second)})
+	m, _ = applySidebarMsg(m, TickMsg{Time: time.Now()})
+
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "anthropic")
+	assert.Contains(t, view, "WAIT")
+	assert.Contains(t, view, "openai")
+	assert.Contains(t, view, "OK")
+}
+
+func TestSidebarModel_Integration_RateLimitLifecycle(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 50, 80)
+
+	// Step 1: no limits — placeholder shown.
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "No limits")
+
+	// Step 2: add an active rate limit.
+	m, cmd := applySidebarMsg(m, RateLimitMsg{
+		Provider: "anthropic",
+		ResetAt:  time.Now().Add(30 * time.Second),
+	})
+	require.NotNil(t, cmd)
+	view = stripANSISidebar(m.View())
+	assert.Contains(t, view, "WAIT")
+	assert.NotContains(t, view, "No limits")
+
+	// Step 3: expire the limit and tick.
+	m.rateLimits.providers["anthropic"].ResetAt = time.Now().Add(-time.Millisecond)
+	m, cmd = applySidebarMsg(m, TickMsg{Time: time.Now()})
+	assert.Nil(t, cmd, "cmd must be nil once all limits expired")
+
+	view = stripANSISidebar(m.View())
+	assert.Contains(t, view, "OK", "provider must show OK after expiry")
+	assert.NotContains(t, view, "WAIT", "WAIT must disappear after expiry")
+}
+
+// ---------------------------------------------------------------------------
+// T-072: Benchmark — tick processing
+// ---------------------------------------------------------------------------
+
+func BenchmarkRateLimitSection_Tick(b *testing.B) {
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(2 * time.Minute)
+	var cmd tea.Cmd
+	rl, cmd = rl.Update(RateLimitMsg{Provider: "anthropic", Agent: "claude", ResetAt: resetAt})
+	_ = cmd
+	rl, cmd = rl.Update(RateLimitMsg{Provider: "openai", Agent: "codex", ResetAt: resetAt})
+	_ = cmd
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = rl.Update(TickMsg{Time: time.Now()})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T-072: Benchmark
+// ---------------------------------------------------------------------------
+
+func BenchmarkRateLimitSection_View(b *testing.B) {
+	rl := NewRateLimitSection(DefaultTheme())
+	resetAt := time.Now().Add(2 * time.Minute)
+	var cmd tea.Cmd
+	rl, cmd = rl.Update(RateLimitMsg{Provider: "anthropic", Agent: "claude", ResetAt: resetAt})
+	_ = cmd
+	rl, cmd = rl.Update(RateLimitMsg{Provider: "openai", Agent: "codex", ResetAt: resetAt})
+	_ = cmd
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = rl.View(40)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // T-071: Benchmark
 // ---------------------------------------------------------------------------
 

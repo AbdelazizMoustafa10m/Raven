@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 74 |
+| Completed | 75 |
 | In Progress | 0 |
-| Not Started | 15 |
+| Not Started | 14 |
 
 ---
 
@@ -563,6 +563,31 @@
 
 ---
 
+### T-072: Sidebar -- Rate-Limit Status Display with Countdown
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `ProviderRateLimit` value struct tracking per-provider rate-limit state: `Provider`, `Agent`, `ResetAt`, `Remaining`, `Active`
+  - `RateLimitSection` value-type struct with `theme Theme`, `providers map[string]*ProviderRateLimit`, and `order []string` (stable insertion-order rendering)
+  - `NewRateLimitSection(theme Theme) RateLimitSection` constructor with empty provider map
+  - `Update(msg tea.Msg) (RateLimitSection, tea.Cmd)` value-receiver handling:
+    - `RateLimitMsg`: calls `applyRateLimitMsg` to register/update provider, always returns `TickCmd(time.Second)`
+    - `TickMsg`: calls `tick()` to recalculate `Remaining = time.Until(ResetAt)` for each active provider; deactivates expired ones; returns `TickCmd(time.Second)` if any still active, nil otherwise
+  - `applyRateLimitMsg`: copies providers map + order slice for value-receiver immutability; derives `ResetAt` from `msg.ResetAt` (if non-zero) or `msg.Timestamp + msg.ResetAfter`; uses `Provider` as key, falling back to `Agent`
+  - `tick()`: copies providers map; recalculates `Remaining` via `time.Until`; zeroes and deactivates expired providers
+  - `HasActiveLimit() bool`: returns true if any provider has `Active == true`
+  - `View(width int) string`: renders "Rate Limits" header + per-provider lines (`{name}: OK` in green for inactive, `{name}: WAIT M:SS` in yellow for active); "No limits" placeholder when no providers; name truncated to fit width with room for the suffix
+  - `formatCountdown(d time.Duration) string`: "0:00" for non-positive; "M:SS" for under 1 hour; "H:MM:SS" for 1 hour or more
+  - Integrated `rateLimits RateLimitSection` field into `SidebarModel`: initialised in `NewSidebarModel`, `Update` handles `RateLimitMsg` and `TickMsg` by delegating and propagating the returned `tea.Cmd`, `View()` renders the rate limits section between AGENTS placeholder and PROGRESS section
+  - 30+ unit and integration tests covering: formatCountdown edge cases, RateLimitSection constructor, RateLimitMsg handling (add/update/multi-provider/stable-order/ResetAfter fallback/agent-key fallback), TickMsg handling (nil cmd when no limits, TickCmd when active, deactivation on expiry, mixed provider states), View rendering (header, placeholder, OK/WAIT states, countdown format, stable order, zero-width no-panic), HasActiveLimit, SidebarModel integration (RateLimitMsg cmd propagation, TickMsg propagation, sidebar view showing rate limits)
+- **Files created/modified:**
+  - `internal/tui/sidebar.go` -- `ProviderRateLimit`, `RateLimitSection` types and all methods; `SidebarModel` integration (field, init, Update cases, View section); `formatCountdown` helper
+  - `internal/tui/sidebar_test.go` -- 30+ new table-driven and integration tests for T-072
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -589,7 +614,7 @@ _None currently_
 | T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Completed |
 | T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Completed |
 | T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Completed |
-| T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Not Started |
+| T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Completed |
 | T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Not Started |
 | T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Not Started |
 | T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Not Started |

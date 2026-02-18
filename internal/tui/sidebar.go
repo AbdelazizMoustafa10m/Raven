@@ -269,12 +269,255 @@ func (tp TaskProgressSection) View(width int) string {
 }
 
 // ---------------------------------------------------------------------------
+// ProviderRateLimit
+// ---------------------------------------------------------------------------
+
+// ProviderRateLimit tracks the rate-limit state for a single provider.
+// It is a value type used inside RateLimitSection.
+type ProviderRateLimit struct {
+	// Provider is the AI provider name (e.g. "anthropic", "openai").
+	Provider string
+	// Agent is the agent name that hit the rate limit (e.g. "claude").
+	Agent string
+	// ResetAt is the absolute time at which the rate limit is expected to clear.
+	ResetAt time.Time
+	// Remaining is the time left until the rate limit clears, recalculated on
+	// each TickMsg using time.Until(ResetAt).
+	Remaining time.Duration
+	// Active is true while the countdown is running (Remaining > 0).
+	Active bool
+}
+
+// ---------------------------------------------------------------------------
+// RateLimitSection
+// ---------------------------------------------------------------------------
+
+// RateLimitSection renders the rate-limit status display in the sidebar.
+// It tracks per-provider state and drives a per-second countdown timer via
+// TickCmd. It is a value type consistent with Bubble Tea's Elm architecture.
+type RateLimitSection struct {
+	theme Theme
+	// providers maps provider name → rate-limit state.
+	providers map[string]*ProviderRateLimit
+	// order holds provider names in stable insertion order for rendering.
+	order []string
+}
+
+// NewRateLimitSection creates a RateLimitSection initialised with the given
+// theme and an empty provider map.
+func NewRateLimitSection(theme Theme) RateLimitSection {
+	return RateLimitSection{
+		theme:     theme,
+		providers: make(map[string]*ProviderRateLimit),
+	}
+}
+
+// Update handles RateLimitMsg and TickMsg messages and returns the updated
+// section together with a follow-up command.
+//
+//   - RateLimitMsg: registers or updates the named provider's reset time, marks
+//     it Active, and returns TickCmd(time.Second) to start the countdown.
+//   - TickMsg: recalculates Remaining = time.Until(ResetAt) for every provider
+//     and clears Active when Remaining has reached zero. Returns TickCmd if any
+//     provider is still active; nil otherwise.
+func (rl RateLimitSection) Update(msg tea.Msg) (RateLimitSection, tea.Cmd) {
+	switch msg := msg.(type) {
+	case RateLimitMsg:
+		rl = rl.applyRateLimitMsg(msg)
+		return rl, TickCmd(time.Second)
+
+	case TickMsg:
+		_ = msg // tick time not needed; Remaining is recalculated via time.Until(ResetAt)
+		rl = rl.tick()
+		if rl.HasActiveLimit() {
+			return rl, TickCmd(time.Second)
+		}
+		return rl, nil
+	}
+
+	return rl, nil
+}
+
+// applyRateLimitMsg updates (or inserts) the provider entry from a RateLimitMsg.
+// It copies the providers map and order slice to honour value-receiver semantics.
+func (rl RateLimitSection) applyRateLimitMsg(msg RateLimitMsg) RateLimitSection {
+	key := msg.Provider
+	if key == "" {
+		key = msg.Agent
+	}
+
+	// Determine ResetAt: prefer the explicit ResetAt if non-zero; otherwise
+	// derive from ResetAfter relative to the message timestamp.
+	resetAt := msg.ResetAt
+	if resetAt.IsZero() {
+		ts := msg.Timestamp
+		if ts.IsZero() {
+			ts = time.Now()
+		}
+		resetAt = ts.Add(msg.ResetAfter)
+	}
+
+	remaining := time.Until(resetAt)
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	// Copy providers map for immutability.
+	newProviders := make(map[string]*ProviderRateLimit, len(rl.providers))
+	for k, v := range rl.providers {
+		cp := *v
+		newProviders[k] = &cp
+	}
+
+	newOrder := rl.order
+	if _, exists := newProviders[key]; !exists {
+		// Append to order only for new providers; copy the slice first.
+		newOrder = make([]string, len(rl.order)+1)
+		copy(newOrder, rl.order)
+		newOrder[len(rl.order)] = key
+	}
+
+	newProviders[key] = &ProviderRateLimit{
+		Provider:  msg.Provider,
+		Agent:     msg.Agent,
+		ResetAt:   resetAt,
+		Remaining: remaining,
+		Active:    true,
+	}
+
+	rl.providers = newProviders
+	rl.order = newOrder
+	return rl
+}
+
+// tick recalculates Remaining for every provider and deactivates expired ones.
+func (rl RateLimitSection) tick() RateLimitSection {
+	if len(rl.providers) == 0 {
+		return rl
+	}
+
+	newProviders := make(map[string]*ProviderRateLimit, len(rl.providers))
+	for k, v := range rl.providers {
+		cp := *v
+		if cp.Active {
+			cp.Remaining = time.Until(cp.ResetAt)
+			if cp.Remaining <= 0 {
+				cp.Remaining = 0
+				cp.Active = false
+			}
+		}
+		newProviders[k] = &cp
+	}
+
+	rl.providers = newProviders
+	return rl
+}
+
+// HasActiveLimit returns true when at least one provider currently has Active == true.
+func (rl RateLimitSection) HasActiveLimit() bool {
+	for _, prl := range rl.providers {
+		if prl.Active {
+			return true
+		}
+	}
+	return false
+}
+
+// View renders the "Rate Limits" section header followed by one line per known
+// provider. Lines are truncated to fit within width columns.
+//
+// Format per provider:
+//   - No active limit: "{name}: OK"
+//   - Active limit:    "{name}: WAIT M:SS"
+//
+// When no providers are known, a placeholder "No limits" line is shown instead.
+func (rl RateLimitSection) View(width int) string {
+	var sb strings.Builder
+
+	sb.WriteString(rl.theme.SidebarTitle.Render("Rate Limits"))
+	sb.WriteString("\n")
+
+	if len(rl.order) == 0 {
+		sb.WriteString(rl.theme.SidebarItem.Render("No limits"))
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
+	for _, key := range rl.order {
+		prl, ok := rl.providers[key]
+		if !ok {
+			continue
+		}
+
+		name := prl.Provider
+		if name == "" {
+			name = prl.Agent
+		}
+		if name == "" {
+			name = key
+		}
+
+		var line string
+		if prl.Active {
+			countdown := formatCountdown(prl.Remaining)
+			suffix := ": " + rl.theme.StatusWaiting.Render("WAIT "+countdown)
+			if width > 0 {
+				// Reserve width for the suffix before truncating the name.
+				suffixWidth := lipgloss.Width(": WAIT " + countdown)
+				nameAllowed := width - suffixWidth
+				if nameAllowed < 1 {
+					nameAllowed = 1
+				}
+				line = truncateName(name, nameAllowed) + suffix
+			} else {
+				line = name + suffix
+			}
+		} else {
+			suffix := ": " + rl.theme.StatusCompleted.Render("OK")
+			if width > 0 {
+				suffixWidth := lipgloss.Width(": OK")
+				nameAllowed := width - suffixWidth
+				if nameAllowed < 1 {
+					nameAllowed = 1
+				}
+				line = truncateName(name, nameAllowed) + suffix
+			} else {
+				line = name + suffix
+			}
+		}
+
+		sb.WriteString(rl.theme.SidebarItem.Render(line))
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// formatCountdown formats a duration as "M:SS" (under 1 hour) or "H:MM:SS"
+// (1 hour or more). Negative durations return "0:00".
+func formatCountdown(d time.Duration) string {
+	if d <= 0 {
+		return "0:00"
+	}
+
+	totalSec := int(d.Seconds())
+	h := totalSec / 3600
+	m := (totalSec % 3600) / 60
+	s := totalSec % 60
+
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// ---------------------------------------------------------------------------
 // SidebarModel
 // ---------------------------------------------------------------------------
 
 // SidebarModel is the Bubble Tea sub-model for the sidebar panel.
 // It maintains the workflow list section (T-070), the task progress section
-// (T-071), and a placeholder for the rate-limit status section (T-072).
+// (T-071), and the rate-limit status section (T-072).
 //
 // Update returns (SidebarModel, tea.Cmd) — not (tea.Model, tea.Cmd) — so the
 // parent App must store the returned value in its own sidebar field.
@@ -298,8 +541,8 @@ type SidebarModel struct {
 	// taskProgress tracks overall and per-phase task completion.
 	taskProgress TaskProgressSection
 
-	// rateLimits is reserved for the rate-limit status section (T-072).
-	// rateLimits RateLimitModel
+	// rateLimits holds the per-provider rate-limit countdown display (T-072).
+	rateLimits RateLimitSection
 }
 
 // NewSidebarModel creates a SidebarModel with the given theme and an empty
@@ -309,6 +552,7 @@ func NewSidebarModel(theme Theme) SidebarModel {
 		theme:         theme,
 		workflowIndex: make(map[string]int),
 		taskProgress:  NewTaskProgressSection(theme),
+		rateLimits:    NewRateLimitSection(theme),
 	}
 }
 
@@ -360,6 +604,8 @@ func (m SidebarModel) SelectedWorkflow() string {
 //   - WorkflowEventMsg  — adds or updates a workflow in the list
 //   - TaskProgressMsg   — updates overall task completion counters
 //   - LoopEventMsg      — updates phase and per-phase task counters
+//   - RateLimitMsg      — registers or updates a provider rate-limit countdown
+//   - TickMsg           — advances the rate-limit countdown timers
 //   - FocusChangedMsg   — updates the focused flag
 //   - tea.KeyMsg        — j/k/up/down navigation when focused
 func (m SidebarModel) Update(msg tea.Msg) (SidebarModel, tea.Cmd) {
@@ -372,6 +618,16 @@ func (m SidebarModel) Update(msg tea.Msg) (SidebarModel, tea.Cmd) {
 
 	case LoopEventMsg:
 		m.taskProgress = m.taskProgress.Update(msg)
+
+	case RateLimitMsg:
+		var cmd tea.Cmd
+		m.rateLimits, cmd = m.rateLimits.Update(msg)
+		return m, cmd
+
+	case TickMsg:
+		var cmd tea.Cmd
+		m.rateLimits, cmd = m.rateLimits.Update(msg)
+		return m, cmd
 
 	case FocusChangedMsg:
 		m.focused = msg.Panel == FocusSidebar
@@ -628,8 +884,10 @@ func (m SidebarModel) workflowListView() string {
 //  2. Separator
 //  3. Agent activity    (placeholder; T-073)
 //  4. Separator
-//  5. Task progress     (T-071)
-//  6. Padding rows to fill height
+//  5. Rate limits       (T-072)
+//  6. Separator
+//  7. Task progress     (T-071)
+//  8. Padding rows to fill height
 func (m SidebarModel) View() string {
 	if m.width == 0 && m.height == 0 {
 		return ""
@@ -649,7 +907,11 @@ func (m SidebarModel) View() string {
 	sb.WriteString("\n")
 	sb.WriteString("\n")
 
-	// Section 3: task progress.
+	// Section 3: rate limits.
+	sb.WriteString(m.rateLimits.View(m.width))
+	sb.WriteString("\n")
+
+	// Section 4: task progress.
 	progressHeader := m.theme.SidebarTitle.Render("PROGRESS")
 	sb.WriteString(progressHeader)
 	sb.WriteString("\n")
