@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 49 |
+| Completed | 50 |
 | In Progress | 0 |
-| Not Started | 40 |
+| Not Started | 39 |
 
 ---
 
@@ -351,6 +351,38 @@
 
 ---
 
+### T-047: Resume Command -- List and Resume Interrupted Workflows
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `newResumeCmd()` returning `*cobra.Command` with `--run`, `--list`, `--dry-run`, `--clean`, `--clean-all`, `--force` flags
+  - `runResume()` entry point branching to list, clean-all, clean, or resume modes
+  - `runListMode()` -- tabwriter-formatted table (RUN ID, WORKFLOW, STEP, STATUS, LAST UPDATED, STEPS) written to stdout
+  - `runCleanMode()` -- deletes a single checkpoint by run ID
+  - `runCleanAllMode()` -- deletes all checkpoints; requires `--force` in non-interactive mode, prompts otherwise
+  - `runResumeMode()` -- loads checkpoint (latest or by ID), checks dry-run first (bypasses resolver), then resolves definition and drives `workflow.Engine`
+  - `resolveDefinition()` -- stub returning `ErrWorkflowNotFound` with a T-049 reference; acts as the extension point for T-049
+  - `definitionResolver` function type for dependency injection in tests
+  - `formatRunTable()` -- text/tabwriter table writer (avoids lipgloss import-cycle)
+  - `isTerminal()` -- pure stdlib TTY detection via `os.ModeCharDevice`
+  - `runIDPattern` regex -- prevents path traversal via `--run` and `--clean` flags
+  - `ErrWorkflowNotFound` sentinel error
+  - 35+ unit tests covering: command structure, flag registration/defaults, run ID validation, all four operation modes, formatRunTable output, isTerminal, resolver stub, ordering, corrupt-file skip
+- **Files created/modified:**
+  - `internal/cli/resume.go` -- full implementation (344 lines)
+  - `internal/cli/resume_test.go` -- comprehensive test suite (35+ tests)
+  - `docs/tasks/PROGRESS.md` -- this entry
+- **Key Decisions:**
+  1. **Dry-run before resolver** -- The dry-run check runs before calling `resolveDefinition`, so `--dry-run` works even before T-049 is implemented
+  2. **`definitionResolver` function type** -- Dependency injection enables clean test mocking without modifying the package-level `resolveDefinition` stub
+  3. **text/tabwriter over lipgloss** -- Avoids import-cycle issues when the TUI package also imports `internal/cli`
+  4. **`--force` required in non-interactive mode** -- `--clean-all` without `--force` on a pipe/non-TTY stdin returns an error rather than silently destroying checkpoints
+  5. **Security: `runIDPattern` allowlist** -- Only `[a-zA-Z0-9_-]` permitted in `--run` and `--clean` values to prevent path traversal to arbitrary JSON files
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -361,7 +393,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** In Progress (2/13 complete)
+- **Status:** In Progress (5/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -374,7 +406,7 @@ _None currently_
 | T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Completed |
 | T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Completed |
 | T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Completed |
-| T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Not Started |
+| T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Completed |
 | T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Not Started |
 | T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Not Started |
 | T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Not Started |
