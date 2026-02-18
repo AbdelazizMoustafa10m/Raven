@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 56 |
+| Completed | 57 |
 | In Progress | 0 |
-| Not Started | 33 |
+| Not Started | 32 |
 
 ---
 
@@ -567,6 +567,35 @@
 
 ---
 
+### T-054: Pipeline and Workflow Dry-Run Mode
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `DryRunFormatter` struct in `internal/workflow/dryrun.go` with `writer io.Writer` and `styled bool` fields
+  - `NewDryRunFormatter(w io.Writer, styled bool) *DryRunFormatter` constructor
+  - `PhaseDryRunDetail` struct with `PhaseID`, `PhaseName`, `BranchName`, `BaseBranch`, `Skipped`, `ImplAgent`, `ReviewAgent`, `FixAgent`, `Steps` fields
+  - `StepDryRunDetail` struct with `StepName`, `Description`, `Transitions` fields
+  - `PipelineDryRunInfo` struct aggregating `TotalPhases` and `[]PhaseDryRunDetail` -- avoids circular import with the `pipeline` package
+  - `FormatWorkflowDryRun(def, state, stepOutputs)` -- BFS graph walk from `InitialStep` with stable step numbering; cycle detection annotates back-edges as `"(cycles back to step N)"` rather than infinite recursion; `sortedKeys` helper ensures deterministic transition ordering
+  - `FormatPipelineDryRun(info PipelineDryRunInfo)` -- formats all phases with branch chaining (from baseBranch), skip annotations, agent assignments, and step-level detail
+  - `Write(s string)` -- writes formatted string to `f.writer`
+  - Styled mode: lipgloss bold for headers, faint for transitions, colored phase headings; plain mode: no ANSI codes
+  - 26+ unit tests covering: empty definitions, single-step workflows, step descriptions, cycle detection via builtin `implement-review-pr` workflow, styled vs plain output (ANSI detection), determinism, pipeline phases, skipped stages, branch chaining, step transitions, all-skipped edge case
+  - 88.6% test coverage (exceeds 85% requirement)
+- **Files created/modified:**
+  - `internal/workflow/dryrun.go` -- DryRunFormatter, PhaseDryRunDetail, StepDryRunDetail, PipelineDryRunInfo types and methods (339 lines)
+  - `internal/workflow/dryrun_test.go` -- comprehensive test suite (26+ tests)
+- **Key Decisions:**
+  1. **`PipelineDryRunInfo` plain struct instead of `*pipeline.PipelineMetadata`** -- `pipeline` imports `workflow`; having `workflow` import `pipeline` would create a circular dependency. The plain struct breaks the cycle; pipeline callers populate it before calling `FormatPipelineDryRun`
+  2. **BFS traversal for stable step numbering** -- Deterministic visit order is essential for golden testing and consistent cycle annotations; `sortedKeys` on transition maps prevents map-iteration non-determinism
+  3. **Cycle detection as annotation, not error** -- The `implement-review-pr` workflow's `run_fix → run_review` loop is intentional; the formatter shows `"(cycles back to step N)"` so users understand the loop without misleading "error" messaging
+  4. **Conditional lipgloss styling** -- `styled=false` uses plain `lipgloss.NewStyle()` (no-op in non-terminal environments), same code path for both modes
+  5. **`stepOutputs` map for DryRun descriptions** -- Callers pre-populate this map by calling `StepHandler.DryRun(state)` for each step, separating formatting logic from handler invocation
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -577,7 +606,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** In Progress (11/13 complete)
+- **Status:** In Progress (12/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -597,7 +626,7 @@ _None currently_
 | T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Completed |
 | T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Completed |
 | T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Completed |
-| T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Not Started |
+| T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Completed |
 | T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Not Started |
 
 **Deliverable:** `raven pipeline --phase all` orchestrates the full lifecycle with checkpoint/resume.
