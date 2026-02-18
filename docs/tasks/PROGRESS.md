@@ -270,364 +270,67 @@
 
 ---
 
-### T-043: Workflow Event Types and Constants
+### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
 - **Status:** Completed
 - **Date:** 2026-02-18
-- **What was built:**
-  - Six transition event constants (`EventSuccess`, `EventFailure`, `EventBlocked`, `EventRateLimited`, `EventNeedsHuman`, `EventPartial`) in `internal/workflow/events.go`
-  - Two terminal pseudo-step constants (`StepDone = "__done__"`, `StepFailed = "__failed__"`) with `__` prefix to prevent collisions
-  - Nine `WE*` lifecycle constants for TUI/logging consumption (`WEStepStarted`, `WEStepCompleted`, `WEStepFailed`, `WEWorkflowStarted`, `WEWorkflowCompleted`, `WEWorkflowFailed`, `WEWorkflowResumed`, `WEStepSkipped`, `WECheckpoint`)
-  - `StepHandler` interface with `Execute(ctx, state) (string, error)`, `DryRun(state) string`, and `Name() string`
-  - `WorkflowEvent` struct (JSON-serializable, `error` field uses `omitempty`)
-  - `WorkflowDefinition` and `StepDefinition` types with JSON + TOML struct tags
-  - 25 table-driven unit tests covering all constants, JSON round-trips, omitempty behavior, and interface satisfaction
-- **Files created/modified:**
-  - `internal/workflow/events.go` -- all workflow event constants, interface, and data types with full godoc
-  - `internal/workflow/events_test.go` -- 478-line comprehensive test suite
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+- **Tasks Completed:** 12 tasks
 
----
+#### Features Implemented
 
-### T-044: Step Handler Registry
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Workflow Event Types & Constants | T-043 | Six transition events, nine lifecycle constants, `StepHandler` interface, `WorkflowEvent`/`WorkflowDefinition`/`StepDefinition` types |
+| Step Handler Registry | T-044 | `Registry` struct with register/get/list/has, `ErrStepNotFound` sentinel, `DefaultRegistry` singleton and delegation functions |
+| Workflow Engine (State Machine) | T-045 | `Engine` struct with functional options, `Run`/`RunStep`/`Validate` methods, panic-safe `safeExecute`, non-blocking event emission |
+| State Checkpointing & Persistence | T-046 | `StateStore` with atomic file writes (tmp→fsync→rename), `RunSummary`, `StatusFromState`, `WithCheckpointing` engine option |
+| Resume Command | T-047 | `resume` Cobra command with list/clean/clean-all/resume modes, tabwriter output, TTY detection, `runIDPattern` path-traversal guard |
+| Workflow Definition Validation | T-048 | `ValidateDefinition` with 6-phase BFS/DFS analysis, nine `Issue*` constants, `ValidationResult`/`ValidationIssue` structs, cycles as warnings |
+| Built-in Workflows & Step Handlers | T-049 | Four built-in workflow definitions, 11 step handlers (`ImplementHandler`, `ReviewHandler`, `FixHandler`, `PRHandler`, phase handlers, PRD stubs), `RegisterBuiltinHandlers` |
+| Pipeline Orchestrator Core | T-050 | `PipelineOrchestrator` with multi-phase lifecycle, `PipelineOpts`/`PhaseResult`/`PipelineResult`, skip flags, resume-from-checkpoint, dry-run plan |
+| Pipeline Branch Management | T-051 | `BranchManager` with template-based branch naming, `slugify`, `EnsureBranch` idempotent create-or-switch, integration + fuzz tests |
+| Pipeline Metadata Tracking | T-052 | `PipelineMetadata`/`PhaseMetadata` structs, JSON round-trip for `WorkflowState.Metadata`, stage-level status updates, `NextIncompletePhase`/`IsComplete`/`Summary` |
+| Pipeline Interactive Wizard | T-053 | `RunWizard` with 4 sequential `huh.Form` pages for phase mode, agent selection, options, and confirmation; `ErrWizardCancelled` sentinel |
+| Dry-Run Formatting | T-054 | `DryRunFormatter` with BFS graph walk, cycle annotation, `FormatWorkflowDryRun`/`FormatPipelineDryRun`, styled/plain output, `PipelineDryRunInfo` decoupling struct |
+| Pipeline CLI Command | T-055 | `pipeline` Cobra command with 15 flags, wizard integration, TTY detection, flag validation, shell completions, exit-code mapping (0/1/2/3), dry-run mode |
 
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Registry` struct with internal `map[string]StepHandler` (no mutex -- single-threaded init-time registration)
-  - `NewRegistry() *Registry` constructor
-  - `Register(handler StepHandler)` -- panics on nil handler, empty name, or duplicate name with clear messages
-  - `Get(name string) (StepHandler, error)` -- returns `ErrStepNotFound` wrapped with step name for `errors.Is` detection
-  - `Has(name string) bool` -- O(1) map presence check
-  - `List() []string` -- alphabetically sorted handler names via `sort.Strings`
-  - `MustGet(name string) StepHandler` -- panics on missing handler, for use in init code
-  - `ErrStepNotFound` sentinel error (`errors.New`)
-  - `DefaultRegistry` package-level singleton and four delegation functions: `Register`, `GetHandler`, `HasHandler`, `ListHandlers`
-  - 20 table-driven unit tests covering all methods, all panic paths, sentinel unwrapping via `errors.Is`, and DefaultRegistry delegation with hermetic restore pattern
-- **Files created/modified:**
-  - `internal/workflow/registry.go` -- full implementation with godoc
-  - `internal/workflow/registry_test.go` -- 275-line comprehensive test suite
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+#### Key Technical Decisions
 
----
+1. **Cycles as warnings, not errors** -- `review → fix → review` loops are intentional; `ValidateDefinition` emits `IssueCycleDetected` as a warning so `IsValid()` remains true
+2. **Atomic checkpoint writes** -- `StateStore.Save` marshals to `<id>.json.tmp`, fsyncs, then renames; crash-safe without external locking
+3. **`applySkipFlags` deep-copies builtin definition** -- `GetDefinition` returns a pointer into a package-level singleton; mutation would corrupt all subsequent calls
+4. **`PipelineDryRunInfo` plain struct breaks import cycle** -- `pipeline` imports `workflow`; a plain struct in `workflow` avoids the reverse dependency
+5. **Multiple sequential `huh.Form` runs in wizard** -- Conditional pages (phase picker, agent selection) are cleanest as separate forms; avoids complex `HideFunc` logic
+6. **`int64` nanoseconds for `PhaseMetadata.Duration`** -- Explicit `_ns` suffix makes unit unambiguous for non-Go consumers; avoids silent precision loss
+7. **Fresh `workflow.NewRegistry()` per pipeline run** -- Prevents registration panics from the package-level `DefaultRegistry` singleton being populated by `init()` functions
+8. **TTY detection via `os.ModeCharDevice`** -- Avoids adding `golang.org/x/term`; stdlib-only `os.Stdin.Stat()` / `os.Stdout.Stat()` suffice
+9. **`runIDPattern` allowlist in resume command** -- Only `[a-zA-Z0-9_-]` permitted in `--run`/`--clean` to prevent path traversal to arbitrary JSON files
+10. **Terminal pseudo-steps excluded from adjacency graph** -- `StepDone`/`StepFailed` have no outgoing transitions; including them would incorrectly suppress reachability warnings
 
-### T-045: Workflow Engine Core -- State Machine Runner
+#### Key Files Reference
 
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Engine` struct with functional options (`WithDryRun`, `WithSingleStep`, `WithEventChannel`, `WithLogger`, `WithMaxIterations`)
-  - `Run()` method: full state machine loop with context cancellation, step resolution, event emission, StepRecord tracking, terminal step detection, and max-iterations guard (default 1000)
-  - `RunStep()` method: single-step isolation via sub-Engine with `WithSingleStep`
-  - `Validate()` method: checks handler registration, transition target validity, and initial step existence
-  - `safeExecute()`: `recover()`-wrapped Execute() converting panics to descriptive errors
-  - `emit()`: nil-safe, non-blocking event channel send
-  - Workflow events emitted: `WEWorkflowStarted`/`WEWorkflowResumed`, `WEStepStarted`, `WEStepCompleted`/`WEStepFailed`/`WEStepSkipped`, `WEWorkflowCompleted`/`WEWorkflowFailed`
-  - 48 unit tests + 3 benchmarks achieving 98.6% statement coverage
-- **Files created/modified:**
-  - `internal/workflow/engine.go` -- full Engine implementation with godoc
-  - `internal/workflow/engine_test.go` -- comprehensive test suite (48 tests + 3 benchmarks)
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+| Purpose | Location |
+| ------- | -------- |
+| Workflow event constants, `StepHandler` interface, `WorkflowEvent`/`WorkflowDefinition` types | `internal/workflow/events.go` |
+| Step handler `Registry`, `ErrStepNotFound`, `DefaultRegistry` | `internal/workflow/registry.go` |
+| `Engine` state machine runner with functional options | `internal/workflow/engine.go` |
+| `StateStore` atomic persistence, `WithCheckpointing` option | `internal/workflow/state.go` |
+| `ValidateDefinition` BFS/DFS validation, `ValidationResult` | `internal/workflow/validate.go` |
+| Built-in workflow definitions and name constants | `internal/workflow/builtin.go` |
+| 11 built-in step handlers (`ImplementHandler`, `ReviewHandler`, etc.) | `internal/workflow/handlers.go` |
+| `DryRunFormatter`, `FormatWorkflowDryRun`, `FormatPipelineDryRun` | `internal/workflow/dryrun.go` |
+| `PipelineOrchestrator`, `PipelineOpts`, `PhaseResult`, `PipelineResult` | `internal/pipeline/orchestrator.go` |
+| `BranchManager`, `slugify`, `EnsureBranch` | `internal/pipeline/branch.go` |
+| `PipelineMetadata`, `PhaseMetadata`, stage-level status helpers | `internal/pipeline/metadata.go` |
+| `RunWizard` interactive pipeline configuration wizard | `internal/pipeline/wizard.go` |
+| `pipeline` Cobra command with 15 flags and wizard integration | `internal/cli/pipeline.go` |
+| `resume` Cobra command with list/clean/resume modes | `internal/cli/resume.go` |
 
----
+#### Verification
 
-### T-046: Workflow State Checkpointing and Persistence
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `StateStore` struct with `NewStateStore`, `Save`, `Load`, `List`, `Delete`, `LatestRun` methods
-  - Atomic file writes: marshal to `<id>.json.tmp`, fsync, rename to `<id>.json` (crash-safe)
-  - `RunSummary` struct for lightweight run listing (`raven resume --list`)
-  - `StatusFromState` function deriving "completed", "failed", "running", or "interrupted" from `WorkflowState`
-  - `WithCheckpointing(store)` `EngineOption` that auto-saves state after each step (hook fires after `CurrentStep` is advanced)
-  - `sanitizeID` helper replacing non-`[a-zA-Z0-9_-]` chars with `_` for filesystem safety
-  - 30+ unit tests covering all 12 acceptance criteria, including concurrent saves, corrupt-file skipping, large metadata, and race-detector validation
-- **Files created/modified:**
-  - `internal/workflow/state.go` -- added `StateStore`, `RunSummary`, `StatusFromState`, `WithCheckpointing`, `sanitizeID`
-  - `internal/workflow/engine.go` -- added `postStepHook` field; hook called after `CurrentStep` advance
-  - `internal/workflow/state_test.go` -- comprehensive test suite (30+ tests + benchmarks)
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-047: Resume Command -- List and Resume Interrupted Workflows
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `newResumeCmd()` returning `*cobra.Command` with `--run`, `--list`, `--dry-run`, `--clean`, `--clean-all`, `--force` flags
-  - `runResume()` entry point branching to list, clean-all, clean, or resume modes
-  - `runListMode()` -- tabwriter-formatted table (RUN ID, WORKFLOW, STEP, STATUS, LAST UPDATED, STEPS) written to stdout
-  - `runCleanMode()` -- deletes a single checkpoint by run ID
-  - `runCleanAllMode()` -- deletes all checkpoints; requires `--force` in non-interactive mode, prompts otherwise
-  - `runResumeMode()` -- loads checkpoint (latest or by ID), checks dry-run first (bypasses resolver), then resolves definition and drives `workflow.Engine`
-  - `resolveDefinition()` -- stub returning `ErrWorkflowNotFound` with a T-049 reference; acts as the extension point for T-049
-  - `definitionResolver` function type for dependency injection in tests
-  - `formatRunTable()` -- text/tabwriter table writer (avoids lipgloss import-cycle)
-  - `isTerminal()` -- pure stdlib TTY detection via `os.ModeCharDevice`
-  - `runIDPattern` regex -- prevents path traversal via `--run` and `--clean` flags
-  - `ErrWorkflowNotFound` sentinel error
-  - 35+ unit tests covering: command structure, flag registration/defaults, run ID validation, all four operation modes, formatRunTable output, isTerminal, resolver stub, ordering, corrupt-file skip
-- **Files created/modified:**
-  - `internal/cli/resume.go` -- full implementation (344 lines)
-  - `internal/cli/resume_test.go` -- comprehensive test suite (35+ tests)
-  - `docs/tasks/PROGRESS.md` -- this entry
-- **Key Decisions:**
-  1. **Dry-run before resolver** -- The dry-run check runs before calling `resolveDefinition`, so `--dry-run` works even before T-049 is implemented
-  2. **`definitionResolver` function type** -- Dependency injection enables clean test mocking without modifying the package-level `resolveDefinition` stub
-  3. **text/tabwriter over lipgloss** -- Avoids import-cycle issues when the TUI package also imports `internal/cli`
-  4. **`--force` required in non-interactive mode** -- `--clean-all` without `--force` on a pipe/non-TTY stdin returns an error rather than silently destroying checkpoints
-  5. **Security: `runIDPattern` allowlist** -- Only `[a-zA-Z0-9_-]` permitted in `--run` and `--clean` values to prevent path traversal to arbitrary JSON files
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-048: Workflow Definition Validation
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - Nine `Issue*` string constants (`IssueNoSteps`, `IssueMissingInitial`, `IssueMissingHandler`, `IssueInvalidTarget`, `IssueUnreachableStep`, `IssueCycleDetected`, `IssueNoTransitions`, `IssueDuplicateStep`, `IssueEmptyStepName`) -- stable string values for switch-based caller handling
-  - `ValidationIssue` struct: `Code`, `Step` (empty for definition-level issues), `Message`
-  - `ValidationResult` struct with `Errors` (fatal) and `Warnings` (non-fatal) slices, `IsValid() bool`, `String() string` methods
-  - `ValidateDefinition(def, registry) *ValidationResult` -- 6-phase validation: (1) empty steps / empty names / duplicates / missing initial step; (2) invalid transition targets; (3) handler checks against registry (nil registry skips this phase); (4) BFS reachability from `InitialStep`; (5) three-color DFS cycle detection with cycle-path capture in warning messages; (6) no-transitions warning for non-terminal steps
-  - `ValidateDefinitions(defs map[string]*WorkflowDefinition, registry) map[string]*ValidationResult` -- batch validation over a map
-  - Cycles are warnings (not errors): intentional review-fix loops are valid by design
-  - Terminal pseudo-steps (`StepDone`/`StepFailed`) are always valid transition targets; they are excluded from adjacency graph to avoid false positives
-  - Diamond-shaped (convergent) graphs correctly identified as non-cyclic by the three-color DFS
-  - 40+ unit tests covering all issue codes, graph analysis edge cases (diamond, linear chain, cycle, orphan), nil definition, empty registry, batch validation
-- **Files created/modified:**
-  - `internal/workflow/validate.go` -- full implementation with godoc
-  - `internal/workflow/validate_test.go` -- comprehensive test suite (40+ tests)
-- **Key Decisions:**
-  1. **Cycles as warnings** -- `review → fix → review` loops are intentional; callers decide whether to reject a workflow with cycles; `IsValid()` is true when there are zero errors
-  2. **Six-phase sequential validation** -- Each phase builds on the previous; graph analysis (phases 4-6) is gated on a valid `InitialStep` so BFS/DFS do not panic on empty inputs
-  3. **Terminal pseudo-steps excluded from adjacency** -- `StepDone` and `StepFailed` have no outgoing transitions; including them in adjacency would incorrectly suppress cross-branch reachability warnings
-  4. **`cyclesReported` deduplication map** -- Prevents duplicate `CYCLE_DETECTED` warnings when the DFS discovers the same back-edge through different entry points in disconnected sub-graphs
-  5. **`String()` omits `step ""` for definition-level issues** -- Issues without a `Step` field render as `[CODE] message` to avoid confusing empty-string quotes in CLI output
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-050: Pipeline Orchestrator Core -- Multi-Phase Lifecycle
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `PipelineOrchestrator` struct with `engine`, `store`, `gitClient`, `config`, `logger`, `events` fields
-  - `PipelineOpts` struct: `PhaseID`, `FromPhase`, `SkipImplement`, `SkipReview`, `SkipFix`, `SkipPR`, `ImplAgent`, `ReviewAgent`, `FixAgent`, `ReviewConcurrency`, `MaxReviewCycles`, `DryRun`, `Interactive`
-  - `PhaseResult` struct with 10 JSON-tagged fields capturing per-phase lifecycle outcome
-  - `PipelineResult` struct with per-phase slice, total duration, and aggregate status
-  - `NewPipelineOrchestrator(engine, store, gitClient, cfg, opts...)` constructor with functional options
-  - `WithPipelineLogger` and `WithPipelineEvents` functional option constructors
-  - `Run(ctx, opts) (*PipelineResult, error)` -- full multi-phase lifecycle with context cancellation between phases, agent normalisation, resume-from-checkpoint, per-phase `runPhase` dispatch, and post-phase checkpointing
-  - `DryRun(opts) string` -- formatted plan listing all phases, branches, active steps, and agent names
-  - `resolvePhases` -- loads phases.conf, supports `PhaseID=""/"all"`, specific numeric ID, and `FromPhase` filter
-  - `filterFromPhase` -- selects phases with ID >= fromPhase
-  - `runPhase` -- creates per-phase run ID, manages git branch via `ensureBranch`, deep-copies workflow definition via `applySkipFlags`, sets 11 metadata keys on `WorkflowState`, drives `engine.Run`, extracts `PhaseResult` from final state
-  - `applySkipFlags` -- deep-copies and rewires the `implement-review-pr` builtin definition based on 4 orthogonal skip flags; guards against terminal initial step (all-skip edge case)
-  - `ensureBranch` -- creates `raven/phase-N` branch or checks it out if it exists; skipped when `gitClient` is nil
-  - `savePipelineState` / `loadOrCreatePipelineState` -- JSON round-trip of `[]PhaseResult` and `PipelineOpts` into `workflow.StateStore`; detects resumable incomplete pipeline runs
-  - `extractPhaseResult` -- reads `impl_status`, `review_verdict`, `fix_status`, `pr_url`, `error` metadata into `PhaseResult`
-  - `normalizeAgent` -- falls back to `"claude"` for empty or unknown agent names
-  - `activeSteps` -- computes ordered list of step names considering skip flags; used in dry-run output
-  - Phase/pipeline status constants: 8 phase statuses + 3 pipeline statuses
-  - 35+ table-driven unit tests covering all skip flag combinations, phase resolution, context cancellation, checkpointing, agent normalisation, metadata propagation, and result aggregation
-- **Files created/modified:**
-  - `internal/pipeline/orchestrator.go` -- full implementation (728 lines)
-  - `internal/pipeline/orchestrator_test.go` -- comprehensive test suite (35+ tests)
-- **Key Decisions:**
-  1. **`applySkipFlags` deep-copies the builtin definition** -- `workflow.GetDefinition` returns a pointer into a package-level singleton map; mutating it directly would corrupt all subsequent calls
-  2. **Terminal initial step guard in `runPhase`** -- When all 4 skip flags are set simultaneously, `applySkipFlags` produces `InitialStep = "__done__"` which the engine cannot handle; the guard returns a completed result without invoking the engine
-  3. **`gitClient` nil check in `runPhase` and `ensureBranch`** -- Allows tests to run without a real git repo; branch management is a side effect that tests don't need
-  4. **JSON round-trip for pipeline checkpoint metadata** -- `WorkflowState.Metadata` is `map[string]any`; serialising `[]PhaseResult` through JSON ensures the stored value survives the `float64`-for-int JSON decode behaviour
-  5. **Phase-level errors swallowed into `PhaseResult.Error`** -- `Run` never returns an error for individual phase failures; only context cancellation produces a non-nil `Run` error, enabling partial result reporting
-  6. **`loadOrCreatePipelineState` ignores opts parameter** -- Current implementation identifies a resumable run purely by `WorkflowName == "pipeline"` and non-terminal status; opts-based filtering (e.g. same PhaseID) is deferred to T-051+
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-049: Built-in Workflow Definitions and Step Handlers
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - Four built-in workflow name constants (`WorkflowImplement`, `WorkflowImplementReview`, `WorkflowPipeline`, `WorkflowPRDDecompose`)
-  - `BuiltinDefinitions()` returning all four workflow definitions as a shallow-copy map
-  - `GetDefinition(name string)` returning a workflow definition by name (nil if not found)
-  - `RegisterBuiltinHandlers(registry)` registering all 11 built-in step handlers
-  - `ImplementHandler` wrapping the loop runner for single-task or phase-based implementation
-  - `ReviewHandler` wrapping the multi-agent review orchestrator
-  - `CheckReviewHandler` mapping review verdict to `EventSuccess` (approved) or `EventNeedsHuman` (changes needed/blocking)
-  - `FixHandler` wrapping the review fix engine
-  - `PRHandler` wrapping PR creation via `review.PRCreator`
-  - `InitPhaseHandler`, `RunPhaseWorkflowHandler`, `AdvancePhaseHandler` for multi-phase pipeline iteration
-  - `ShredHandler`, `ScatterHandler`, `GatherHandler` as stubs for future PRD decomposition (T-056+)
-  - Metadata helpers: `metaString`, `metaInt`, `metaBool`, `resolveAgents` for safe cross-step data passing
-  - All handlers use compile-time interface checks (`var _ StepHandler = (*Handler)(nil)`)
-  - 86.9% test coverage (exceeds 80% requirement)
-- **Files created/modified:**
-  - `internal/workflow/builtin.go` -- workflow definitions, constants, and registration
-  - `internal/workflow/handlers.go` -- all 11 step handler implementations
-  - `internal/workflow/builtin_test.go` -- tests for definitions and registry
-  - `internal/workflow/handlers_test.go` -- tests for all handlers
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-051: Pipeline Branch Management
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `BranchManager` struct with configurable branch template and base branch
-  - `NewBranchManager(gitClient, branchTemplate, baseBranch)` constructor with empty-value defaults (`"phase/{phase_id}-{slug}"` and `"main"`)
-  - `WithLogger` fluent option for attaching a `charmbracelet/log` Logger for non-fatal warnings
-  - `PhaseBranchOpts` struct with `PhaseID`, `PhaseName`, `ProjectName`, `PreviousPhaseBranch`, `SyncBase` fields
-  - `ResolveBranchName(phaseID, phaseName, projectName)` applying `strings.NewReplacer` for `{phase_id}`, `{slug}`, `{project}` substitution
-  - `slugify` helper converting arbitrary strings to kebab-case: lowercase, non-alphanumeric sequences → single hyphen, trim leading/trailing hyphens
-  - `CreatePhaseBranch(ctx, opts)` branching from `baseBranch` for phase 1, `PreviousPhaseBranch` for subsequent phases; `SyncBase` triggers a `Fetch` with non-fatal error handling
-  - `SwitchToPhaseBranch(ctx, branchName)` checking existence then calling `Checkout`; errors on missing branch
-  - `BranchExists(ctx, branchName)` delegating to `GitClient.BranchExists`
-  - `EnsureBranch(ctx, opts)` idempotent create-or-switch for resume logic
-  - 92.3% test coverage (exceeds 90% requirement)
-  - Full unit test suite with mock git client and integration tests against real git repos
-  - Integration tests: 3-chained-branches and resume-scenario
-  - Fuzz test for `slugify` (invariants: only `[a-z0-9-]`, no leading/trailing hyphen, no consecutive hyphens)
-  - Benchmarks for `ResolveBranchName` and `slugify`
-- **Files created/modified:**
-  - `internal/pipeline/branch.go` -- BranchManager implementation with full godoc
-  - `internal/pipeline/branch_test.go` -- comprehensive test suite (unit + integration + fuzz + benchmarks)
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-053: Pipeline Interactive Wizard
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `WizardConfig` struct with `Phases`, `Agents`, `DefaultAgent`, and `Config` fields
-  - `ErrWizardCancelled` sentinel error returned when the user cancels or declines confirmation
-  - `RunWizard(cfg WizardConfig) (*PipelineOpts, error)` — top-level orchestrator running 4 separate `huh.Form` calls
-  - Page 1 (`runPhaseModePage`): `huh.NewSelect[string]` with "All phases", "Single phase", "From phase" options; `phaseModeAll/phaseModeSingle/phaseModeFrom` internal constants
-  - Page 1b (`runPhasePickerPage`): conditional second form shown only for single/from mode; pre-selects first phase; title adapts to mode
-  - Page 2 (`runAgentPage`): three `huh.NewSelect[string]` dropdowns for impl/review/fix agents; skipped entirely when only 1 agent is available
-  - Page 3 (`runOptionsPage`): `huh.NewInput` with `validateConcurrency` (1-10) and `validateMaxCycles` (1-5); `huh.NewMultiSelect[string]` for 4 skip flag toggles; `huh.NewConfirm` for dry-run toggle
-  - Page 4 (`runConfirmPage`): `huh.NewConfirm` with "Run Pipeline"/"Cancel" buttons and full summary description built by `buildSummary`
-  - `buildOpts` helper mapping phase mode + selections + skip flags into `PipelineOpts`
-  - `buildSummary` helper producing a human-readable summary string for the confirmation page
-  - `mapWizardErr` translating `huh.ErrUserAborted` → `ErrWizardCancelled`; wrapping all other errors with "wizard:" prefix
-  - `validateConcurrency`/`validateMaxCycles` as standalone exported-equivalent functions for direct testing
-  - `containsString` and `phaseNameByID` pure helper functions
-  - All forms use `huh.ThemeCharm()` and `WithWidth(80)`
-  - 35+ table-driven unit tests covering all helpers, validators, skip flags, phase modes, and sentinel error identity
-- **Files created:**
-  - `internal/pipeline/wizard.go` — full implementation with godoc (437 lines)
-  - `internal/pipeline/wizard_test.go` — comprehensive test suite (35+ tests)
-- **Key Decisions:**
-  1. **Multiple `form.Run()` calls instead of one monolithic form** — Conditional pages (phase picker, agent selection) are cleanest when implemented as separate sequential `huh.Form` runs; avoids complex `HideFunc` logic and makes each page independently testable
-  2. **Skip agent page when only 1 agent** — Pre-fills all three agent fields to the single available agent and skips the interaction entirely; UI shows no unnecessary choices
-  3. **`ErrWizardCancelled` wraps `huh.ErrUserAborted`** — Callers do not need to import `huh`; a single sentinel covers both Ctrl+C abort and confirmation-page decline
-  4. **Declined confirmation returns `ErrWizardCancelled`, not nil** — The wizard treats "Cancel" as a user abort for consistent exit code semantics in the CLI layer (T-055)
-  5. **`wizardWidth = 80`** — Meets the minimum 80-column terminal width requirement; avoids runtime terminal-width detection complexity
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-052: Pipeline Metadata Tracking
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `PipelineMetadata` struct tracking pipeline-wide execution information: `PipelineID`, `WorkflowName`, `StartedAt`, `CompletedAt`, `Status`, `Phases`, `CurrentPhase`, `TotalPhases`, `Opts`
-  - `PhaseMetadata` struct tracking per-phase execution state: `PhaseID` (int), `PhaseName`, `BranchName`, `Status`, `ImplStatus`, `ReviewVerdict`, `FixStatus`, `PRURL`, `PRStatus`, `StartedAt`, `CompletedAt`, `Duration` (int64 nanoseconds to avoid JSON issues), `ReviewCycles`, `Error`
-  - `PipelineStatusRunning = "running"` constant (complements existing completed/partial/failed constants in orchestrator.go)
-  - `NewPipelineMetadata(pipelineID, phases, opts)` -- creates initial metadata with one pending `PhaseMetadata` per `task.Phase`, branch names via `phaseBranchName`, status set to `PipelineStatusRunning`
-  - `ToMetadataMap() map[string]interface{}` -- JSON round-trip serialization for `WorkflowState.Metadata` storage; returns minimal fallback map on marshal failure
-  - `PipelineMetadataFromMap(m)` -- JSON round-trip deserialization from `WorkflowState.Metadata`; wraps errors with context
-  - `UpdatePhaseStatus(phaseIndex, status)` -- sets `Status` for a phase by index; silently no-ops on out-of-bounds
-  - `UpdatePhaseStage(phaseIndex, stage, status)` -- updates stage-specific field (`impl` -> ImplStatus, `review` -> ReviewVerdict, `fix` -> FixStatus, `pr` -> PRStatus); unknown stages are no-ops
-  - `SetPhaseResult(phaseIndex, result)` -- records final `PhaseResult` into `PhaseMetadata`; converts `time.Duration` to `int64` nanoseconds; sets `PRStatus = "created"` when PRURL is non-empty; sets `CompletedAt` to current time
-  - `NextIncompletePhase()` -- returns first index where status is not completed/skipped, or -1 when all phases done
-  - `IsComplete()` -- returns true when `NextIncompletePhase() == -1`
-  - `Summary()` -- human-readable one-line summary: "Pipeline: N/M phases complete | Current: Phase X (status)"
-  - 40+ table-driven unit tests covering all methods, edge cases (empty phases, out-of-bounds, round-trips, duration conversion, PR status logic)
-- **Files created:**
-  - `internal/pipeline/metadata.go` -- full implementation with godoc (251 lines)
-  - `internal/pipeline/metadata_test.go` -- comprehensive test suite (40+ tests)
-- **Key Decisions:**
-  1. **`int64` for Duration (not `time.Duration`)** -- `time.Duration` marshals to a JSON number but the field name `duration_ns` makes the unit explicit; avoids silent precision loss if the JSON is consumed by non-Go tools
-  2. **JSON round-trip for `ToMetadataMap`/`PipelineMetadataFromMap`** -- Consistent with the orchestrator's `savePipelineState` pattern; ensures all nested types survive `map[string]any` storage and the JSON `float64`-for-int decode behaviour
-  3. **`PipelineStatusRunning` in metadata.go** -- The orchestrator only defines the terminal statuses (completed/partial/failed); the "running" status is only meaningful during active execution, so it lives alongside the types that use it
-  4. **`UpdatePhaseStage` unknown-stage no-op** -- Callers pass string stage names; silently ignoring unknown stages prevents panics from typos without requiring error handling at every call site
-  5. **`SetPhaseResult` auto-sets `PRStatus = "created"`** -- The `PhaseResult` type has no `PRStatus` field; deriving it from `PRURL != ""` keeps the two structs in sync without an extra field
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-054: Pipeline and Workflow Dry-Run Mode
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `DryRunFormatter` struct in `internal/workflow/dryrun.go` with `writer io.Writer` and `styled bool` fields
-  - `NewDryRunFormatter(w io.Writer, styled bool) *DryRunFormatter` constructor
-  - `PhaseDryRunDetail` struct with `PhaseID`, `PhaseName`, `BranchName`, `BaseBranch`, `Skipped`, `ImplAgent`, `ReviewAgent`, `FixAgent`, `Steps` fields
-  - `StepDryRunDetail` struct with `StepName`, `Description`, `Transitions` fields
-  - `PipelineDryRunInfo` struct aggregating `TotalPhases` and `[]PhaseDryRunDetail` -- avoids circular import with the `pipeline` package
-  - `FormatWorkflowDryRun(def, state, stepOutputs)` -- BFS graph walk from `InitialStep` with stable step numbering; cycle detection annotates back-edges as `"(cycles back to step N)"` rather than infinite recursion; `sortedKeys` helper ensures deterministic transition ordering
-  - `FormatPipelineDryRun(info PipelineDryRunInfo)` -- formats all phases with branch chaining (from baseBranch), skip annotations, agent assignments, and step-level detail
-  - `Write(s string)` -- writes formatted string to `f.writer`
-  - Styled mode: lipgloss bold for headers, faint for transitions, colored phase headings; plain mode: no ANSI codes
-  - 26+ unit tests covering: empty definitions, single-step workflows, step descriptions, cycle detection via builtin `implement-review-pr` workflow, styled vs plain output (ANSI detection), determinism, pipeline phases, skipped stages, branch chaining, step transitions, all-skipped edge case
-  - 88.6% test coverage (exceeds 85% requirement)
-- **Files created/modified:**
-  - `internal/workflow/dryrun.go` -- DryRunFormatter, PhaseDryRunDetail, StepDryRunDetail, PipelineDryRunInfo types and methods (339 lines)
-  - `internal/workflow/dryrun_test.go` -- comprehensive test suite (26+ tests)
-- **Key Decisions:**
-  1. **`PipelineDryRunInfo` plain struct instead of `*pipeline.PipelineMetadata`** -- `pipeline` imports `workflow`; having `workflow` import `pipeline` would create a circular dependency. The plain struct breaks the cycle; pipeline callers populate it before calling `FormatPipelineDryRun`
-  2. **BFS traversal for stable step numbering** -- Deterministic visit order is essential for golden testing and consistent cycle annotations; `sortedKeys` on transition maps prevents map-iteration non-determinism
-  3. **Cycle detection as annotation, not error** -- The `implement-review-pr` workflow's `run_fix → run_review` loop is intentional; the formatter shows `"(cycles back to step N)"` so users understand the loop without misleading "error" messaging
-  4. **Conditional lipgloss styling** -- `styled=false` uses plain `lipgloss.NewStyle()` (no-op in non-terminal environments), same code path for both modes
-  5. **`stepOutputs` map for DryRun descriptions** -- Callers pre-populate this map by calling `StepHandler.DryRun(state)` for each step, separating formatting logic from handler invocation
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-055: Pipeline CLI Command
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `newPipelineCmd()` -- Cobra command with Usage "pipeline", all 15 flags defined with defaults
-  - `pipelineFlags` struct holding all parsed flag values
-  - `runPipeline(cmd, flags)` -- RunE implementation with 18-step flow: mutual exclusivity check, config load, phase load, TTY detection / wizard launch, global dry-run merge, flag validation, branch name safety check, dry-run mode, state store construction, workflow registry + engine construction, git client construction, pipeline orchestrator creation, signal context setup, optional sync-base fetch, start logging, orchestrator run, result summary print, exit code mapping
-  - `runPipelineDryRun(cmd, opts, phases, phasesConf)` -- builds `PipelineDryRunInfo` from filtered phases and opts; constructs branch chain (raven/phase-N from previous phase branch); delegates to `workflow.DryRunFormatter.FormatPipelineDryRun`; uses TTY detection for styled output
-  - `filterPhasesForDryRun(phases, opts)` -- mirrors orchestrator phase-resolution logic for dry-run without requiring a full orchestrator instance
-  - `buildSkippedList(opts)` -- builds `[]string` of skipped stage names from `PipelineOpts`
-  - `buildPipelineOpts(flags)` -- converts `pipelineFlags` to `pipeline.PipelineOpts`; normalises "all" to ""
-  - `applyWizardOpts(wizardOpts, flags)` -- merges wizard output into CLI flags (only non-empty values applied; skip booleans always overwritten)
-  - `validatePipelineFlags(flags, phases)` -- validates concurrency >= 1, max-cycles >= 1, not all stages skipped, valid phase ID (with available-phases list in error), valid from-phase integer >= 1, valid agent names with list of available agents
-  - `printPipelineSummary(cmd, result)` -- formats phase summary table to stdout with status, branch, PR URL, and error columns
-  - `completePipelinePhase` / `completePipelineAgent` -- shell completion funcs for --phase, --from-phase, --impl-agent, --review-agent, --fix-agent
-  - `isStdinTTY()` / `isStdoutTTY()` -- TTY detection using `os.ModeCharDevice` without new dependency
-  - `availableAgentNames()` -- returns canonical agent list; `phaseIDList(phases)` -- comma-separated phase IDs for error messages
-  - `safeBranchRE` -- compiled regex for `--base` branch name safety validation
-  - Exit code handling: 0 = PipelineStatusCompleted, 2 = PipelineStatusPartial (via `os.Exit(2)`), 3 = wizard cancelled or Ctrl+C (via `os.Exit(3)`), 1 = error (returned from RunE)
-  - 50+ table-driven unit tests covering command registration, flag existence and defaults, shell completions, flag validation, opts building, wizard-opts merging, phase filtering, skip list building, phase ID listing, and branch regex validation
-- **Files created:**
-  - `internal/cli/pipeline.go` -- complete implementation (675 lines)
-  - `internal/cli/pipeline_test.go` -- comprehensive test suite (50+ tests)
-- **Key Decisions:**
-  1. **TTY detection via `os.ModeCharDevice`** -- avoids adding `golang.org/x/term` (not in go.mod); `isStdinTTY()` and `isStdoutTTY()` use stdlib-only `os.Stdin.Stat()` / `os.Stdout.Stat()`
-  2. **Mutual exclusivity enforced in RunE** -- `cobra.MarkFlagsMutuallyExclusive` requires Cobra v1.8+; manual check preserves compatibility with v1.10 and gives a clearer error message
-  3. **`applyWizardOpts` merges rather than replaces** -- only non-empty/non-zero wizard values are applied; explicit CLI flags set before wizard launch are preserved; skip booleans are always copied since their zero value (false) is meaningful
-  4. **Fresh `workflow.NewRegistry()` for every run** -- the `DefaultRegistry` is a package-level singleton that `init()` functions may already populate; using a new registry avoids registration panics on duplicate handlers
-  5. **git client failure is non-fatal** -- if `git.NewGitClient("")` fails (e.g. not in a git repo), a warning is logged and `gitClient = nil` is passed to the orchestrator, which handles nil git client gracefully
-  6. **`os.Exit` for partial (2) and cancel (3)** -- Cobra RunE cannot signal non-error non-zero exit codes; using `os.Exit` after printing the summary is the established pattern (same as `fix.go`)
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
 
 ---
 
@@ -638,35 +341,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
-
-- **Status:** Completed (13/13 complete)
-- **Tasks:** 13 (12 Must Have, 1 Should Have)
-- **Estimated Effort:** 96-144 hours
-- **PRD Roadmap:** Weeks 7-8
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Completed |
-| T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Completed |
-| T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Completed |
-| T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Completed |
-| T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Completed |
-| T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Completed |
-| T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Completed |
-| T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Completed |
-| T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Completed |
-| T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Completed |
-| T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Completed |
-| T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Completed |
-| T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Completed |
-
-**Deliverable:** `raven pipeline --phase all` orchestrates the full lifecycle with checkpoint/resume.
-
----
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
