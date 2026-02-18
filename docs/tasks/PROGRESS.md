@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 68 |
+| Completed | 69 |
 | In Progress | 0 |
-| Not Started | 21 |
+| Not Started | 20 |
 
 ---
 
@@ -396,6 +396,62 @@
 
 ---
 
+### Phase 6: TUI Command Center -- Initial Task (T-066)
+
+- **Status:** Completed (partial phase)
+- **Date:** 2026-02-18
+- **Tasks Completed:** 1 task (T-066)
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Bubble Tea App Scaffold | T-066 | `FocusPanel` enum (Sidebar/AgentPanel/EventLog), `AppConfig` struct, `App` top-level `tea.Model`; `NewApp` with default focus=Sidebar, ready=false, quitting=false; `Init()` returning nil; `Update()` handling WindowSizeMsg (store dims, set ready=true) and quit KeyMsgs (q/ctrl+c/ctrl+q → tea.Quit); `View()` with quitting/not-ready/too-small/full branches using lipgloss title bar; `RunTUI` with WithAltScreen + WithMouseCellMotion |
+
+#### Key Technical Decisions
+
+1. **Value receiver for App methods** -- Elm architecture is purely functional; each Update returns a new model copy, matching bubbletea's serialized state update guarantees
+2. **`tea.WithMouseCellMotion()` not `WithMouseAllMotion()`** -- preserves user ability to select and copy text from the terminal
+3. **`Init()` returns nil** -- bubbletea v1.x sends `WindowSizeMsg` automatically on startup; no explicit request needed
+4. **Minimum terminal size guard (80x24) in `View()`** -- prevents garbled layout when the terminal is too narrow/short; shown before the full render path
+5. **lipgloss for all rendering** -- consistent with the charmbracelet ecosystem; color constants use terminal-256 palette codes to stay within CGO_ENABLED=0
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| TUI App Scaffold | `internal/tui/app.go` |
+| TUI App Tests | `internal/tui/app_test.go` |
+| Package doc | `internal/tui/doc.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./internal/tui/...` pass
+
+---
+
+### T-066: Bubble Tea Application Scaffold and Elm Architecture Model
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `FocusPanel` iota enum type with `FocusSidebar`, `FocusAgentPanel`, `FocusEventLog` constants
+  - `AppConfig` struct holding `Version` and `ProjectName` strings for the TUI title bar
+  - `App` top-level `tea.Model` implementing Elm architecture (`Init`, `Update`, `View`) with value receivers
+  - `NewApp` constructor with defaults: focus=Sidebar, ready=false, quitting=false
+  - `Update` dispatching `tea.WindowSizeMsg` (store dims, set ready=true) and quit `KeyMsg` (q/ctrl+c/ctrl+q → tea.Quit)
+  - `View` with four branches: quitting (empty), not-ready ("Initializing"), too-small warning, full lipgloss title bar layout
+  - `RunTUI` public entry point creating `tea.Program` with `WithAltScreen()` and `WithMouseCellMotion()`
+  - 44-test suite achieving ≥80% coverage (remaining % is `RunTUI` which requires a live terminal)
+- **Files created/modified:**
+  - `internal/tui/app.go` -- top-level Elm architecture model, FocusPanel, AppConfig, App, RunTUI
+  - `internal/tui/app_test.go` -- 44 tests covering all acceptance criteria and edge cases
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -406,7 +462,7 @@ _None currently_
 
 ### Phase 6: TUI Command Center (T-066 to T-078, T-089)
 
-- **Status:** Not Started
+- **Status:** In Progress
 - **Tasks:** 14 (13 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-148 hours
 - **PRD Roadmap:** Weeks 11-13
@@ -416,7 +472,7 @@ _None currently_
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
 | T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Completed |
-| T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Not Started |
+| T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Completed |
 | T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Not Started |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Not Started |
 | T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Not Started |
