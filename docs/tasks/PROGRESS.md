@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 54 |
+| Completed | 55 |
 | In Progress | 0 |
-| Not Started | 35 |
+| Not Started | 34 |
 
 ---
 
@@ -503,6 +503,37 @@
 
 ---
 
+### T-052: Pipeline Metadata Tracking
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `PipelineMetadata` struct tracking pipeline-wide execution information: `PipelineID`, `WorkflowName`, `StartedAt`, `CompletedAt`, `Status`, `Phases`, `CurrentPhase`, `TotalPhases`, `Opts`
+  - `PhaseMetadata` struct tracking per-phase execution state: `PhaseID` (int), `PhaseName`, `BranchName`, `Status`, `ImplStatus`, `ReviewVerdict`, `FixStatus`, `PRURL`, `PRStatus`, `StartedAt`, `CompletedAt`, `Duration` (int64 nanoseconds to avoid JSON issues), `ReviewCycles`, `Error`
+  - `PipelineStatusRunning = "running"` constant (complements existing completed/partial/failed constants in orchestrator.go)
+  - `NewPipelineMetadata(pipelineID, phases, opts)` -- creates initial metadata with one pending `PhaseMetadata` per `task.Phase`, branch names via `phaseBranchName`, status set to `PipelineStatusRunning`
+  - `ToMetadataMap() map[string]interface{}` -- JSON round-trip serialization for `WorkflowState.Metadata` storage; returns minimal fallback map on marshal failure
+  - `PipelineMetadataFromMap(m)` -- JSON round-trip deserialization from `WorkflowState.Metadata`; wraps errors with context
+  - `UpdatePhaseStatus(phaseIndex, status)` -- sets `Status` for a phase by index; silently no-ops on out-of-bounds
+  - `UpdatePhaseStage(phaseIndex, stage, status)` -- updates stage-specific field (`impl` -> ImplStatus, `review` -> ReviewVerdict, `fix` -> FixStatus, `pr` -> PRStatus); unknown stages are no-ops
+  - `SetPhaseResult(phaseIndex, result)` -- records final `PhaseResult` into `PhaseMetadata`; converts `time.Duration` to `int64` nanoseconds; sets `PRStatus = "created"` when PRURL is non-empty; sets `CompletedAt` to current time
+  - `NextIncompletePhase()` -- returns first index where status is not completed/skipped, or -1 when all phases done
+  - `IsComplete()` -- returns true when `NextIncompletePhase() == -1`
+  - `Summary()` -- human-readable one-line summary: "Pipeline: N/M phases complete | Current: Phase X (status)"
+  - 40+ table-driven unit tests covering all methods, edge cases (empty phases, out-of-bounds, round-trips, duration conversion, PR status logic)
+- **Files created:**
+  - `internal/pipeline/metadata.go` -- full implementation with godoc (251 lines)
+  - `internal/pipeline/metadata_test.go` -- comprehensive test suite (40+ tests)
+- **Key Decisions:**
+  1. **`int64` for Duration (not `time.Duration`)** -- `time.Duration` marshals to a JSON number but the field name `duration_ns` makes the unit explicit; avoids silent precision loss if the JSON is consumed by non-Go tools
+  2. **JSON round-trip for `ToMetadataMap`/`PipelineMetadataFromMap`** -- Consistent with the orchestrator's `savePipelineState` pattern; ensures all nested types survive `map[string]any` storage and the JSON `float64`-for-int decode behaviour
+  3. **`PipelineStatusRunning` in metadata.go** -- The orchestrator only defines the terminal statuses (completed/partial/failed); the "running" status is only meaningful during active execution, so it lives alongside the types that use it
+  4. **`UpdatePhaseStage` unknown-stage no-op** -- Callers pass string stage names; silently ignoring unknown stages prevents panics from typos without requiring error handling at every call site
+  5. **`SetPhaseResult` auto-sets `PRStatus = "created"`** -- The `PhaseResult` type has no `PRStatus` field; deriving it from `PRURL != ""` keeps the two structs in sync without an extra field
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -531,7 +562,7 @@ _None currently_
 | T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Completed |
 | T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Completed |
 | T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Completed |
-| T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Not Started |
+| T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Completed |
 | T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Not Started |
 | T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Not Started |
 | T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Not Started |
