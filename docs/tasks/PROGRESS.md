@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 27 |
+| Completed | 28 |
 | In Progress | 0 |
-| Not Started | 59 |
+| Not Started | 58 |
 
 ---
 
@@ -49,6 +49,7 @@
 | Rate-limit detection & coordination | T-025 | `RateLimitCoordinator` with `sync.RWMutex` for thread safety; `ProviderState` per-provider tracking (IsLimited, ResetAt, WaitCount, LastMessage, UpdatedAt); `BackoffConfig` (DefaultWait, MaxWaits, JitterFactor); `DefaultBackoffConfig()` (60s/5/0.1); provider constants (ProviderAnthropic/OpenAI/Google); `AgentProvider` map (claude->anthropic, codex->openai, gemini->google); `providerForAgent` fallback to agent name; `RecordRateLimit` (creates/updates state, increments WaitCount, extends ResetAt to max, captures callback before unlock); `ClearRateLimit` (sets IsLimited=false, preserves WaitCount); `ShouldWait` (read lock, returns copy if limited and reset is future); `WaitForReset` (checks ShouldWait, ExceededMaxWaits, timer+ctx.Done select); `ExceededMaxWaits` (MaxWaits=0 always true, WaitCount>=MaxWaits); `GetState`/`AllStates` (sorted snapshot); `computeWaitDuration` with jitter; `ErrMaxWaitsExceeded` sentinel; callback captured under lock (race-free) |
 | Prompt template system | T-026 | `PromptContext` struct (task, phase, project, verification, progress, agent fields); `PromptGenerator` with custom `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts in task spec content); `NewPromptGenerator(templateDir)` with directory validation; `LoadTemplate(name)` with directory-traversal guard and LRU caching; `Generate(templateName, ctx)` (empty name falls back to built-in default); `GenerateFromString(tmplStr, ctx)` for inline templates; `BuildContext(spec, phase, cfg, selector, agentName)` populating all fields from live state; `DefaultImplementTemplate` const; `formatIDSummary` helper ("None" for empty, ", "-joined otherwise); `VerificationString` = `strings.Join(cmds, " && ")`; model lookup from `cfg.Agents[agentName].Model`; debug logging of rendered output |
 | Implementation loop runner | T-027 | `Runner` struct orchestrating the full implement loop; `RunConfig` (AgentName, PhaseID, TaskID, MaxIterations/50, MaxLimitWaits/5, SleepBetween/5s, DryRun, TemplateName); `NewRunner(selector, promptGen, agent, stateManager, rateLimiter, cfg, phases, events, logger)`; `Run(ctx, runCfg)` -- phase mode: select->prompt->invoke->detect->update->sleep->repeat until phase complete, max-iters, or ctx cancelled; `RunSingleTask(ctx, runCfg)` -- single-task mode via `--task T-007`; `DetectSignals(output)` exported scanner for PHASE_COMPLETE/TASK_BLOCKED/RAVEN_ERROR signals; internal helpers: `selectTask`, `generatePrompt`, `invokeAgent`, `invokeAgentWithRetry` (rate-limit wait+retry), `handleCompletion` (marks task completed/blocked based on signal), `handleDryRun` (print prompt+cmd to stderr, revert task, emit dry_run event), `emit` (non-blocking channel send with `select { default: }`); `applyDefaults` fills zero-value RunConfig fields; `sleepWithContext` with `time.NewTimer`+`select` for cancellable sleep; stale-task detection (3 consecutive same-task selections emits EventLoopError warning); `LoopEvent` struct with Type/Iteration/TaskID/AgentName/Message/Timestamp/Duration/WaitTime; 16 `LoopEventType` constants; `CompletionSignal` type with 3 signal constants |
+| Loop recovery | T-028 | `RateLimitWaiter` with `Wait(ctx, agentName)` checking `coordinator.ShouldWait` before blocking; `displayCountdown(ctx, duration)` using `time.NewTicker(1s)` with `\r` carriage-return in-place updates ("Rate limited. Retrying in %ds...  "); nil output writer falls back to `sleepWithContext`; `DirtyTreeRecovery` with `CheckAndStash(ctx, taskID)` detecting dirty tree via `gitClient.HasUncommittedChanges`, stashing with `"raven-autostash: "+taskID` message, and returning `(stashed bool, err error)`; `RestoreStash(ctx)` calling `gitClient.StashPop`; `EnsureCleanTree(ctx, taskID)` combining check+stash into one call; `AgentErrorRecovery` tracking consecutive errors against configurable max threshold with `RecordError(err) bool` (returns false at limit), `RecordSuccess()` resetting counter, `ShouldAbort() bool`; `RecoveryEventType` string type with 7 constants (EventRateLimitCountdown, EventRateLimitResuming, EventDirtyTreeDetected, EventStashCreated, EventStashRestored, EventStashFailed, EventRecoveryError); `RecoveryEvent` struct (Type, Message, Remaining, Timestamp); `emitRecovery(ch, event)` non-blocking helper; all structs nil-guard their optional logger and events channel |
 
 #### Key Technical Decisions
 
@@ -99,6 +100,7 @@
 | Gemini agent stub | `internal/agent/gemini.go` |
 | Rate-limit coordinator | `internal/agent/ratelimit.go` |
 | Implementation loop runner | `internal/loop/runner.go` |
+| Loop recovery (rate-limit, dirty-tree) | `internal/loop/recovery.go` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -140,7 +142,7 @@ _None currently_
 | T-025 | Rate-Limit Detection & Coordination | Must Have | Medium (8-12hrs) | Completed |
 | T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Completed |
 | T-027 | Implementation Loop Runner | Must Have | Large (16-24hrs) | Completed |
-| T-028 | Loop Recovery (Rate-Limit Wait, Dirty-Tree) | Must Have | Medium (8-12hrs) | Not Started |
+| T-028 | Loop Recovery (Rate-Limit Wait, Dirty-Tree) | Must Have | Medium (8-12hrs) | Completed |
 | T-029 | Implementation CLI Command -- raven implement | Must Have | Medium (8-12hrs) | Not Started |
 | T-030 | Progress File Generation -- PROGRESS.md | Must Have | Small (4-6hrs) | Not Started |
 
