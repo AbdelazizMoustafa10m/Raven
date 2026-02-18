@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 32 |
+| Completed | 33 |
 | In Progress | 0 |
-| Not Started | 54 |
+| Not Started | 53 |
 
 ---
 
@@ -195,6 +195,30 @@
 
 ---
 
+### T-033: Review Prompt Synthesis with Project Context Injection
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `ContextLoader` struct with `Load()` that reads project brief from `project_brief_file` (missing file not an error) and all `*.md` rule files from `rules_dir` sorted alphabetically (non-markdown files skipped)
+  - `PromptData` struct holding all template variables: project brief, rules, diff, file list, high-risk files, stats, JSON schema, agent name, review mode
+  - `ProjectContext` struct encapsulating loaded brief and rules
+  - `PromptBuilder` with `Build(ctx, data)` and `BuildForAgent(ctx, agentName, diff, files, mode)` methods; loads custom template from `prompts_dir` (checks `review.tmpl` then `review.md`), falls back to embedded default
+  - Embedded default `review_template.tmpl` using `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts with JSON in template), covering all prompt sections
+  - `formatFileList` with `[HIGH RISK]` annotation, change type, and line-delta summary; truncates at 500 files
+  - Diff truncation at 100KB with informational note
+  - Path security via `validatePath` rejecting `..` traversal segments
+  - Split-mode stats recomputed from the agent's file subset via `computeStats`
+  - 66 table-driven test functions covering all acceptance criteria, edge cases, and race conditions
+- **Files created/modified:**
+  - `internal/review/prompt.go` -- PromptBuilder, ContextLoader, PromptData, ProjectContext and all rendering logic
+  - `internal/review/review_template.tmpl` -- embedded default review prompt template
+  - `internal/review/prompt_test.go` -- 66 test functions; full acceptance-criteria coverage
+  - `internal/review/testdata/prompts/review.tmpl` -- minimal test fixture custom template
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -216,7 +240,7 @@ _None currently_
 |------|------|----------|--------|--------|
 | T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Completed |
 | T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Completed |
-| T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Not Started |
+| T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Completed |
 | T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Not Started |
 | T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Not Started |
 | T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Not Started |
