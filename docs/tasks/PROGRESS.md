@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 30 |
+| Completed | 31 |
 | In Progress | 0 |
-| Not Started | 56 |
+| Not Started | 55 |
 
 ---
 
@@ -150,6 +150,24 @@
 
 ---
 
+### T-031: Review Finding Types and Schema
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Verdict` typed string constants (APPROVED, CHANGES_NEEDED, BLOCKING) matching PRD Section 5.5
+  - `Severity` typed string constants (info, low, medium, high, critical)
+  - `Finding` struct with JSON tags; `DeduplicationKey()` returns `file:line:category`
+  - `ReviewResult` with `Validate()` checking all findings' severities and the verdict value
+  - `AgentReviewResult`, `ConsolidatedReview`, `ReviewConfig`, `ReviewMode`, `ReviewOpts` types
+  - Comprehensive test suite: JSON round-trips, dedup key variants, validate edge cases, benchmarks, fuzz tests
+- **Files created/modified:**
+  - `internal/review/types.go` -- all shared review pipeline types and validation
+  - `internal/review/types_test.go` -- 20 test functions, 2 benchmarks, 2 fuzz tests; 100% coverage
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -169,7 +187,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Not Started |
+| T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Completed |
 | T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Not Started |
 | T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Not Started |
 | T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Not Started |
