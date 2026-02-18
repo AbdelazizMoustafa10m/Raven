@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 37 |
+| Completed | 38 |
 | In Progress | 0 |
-| Not Started | 52 |
+| Not Started | 51 |
 
 ---
 
@@ -310,6 +310,36 @@
 
 ---
 
+### T-037: Verification Command Runner
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `VerificationRunner` struct executing a sequence of shell commands via `os/exec` with per-command timeouts
+  - `CommandResult` capturing stdout, stderr, exit code, duration, `Passed`, and `TimedOut` fields
+  - `VerificationReport` aggregating all results with total/passed/failed counts and overall status
+  - `NewVerificationRunner(commands, workDir, timeout, logger)` constructor with defensive slice copy
+  - `Run(ctx, stopOnFailure)` executing commands sequentially with optional early-exit on failure
+  - `RunSingle(ctx, command)` executing a single command via `sh -c` (POSIX) or `cmd /c` (Windows)
+  - Per-command `context.WithTimeout` wrapping parent context; `TimedOut: true` set on deadline exceeded
+  - Context cancellation propagation: parent cancel surfaces as a non-nil error, stopping the run loop
+  - `FormatReport()` producing terminal output with ✓/✗ pass/fail markers and a Summary line
+  - `FormatMarkdown()` producing a GitHub-compatible table with `<details>` blocks for failed command output
+  - Output truncation: byte-based for few long lines (≤1024), line-based head+tail for many lines (>1024)
+  - Empty/whitespace-only commands are skipped with a logger warning and not counted toward Total
+  - 58+ unit tests, 2 fuzz tests, 5 benchmarks covering all acceptance criteria and edge cases
+- **Files created/modified:**
+  - `internal/review/verify.go` -- VerificationRunner, CommandResult, VerificationReport, format helpers, truncation
+  - `internal/review/verify_test.go` -- comprehensive unit/integration/fuzz/benchmark tests
+- **Key Decisions:**
+  1. Always use `sh -c` / `cmd /c` shell wrapper to handle glob patterns like `./...`, pipes, and redirects in verification commands
+  2. Two-tier output truncation: byte-based for large-line inputs, line-based head+tail for high-line-count inputs
+  3. Separate `stdout`/`stderr` buffers (not `CombinedOutput`) to allow callers maximum flexibility
+  4. Per-command timeout via `context.WithTimeout` with process kill + wait for cleanup to avoid zombie processes
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -335,7 +365,7 @@ _None currently_
 | T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Completed |
 | T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Completed |
 | T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Completed |
-| T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Not Started |
+| T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Completed |
 | T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Not Started |
 | T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Not Started |
 | T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Not Started |
