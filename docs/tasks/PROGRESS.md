@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 69 |
+| Completed | 70 |
 | In Progress | 0 |
-| Not Started | 20 |
+| Not Started | 19 |
 
 ---
 
@@ -452,6 +452,31 @@
 
 ---
 
+### T-067: TUI Message Types and Event System
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `AgentOutputMsg` — single line of agent stdout/stderr tagged with agent name, stream, and timestamp
+  - `AgentStatus` iota enum (Idle/Running/Completed/Failed/RateLimited/Waiting) with `String()` method
+  - `AgentStatusMsg` — agent lifecycle change signal with status, task ID, and detail
+  - `WorkflowEventMsg` — workflow step transition event with step/prevStep/event/detail fields
+  - `LoopEventType` iota enum (9 variants) with `String()` method covering all implementation loop events
+  - `LoopEventMsg` — loop iteration event with type, taskID, iteration counters, and detail
+  - `RateLimitMsg` — rate-limit event with provider, agent, ResetAfter duration, and ResetAt absolute time
+  - `TaskProgressMsg` — task state change for progress bar updates with phase/completed/total counters
+  - `TickMsg` — periodic timer tick for countdown displays and elapsed time
+  - `ErrorMsg` — non-fatal error for display in the event log
+  - `FocusChangedMsg` — keyboard focus panel change (uses `FocusPanel` from app.go)
+  - `TickCmd` and `TickEvery` helper functions using `tea.Tick` (safe Elm-architecture pattern)
+  - 47 unit tests + 4 benchmarks covering construction, String() enum values, type-switch dispatch, and edge cases
+- **Files created/modified:**
+  - `internal/tui/messages.go` — all TUI message types, enums, and tick helper functions
+  - `internal/tui/messages_test.go` — 47 tests + 4 benchmarks covering all acceptance criteria
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -473,7 +498,7 @@ _None currently_
 |------|------|----------|--------|--------|
 | T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Completed |
 | T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Completed |
-| T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Not Started |
+| T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Completed |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Not Started |
 | T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Not Started |
 | T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Not Started |
