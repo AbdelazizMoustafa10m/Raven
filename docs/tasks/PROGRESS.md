@@ -150,324 +150,72 @@
 
 ---
 
-### T-031: Review Finding Types and Schema
+### Phase 3: Review Pipeline (T-031 to T-042)
 
 - **Status:** Completed
 - **Date:** 2026-02-18
-- **What was built:**
-  - `Verdict` typed string constants (APPROVED, CHANGES_NEEDED, BLOCKING) matching PRD Section 5.5
-  - `Severity` typed string constants (info, low, medium, high, critical)
-  - `Finding` struct with JSON tags; `DeduplicationKey()` returns `file:line:category`
-  - `ReviewResult` with `Validate()` checking all findings' severities and the verdict value
-  - `AgentReviewResult`, `ConsolidatedReview`, `ReviewConfig`, `ReviewMode`, `ReviewOpts` types
-  - Comprehensive test suite: JSON round-trips, dedup key variants, validate edge cases, benchmarks, fuzz tests
-- **Files created/modified:**
-  - `internal/review/types.go` -- all shared review pipeline types and validation
-  - `internal/review/types_test.go` -- 20 test functions, 2 benchmarks, 2 fuzz tests; 100% coverage
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+- **Tasks Completed:** 12 tasks (T-031 to T-042, including T-058)
 
----
+#### Features Implemented
 
-### T-032: Git Diff Generation and Risk Classification
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Review Types & Schema | T-031 | `Verdict`, `Severity`, `Finding`, `ReviewResult`, `ConsolidatedReview`, `ReviewConfig`, `ReviewOpts` types with validation and JSON round-trip support |
+| Git Diff Generation | T-032 | `git.Client` interface, `DiffGenerator` with extension filtering, risk classification, `SplitFiles` round-robin distribution |
+| Review Prompt Synthesis | T-033 | `ContextLoader`, `PromptBuilder`, embedded template with `[[`/`]]` delimiters, project brief/rules injection, diff truncation, path security |
+| Finding Consolidation | T-034 | `Consolidator` with O(n) deduplication, severity escalation, verdict aggregation, agent attribution, `ConsolidationStats` |
+| Multi-Agent Orchestrator | T-035 | `ReviewOrchestrator` fan-out via errgroup, per-agent error capture, `ReviewEvent` streaming, `DryRun` support |
+| JSON Extraction | T-058 | `internal/jsonutil` package: `ExtractInto`/`ExtractFirst` brace-counting extraction from freeform AI output |
+| Review Report Generation | T-036 | `ReportGenerator` producing markdown reports with findings table, by-file/severity breakdowns, agent breakdown, consolidation stats |
+| Verification Runner | T-037 | `VerificationRunner` executing shell commands with per-command timeouts, `FormatReport()`/`FormatMarkdown()` output, two-tier truncation |
+| Fix Engine | T-038 | `FixEngine` iterative fix-verify cycles, `FixPromptBuilder`, `FixEvent` streaming, `FixReport` aggregation |
+| PR Body Generation | T-039 | `PRBodyGenerator` with AI summary, `GenerateTitle`, heading adjustment, 65,536-byte GitHub limit enforcement |
+| PR Creation | T-040 | `PRCreator` wrapping `gh pr create`, `CheckPrerequisites`, `EnsureBranchPushed`, branch-name injection guard |
+| `raven review` CLI | T-041 | Cobra command wiring full review pipeline; `--agents`, `--mode`, `--concurrency`, `--base`, `--output` flags; exit code semantics |
+| `raven fix` & `raven pr` CLI | T-042 | Cobra commands for fix-verify cycles and PR creation; auto-detect review report; `StringArrayVar` for repeatable flags |
 
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `git.Client` interface in `internal/git/client.go` exposing `DiffFiles`, `DiffStat`, `DiffUnified`, `DiffNumStat`; compile-time check `var _ Client = (*GitClient)(nil)`
-  - `git.NumStatEntry` type and `GitClient.DiffNumStat()` method parsing `git diff --numstat` output including binary files (`-1` sentinel) and rename brace notation (`{old => new}`)
-  - `parseNumStat` and `parseRenamePath` internal parsers for numstat output
-  - `review.DiffGenerator` with `NewDiffGenerator(gitClient, cfg, logger)` eagerly compiling Extensions and RiskPatterns as regexes
-  - `review.Generate(ctx, baseBranch)` with branch-name injection guard (`^[a-zA-Z0-9_./-]+$`), extension filtering, risk classification, and full `DiffResult` assembly
-  - `review.SplitFiles(files, n)` round-robin distribution with high-risk files sorted first
-  - `ChangeType` (added/modified/deleted/renamed), `RiskLevel` (high/normal/low), `ChangedFile`, `DiffResult`, `DiffStats` types
-- **Key Decisions:**
-  - `git.Client` interface defined in the `git` package (not `review`) so callers can inject mocks without import cycles
-  - `DiffNumStat` added to `git.Client` interface (extending the spec's three-method interface) because `Generate` requires per-file line counts for `DiffStats`
-  - Extensions and RiskPatterns treated as regex strings (not glob/comma-separated) as specified; empty means match-all/no-high-risk
-  - Binary files from numstat (`-1`) are clamped to 0 in `ChangedFile.LinesAdded/LinesDeleted`
-  - `min` builtin removed in favour of inline conditional to avoid shadowing Go 1.21+ builtin
-- **Files created/modified:**
-  - `internal/git/client.go` -- added `Client` interface, `NumStatEntry` type, `DiffNumStat` method, `parseNumStat`, `parseRenamePath`
-  - `internal/git/client_test.go` -- added `TestDiffNumStat_*`, `TestParseNumStat`, `TestParseRenamePath`, `TestClientInterface` tests
-  - `internal/review/diff.go` -- new file: all diff generation types and logic
-  - `internal/review/diff_test.go` -- new file: mock client, 30+ test functions covering all code paths
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+#### Key Technical Decisions
 
----
+1. **`[[`/`]]` template delimiters** -- avoids conflicts with `{{`/`}}` appearing in JSON/code snippets within AI-generated finding descriptions; used consistently across all embedded templates in the review package
+2. **`git.Client` interface in `git` package** -- prevents import cycles when `review` package injects mocks; compile-time checked via `var _ Client = (*GitClient)(nil)`
+3. **Per-agent errors never abort the pipeline** -- errgroup workers always return `nil`; failures captured in `AgentError` slices so one flaky agent cannot cancel the others
+4. **`collectCandidates` outer-first ordering** -- `jsonutil.ExtractInto` naturally prefers the outermost JSON blob, matching the typical AI response structure
+5. **Pre-sorted key slices in report/PR body data structs** -- makes template rendering deterministic without requiring template-side logic
+6. **Two-tier output truncation in `VerificationRunner`** -- byte-based for large-line inputs, line-based head+tail for high-line-count inputs
+7. **`sh -c` / `cmd /c` shell wrapper** -- handles glob patterns (`./...`), pipes, and redirects in verification commands without custom parsing
+8. **Agent errors in `GenerateSummary` silently swallowed** -- callers always receive a usable summary string; `PRBodyGenerator` never propagates agent failures to the caller
+9. **`DiffNumStat` added to `git.Client` interface** -- `Generate` requires per-file line counts for `DiffStats`; binary files (`-1` sentinel) clamped to 0
+10. **Branch-name injection guard via allowlist regex** -- `^[a-zA-Z0-9_./-]+$` prevents shell injection in `DiffGenerator` and `PRCreator`
 
-### T-033: Review Prompt Synthesis with Project Context Injection
+#### Key Files Reference
 
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `ContextLoader` struct with `Load()` that reads project brief from `project_brief_file` (missing file not an error) and all `*.md` rule files from `rules_dir` sorted alphabetically (non-markdown files skipped)
-  - `PromptData` struct holding all template variables: project brief, rules, diff, file list, high-risk files, stats, JSON schema, agent name, review mode
-  - `ProjectContext` struct encapsulating loaded brief and rules
-  - `PromptBuilder` with `Build(ctx, data)` and `BuildForAgent(ctx, agentName, diff, files, mode)` methods; loads custom template from `prompts_dir` (checks `review.tmpl` then `review.md`), falls back to embedded default
-  - Embedded default `review_template.tmpl` using `[[`/`]]` delimiters (avoids `{{`/`}}` conflicts with JSON in template), covering all prompt sections
-  - `formatFileList` with `[HIGH RISK]` annotation, change type, and line-delta summary; truncates at 500 files
-  - Diff truncation at 100KB with informational note
-  - Path security via `validatePath` rejecting `..` traversal segments
-  - Split-mode stats recomputed from the agent's file subset via `computeStats`
-  - 66 table-driven test functions covering all acceptance criteria, edge cases, and race conditions
-- **Files created/modified:**
-  - `internal/review/prompt.go` -- PromptBuilder, ContextLoader, PromptData, ProjectContext and all rendering logic
-  - `internal/review/review_template.tmpl` -- embedded default review prompt template
-  - `internal/review/prompt_test.go` -- 66 test functions; full acceptance-criteria coverage
-  - `internal/review/testdata/prompts/review.tmpl` -- minimal test fixture custom template
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+| Purpose | Location |
+| ------- | -------- |
+| Review types, `Verdict`, `Severity`, `Finding`, `ReviewResult` | `internal/review/types.go` |
+| `git.Client` interface, `DiffNumStat`, numstat parsers | `internal/git/client.go` |
+| `DiffGenerator`, `SplitFiles`, `ChangedFile`, `DiffResult` | `internal/review/diff.go` |
+| `ContextLoader`, `PromptBuilder`, `PromptData` | `internal/review/prompt.go` |
+| Default review prompt template | `internal/review/review_template.tmpl` |
+| `Consolidator`, `AggregateVerdicts`, `EscalateSeverity` | `internal/review/consolidate.go` |
+| `ReviewOrchestrator`, `ReviewEvent`, `OrchestratorResult` | `internal/review/orchestrator.go` |
+| `ExtractInto`, `ExtractFirst` JSON extraction | `internal/jsonutil/jsonutil.go` |
+| `ReportGenerator`, `ReportData` | `internal/review/report.go` |
+| Markdown report template | `internal/review/report_template.tmpl` |
+| `VerificationRunner`, `CommandResult`, `VerificationReport` | `internal/review/verify.go` |
+| `FixEngine`, `FixPromptBuilder`, `FixEvent`, `FixReport` | `internal/review/fix.go` |
+| Fix prompt template | `internal/review/fix_template.tmpl` |
+| `PRBodyGenerator`, `GenerateTitle`, `GenerateSummary` | `internal/review/prbody.go` |
+| PR body template | `internal/review/prbody_template.tmpl` |
+| `PRCreator`, `PRCreateOpts`, `EnsureBranchPushed` | `internal/review/pr.go` |
+| `raven review` Cobra command | `internal/cli/review.go` |
+| `raven fix` Cobra command | `internal/cli/fix.go` |
+| `raven pr` Cobra command | `internal/cli/pr.go` |
 
----
+#### Verification
 
-### T-034: Finding Consolidation and Deduplication
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `Consolidator` struct with `NewConsolidator(logger)` constructor accepting an optional charmbracelet/log logger
-  - `Consolidate(results []AgentReviewResult)` method implementing O(n) map-based deduplication using `Finding.DeduplicationKey()` as the composite key
-  - Severity escalation: when two agents report the same finding, the higher severity is kept; `EscalateSeverity(a, b Severity) Severity` helper (never downgrades)
-  - `AggregateVerdicts(verdicts []Verdict) Verdict` with BLOCKING > CHANGES_NEEDED > APPROVED priority; short-circuits on first BLOCKING
-  - Agent attribution: each finding in the output tracks all agents that reported it as a comma-separated string in the `Agent` field
-  - Description merging: `mergeDescriptions` keeps the longer description as the primary, appends a truncated note (max 120 chars) when the secondary adds unique content, avoids duplicating content already present in the primary
-  - `ConsolidationStats` with `TotalInputFindings`, `UniqueFindings`, `DuplicatesRemoved`, `SeverityEscalations`, `OverlapRate` (percentage of findings from 2+ agents), `FindingsPerAgent`, `FindingsPerSeverity`
-  - Errored agents (non-nil Err or nil Result) are excluded from finding aggregation; their effective verdict is CHANGES_NEEDED; logged as warning when logger is non-nil
-  - Findings sorted: critical-first (descending severity rank), then file path alphabetically, then line number ascending
-  - `severityRank` unexported helper for consistent numeric ordering (info=1 through critical=5; unknown=0)
-  - 50+ table-driven test functions covering deduplication, severity escalation, verdict aggregation, error handling, sorting, stats accuracy, logger paths, edge cases (nil results, line=0, zero findings with BLOCKING), and a multi-agent integration scenario
-  - Benchmark `BenchmarkConsolidate` for regression detection
-- **Files created:**
-  - `internal/review/consolidate.go` -- Consolidator, ConsolidationStats, AggregateVerdicts, EscalateSeverity, severityRank, mergeDescriptions
-  - `internal/review/consolidate_test.go` -- 50+ test functions and 1 benchmark; table-driven, parallel-safe
-- **Key Decisions:**
-  1. Two-pass approach: first pass builds `findingMap` and `agentsByKey` in O(n); second pass attaches agent names and computes overlap rate
-  2. `mergeDescriptions` does not accept an agent parameter -- agent attribution is handled separately via `agentsByKey` to keep concerns separated
-  3. Severity escalation is tracked per-merge (not per-finding) to give an accurate count of how many promotion events occurred
-  4. `nil` `AgentReviewResult.Result` (with no error) is treated defensively as an error to avoid nil-pointer panics downstream
-  5. Empty `results` slice returns `VerdictApproved` with zero stats (neutral safe default)
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/review/...` ✓
-
----
-
-### T-035: Multi-Agent Parallel Review Orchestrator (+ T-058 jsonutil package)
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `internal/jsonutil` package with `ExtractInto(text, dst)` and `ExtractFirst(text)` — brace-counting JSON extraction from freeform AI agent output (no regex, handles nested objects, escaped quotes, markdown code fences, multiple JSON blobs)
-  - `ReviewEvent` struct (Type, Agent, Message, Timestamp) for TUI consumption
-  - `AgentError` struct recording per-agent failures that do not abort the pipeline
-  - `OrchestratorResult` struct (Consolidated, Stats, DiffResult, Duration, AgentErrors)
-  - `ReviewOrchestrator` struct wiring together agent.Registry, DiffGenerator, PromptBuilder, Consolidator, concurrency, logger, and an optional events channel
-  - `NewReviewOrchestrator` constructor clamping concurrency to ≥1
-  - `Run(ctx, opts)` pipeline: validates inputs, generates diff, assigns file buckets per mode, fans out via errgroup with SetLimit, captures per-agent errors without aborting, consolidates results
-  - `DryRun(ctx, opts)` returns human-readable plan (base branch, mode, agents, file counts, DryRunCommand per agent) without invoking any agent
-  - `runAgent` private helper: builds prompt, calls agent.Run, checks rate limit, checks exit code, extracts JSON, validates, emits events
-  - `assignFiles` private helper: all-mode sends all files to every agent; split-mode uses SplitFiles with per-agent bucket assignment
-  - `emit` private helper: non-blocking channel send (event dropped if channel full or nil)
-  - Full table-driven test suite: 20+ tests covering success paths, all error paths, event emission, nil events, dry run, assignFiles modes
-- **Files created:**
-  - `internal/jsonutil/jsonutil.go` -- ExtractInto, ExtractFirst, collectCandidates, matchingBrace
-  - `internal/jsonutil/jsonutil_test.go` -- 20+ table-driven test cases including ReviewResult extraction from prose
-  - `internal/review/orchestrator.go` -- ReviewOrchestrator and all supporting types
-  - `internal/review/orchestrator_test.go` -- 20+ test functions covering full pipeline, error handling, events
-- **Key Decisions:**
-  1. `collectCandidates` returns candidates in order of first `{` position (outer objects first), so `ExtractInto` naturally prefers the outermost JSON blob matching the target type
-  2. Per-agent errors always return `nil` from the errgroup worker goroutine — failures are captured in `AgentError` slices and never abort the pipeline
-  3. `concurrency` from `ReviewOpts` overrides the orchestrator's field-level default at call time, consistent with the rest of the codebase (call-site wins over constructor default)
-  4. `emit` uses a non-blocking select to avoid workers stalling if the consumer is slow
-  5. `assignFiles` always returns a slice of length `n` (one bucket per agent) so the loop index is always safe even in split mode with fewer files than agents
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/jsonutil/... ./internal/review/...` ✓
-
----
-
-### T-036: Review Report Generation (Markdown)
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `ReportGenerator` struct with an embedded `*template.Template` and `*log.Logger`
-  - `ReportData` struct carrying all data for the template, with sorted key slices for deterministic map iteration
-  - `reportTemplateStats` wrapper embedding `*ConsolidationStats` and adding `FindingsPerAgentKeys`/`FindingsPerSeverityKeys` sorted slices
-  - `NewReportGenerator(logger)` constructor parsing the embedded template with `[[`/`]]` delimiters and registering FuncMap helpers
-  - `Generate(consolidated, stats, diffResult)` rendering a full markdown report to a string
-  - `WriteToFile(path, ...)` generating and writing the report to disk, creating parent directories via `os.MkdirAll`
-  - `buildReportData(...)` transforming inputs into `ReportData`, sorting all map keys deterministically
-  - Template helpers: `verdictIndicator`, `escapeCellContent`, `agentVerdict`, `agentFindingCount`, `agentStatus`, `toUpper`
-  - Embedded `report_template.tmpl` producing: verdict header, summary table, findings table, findings-by-file, findings-by-severity, agent breakdown, consolidation stats, diff stats, timestamp footer
-  - "No issues found" section for APPROVED/zero-finding reviews
-  - 30+ table-driven test functions covering all acceptance criteria
-- **Files created/modified:**
-  - `internal/review/report.go` -- ReportGenerator, ReportData, reportTemplateStats, all helpers
-  - `internal/review/report_template.tmpl` -- embedded Go template with `[[`/`]]` delimiters
-  - `internal/review/report_test.go` -- 30+ tests covering all acceptance criteria, edge cases, and WriteToFile paths
-- **Key Decisions:**
-  1. `[[`/`]]` delimiters avoid conflicts with `{{`/`}}` that may appear in code snippets within finding descriptions
-  2. `toUpper` FuncMap entry wraps `Severity` to `string` conversion since `strings.ToUpper` requires a plain `string` type
-  3. Pre-sorted key slices in `ReportData` (`FindingsByFileKeys`, `FindingsBySeverityKeys`) make templates deterministic without requiring template-side logic
-  4. `[PASS]`/`[FAIL]`/`[BLOCK]` text indicators used over emoji for terminal and CI log compatibility
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/review/...` ✓
-
----
-
-### T-037: Verification Command Runner
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `VerificationRunner` struct executing a sequence of shell commands via `os/exec` with per-command timeouts
-  - `CommandResult` capturing stdout, stderr, exit code, duration, `Passed`, and `TimedOut` fields
-  - `VerificationReport` aggregating all results with total/passed/failed counts and overall status
-  - `NewVerificationRunner(commands, workDir, timeout, logger)` constructor with defensive slice copy
-  - `Run(ctx, stopOnFailure)` executing commands sequentially with optional early-exit on failure
-  - `RunSingle(ctx, command)` executing a single command via `sh -c` (POSIX) or `cmd /c` (Windows)
-  - Per-command `context.WithTimeout` wrapping parent context; `TimedOut: true` set on deadline exceeded
-  - Context cancellation propagation: parent cancel surfaces as a non-nil error, stopping the run loop
-  - `FormatReport()` producing terminal output with ✓/✗ pass/fail markers and a Summary line
-  - `FormatMarkdown()` producing a GitHub-compatible table with `<details>` blocks for failed command output
-  - Output truncation: byte-based for few long lines (≤1024), line-based head+tail for many lines (>1024)
-  - Empty/whitespace-only commands are skipped with a logger warning and not counted toward Total
-  - 58+ unit tests, 2 fuzz tests, 5 benchmarks covering all acceptance criteria and edge cases
-- **Files created/modified:**
-  - `internal/review/verify.go` -- VerificationRunner, CommandResult, VerificationReport, format helpers, truncation
-  - `internal/review/verify_test.go` -- comprehensive unit/integration/fuzz/benchmark tests
-- **Key Decisions:**
-  1. Always use `sh -c` / `cmd /c` shell wrapper to handle glob patterns like `./...`, pipes, and redirects in verification commands
-  2. Two-tier output truncation: byte-based for large-line inputs, line-based head+tail for high-line-count inputs
-  3. Separate `stdout`/`stderr` buffers (not `CombinedOutput`) to allow callers maximum flexibility
-  4. Per-command timeout via `context.WithTimeout` with process kill + wait for cleanup to avoid zombie processes
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-038: Review Fix Engine
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `FixEngine` struct orchestrating fix-verify cycles with `Fix()` and `DryRun()` methods
-  - `FixPromptBuilder` building fix prompts from findings, diff, conventions, and previous failure context using embedded `text/template` with `[[`/`]]` delimiters
-  - `FixOpts` specifying runtime options (findings, review report, base branch, dry-run, max-cycles override)
-  - `FixEvent` with 7 event types (fix_started, cycle_started, agent_invoked, verification_started, verification_result, cycle_completed, fix_completed) for TUI consumption
-  - `FixCycleResult` capturing agent result, verification report, git diff after fix, and duration per cycle
-  - `FixReport` aggregating all cycle results with FinalStatus, TotalCycles, FixesApplied, and Duration
-  - Fast paths: zero findings or maxCycles<=0 return immediately with VerificationPassed
-  - Iterative fix-verify loop up to maxCycles; agent errors recorded but do not abort the loop
-  - Context cancellation returns partial results without error
-  - Git diff capture via `os/exec` after each fix attempt
-  - `captureGitDiff()` helper using `git diff` to show what the agent changed
-  - Lazy prompt builder initialisation via `ensurePromptBuilder()` to avoid nil panics
-  - Embedded `fix_template.tmpl` with findings list, diff (truncated at 50KB), conventions, verification commands, and previous failure sections
-  - 55+ test functions covering all acceptance criteria, edge cases, benchmarks, and event sequence verification
-- **Files created/modified:**
-  - `internal/review/fix.go` -- FixEngine, FixPromptBuilder, FixCycleResult, FixReport, FixEvent, FixOpts, captureGitDiff
-  - `internal/review/fix_template.tmpl` -- embedded fix prompt template with `[[`/`]]` delimiters
-  - `internal/review/fix_test.go` -- comprehensive unit tests, benchmarks, edge cases
-- **Key Decisions:**
-  1. `[[`/`]]` template delimiters consistent with existing review package templates
-  2. Lazy `ensurePromptBuilder()` avoids requiring callers to always provide a FixPromptBuilder
-  3. Agent errors (run failure) record nil AgentResult but continue loop; this is distinct from non-zero exit code
-  4. Context cancellation check at top of each cycle iteration returns partial results cleanly
-  5. `WithPromptBuilder()` method enables dependency injection for testing without exposing internal fields
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-039: PR Body Generation with AI Summary
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `PRBodyGenerator` struct with `agent.Agent` (optional), `templatePath`, charmbracelet logger, and an embedded `text/template`
-  - `PRBodyData` struct: Summary, TasksCompleted, DiffStats, ReviewVerdict, ReviewFindingsCount, ReviewReport, FixReport, VerificationReport, BranchName, BaseBranch, PhaseName
-  - `TaskSummary` struct: ID + Title
-  - `prBodyTemplateData` unexported struct pre-computing HasReviewReport, HasFixReport, HasVerificationReport, VerdictIndicator, TruncatedReviewReport, VerificationMarkdown, FixFinalStatusLabel for the template
-  - `NewPRBodyGenerator(ag, templatePath, logger)` constructor: compiles embedded template with `[[`/`]]` delimiters and `escapeCell` FuncMap
-  - `Generate(ctx, data)`: renders template, enforces 65,536-byte GitHub limit (truncates with notice)
-  - `GenerateSummary(ctx, diff, tasks)`: calls agent to produce 2-4 sentence prose summary; falls back to structured "This PR implements N task(s): ..." on agent nil/error (no error propagated)
-  - `GenerateTitle(data)`: single-task `"T-007: Title"`; phase branch `"Phase 3: Core Impl (T-035 - T-039)"`; multi-task `"Tasks T-001, T-002, T-003 and N more"`
-  - ReviewReport truncated at 10,000 chars with "see full report" notice; truncation flag exposed to template
-  - `adjustSummaryHeadings`: demotes `#` h1→h3, h2→h4, ..., capped at h6 via regex to avoid conflict with PR body `##` sections
-  - `extractPhaseNumber`: regex parser for branch names like `phase/3-...`, `phase-2-...`, `phase_5`
-  - `hasPRTemplate()`: best-effort check for `.github/PULL_REQUEST_TEMPLATE.md` existence (failure is silently a no-op)
-  - Embedded `prbody_template.tmpl` with `[[`/`]]` delimiters: Summary, Tasks Completed table, conditional Review Results (with `<details>` block), conditional Fix Cycles, conditional Verification (via `VerificationReport.FormatMarkdown()`)
-  - 30+ table-driven unit tests covering title generation, summary fallback paths, agent success/error, body sections, truncation, heading adjustment, phase-number extraction
-- **Files created:**
-  - `internal/review/prbody.go` -- PRBodyGenerator and all supporting types and helpers
-  - `internal/review/prbody_template.tmpl` -- embedded template with `[[`/`]]` delimiters
-  - `internal/review/prbody_test.go` -- 30+ table-driven tests covering all acceptance criteria
-- **Key Decisions:**
-  1. `prBodyTemplateData` pre-computes conditional boolean flags and pre-renders `VerificationMarkdown` so the template stays logic-free
-  2. Agent errors in `GenerateSummary` are silently swallowed and logged; callers always get a usable summary string (never an error)
-  3. `adjustSummaryHeadings` uses `strings.TrimRight(match, " ")` to isolate the `#` sequence from the trailing space, then adds 2 levels (capped at h6)
-  4. Phase title detection uses `extractPhaseNumber(BranchName)` rather than trusting just `PhaseName != ""` to avoid miscategorizing feature branches with a phase name set
-  5. `[[`/`]]` delimiters consistent with all other review package templates
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/review/...` ✓
-
----
-
-### T-042: CLI Commands -- raven fix and raven pr
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `raven fix` Cobra command wiring FixEngine, VerificationRunner, FixPromptBuilder, and agent registry
-  - `--agent`, `--max-fix-cycles`, `--review-report` flags with auto-detect for most recent .md in LogDir
-  - Synthetic finding injection to bypass FixEngine fast-path when a review report is provided
-  - `raven pr` Cobra command wiring PRCreator, PRBodyGenerator, and optional AI summary agent
-  - `--base`, `--draft`, `--title`, `--label`, `--assignee`, `--review-report`, `--no-summary` flags
-  - `StringArrayVar` for repeatable `--label` and `--assignee` flags (no comma-splitting)
-  - Prerequisites check and branch push via PRCreator before PR creation
-  - Exit code 2 for fix verification failure; PR URL printed to stdout on success
-  - 60+ unit tests covering flag parsing, helper functions, command registration, shell completions
-- **Files created/modified:**
-  - `internal/cli/fix.go` -- `raven fix` command with runFix, resolveReviewReport, mostRecentMDFile, firstConfiguredAgentName helpers
-  - `internal/cli/pr.go` -- `raven pr` command with runPR, currentGitBranch helpers
-  - `internal/cli/fix_test.go` -- 30+ table-driven tests covering all fix command flag parsing and helpers
-  - `internal/cli/pr_test.go` -- 25+ tests covering all pr command flag parsing and helpers
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-041: CLI Command -- raven review
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `raven review` Cobra command wiring together the full review pipeline (DiffGenerator, PromptBuilder, Consolidator, ReviewOrchestrator, ReportGenerator)
-  - `--agents` flag for comma-separated agent selection with fallback to `raven.toml` configured agents
-  - `--concurrency`, `--mode` (all/split), `--base`, `--output` flags with validation
-  - Global `--dry-run` flag support via `orchestrator.DryRun()` path
-  - Exit code semantics: 0=APPROVED, 1=error, 2=CHANGES_NEEDED/BLOCKING via `os.Exit(2)`
-  - Agent registry reuse via existing `buildAgentRegistry()` helper from `implement.go`
-  - Shell completions for `--mode` and `--agents` flags
-  - 55+ unit tests covering flag parsing, mode validation, agent resolution, config loading, output writing, and edge cases
-- **Files created/modified:**
-  - `internal/cli/review.go` -- `raven review` command with full pipeline wiring
-  - `internal/cli/review_test.go` -- 55+ table-driven tests; 85%+ coverage
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-040: PR Creation via gh CLI
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `PRCreator` struct wrapping `gh pr create` subprocess execution via `os/exec`
-  - `PRCreateOpts` struct supporting title, body, base branch, draft, labels, assignees, and dry-run
-  - `PRCreateResult` struct with URL, number, draft flag, created flag, and command string
-  - `CheckPrerequisites` verifying gh CLI installed, authenticated, and current branch != base branch
-  - `EnsureBranchPushed` checking remote tracking ref and pushing if absent
-  - `Create` writing body to a 0600 temp file, building gh args, executing, parsing PR URL
-  - `dryRun` helper returning planned command string without executing
-  - Pure helper functions: `extractPRURL`, `extractPRNumber`, `buildCommandString`
-  - Branch name injection guard via `validBranchNameRe` allowlist regex
-  - 93.3% test coverage via fake binary scripts in `t.TempDir()` + dry-run tests + pure-logic tests
-- **Files created/modified:**
-  - `internal/review/pr.go` -- PRCreator and all supporting types, methods, and helpers
-  - `internal/review/pr_test.go` -- comprehensive tests with fake gh/git scripts, dry-run, and pure-logic coverage
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
 
 ---
 
@@ -478,34 +226,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 3: Review Pipeline (T-031 to T-042)
-
-- **Status:** Not Started
-- **Tasks:** 12 (12 Must Have)
-- **Estimated Effort:** 96-136 hours
-- **PRD Roadmap:** Weeks 5-6
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-031 | Review Finding Types and Schema | Must Have | Small (2-4hrs) | Completed |
-| T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Completed |
-| T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Completed |
-| T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Completed |
-| T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Completed |
-| T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Completed |
-| T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Completed |
-| T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Completed |
-| T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Completed |
-| T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Completed |
-| T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Completed |
-| T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Completed |
-
-**Deliverable:** `raven review --agents claude,codex --concurrency 4` produces a consolidated review report.
-
----
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
