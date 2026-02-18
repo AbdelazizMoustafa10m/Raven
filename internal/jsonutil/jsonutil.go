@@ -1,29 +1,21 @@
 // Package jsonutil provides utilities for extracting and decoding JSON from
 // freeform text output produced by AI agent CLIs.
+//
+// The primary API is in extract.go: Extract, ExtractAll, ExtractInto, and
+// ExtractFromFile. This file retains ExtractFirst for backward compatibility
+// with callers that need the original object-only (no arrays) extraction
+// behaviour.
 package jsonutil
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "encoding/json"
 
-// ExtractInto extracts the first valid JSON object from text and decodes it
-// into dst. It scans for '{' delimiters, finds balanced JSON objects using
-// brace counting, and tries json.Unmarshal on each candidate in order of
-// appearance. Returns an error if no valid JSON object that decodes into dst
-// is found.
-func ExtractInto(text string, dst any) error {
-	candidates := collectCandidates(text)
-	for _, c := range candidates {
-		if err := json.Unmarshal([]byte(c), dst); err == nil {
-			return nil
-		}
-	}
-	return fmt.Errorf("jsonutil: no valid JSON object found in text")
-}
-
-// ExtractFirst extracts the first valid JSON object string from text.
-// Returns ("", false) if no valid JSON object is found.
+// ExtractFirst extracts the first valid JSON object string from text. It only
+// matches JSON objects (starting with '{') and not arrays. Returns ("", false)
+// if no valid JSON object is found.
+//
+// Deprecated: prefer Extract which also handles JSON arrays and applies
+// multi-strategy extraction (markdown code fences, ANSI stripping, BOM
+// removal). ExtractFirst is retained for backward compatibility.
 func ExtractFirst(text string) (string, bool) {
 	candidates := collectCandidates(text)
 	for _, c := range candidates {
@@ -38,8 +30,7 @@ func ExtractFirst(text string) (string, bool) {
 // collectCandidates scans text for '{' characters and for each opening brace
 // finds the matching closing brace using brace counting (respecting quoted
 // strings and escape sequences). It returns all substrings that start with '{'
-// and end with their matching '}', in order of appearance. Substrings for
-// nested objects are also included as independent candidates.
+// and end with their matching '}', in order of appearance.
 func collectCandidates(text string) []string {
 	var results []string
 	n := len(text)
@@ -49,11 +40,8 @@ func collectCandidates(text string) []string {
 			continue
 		}
 
-		// Found an opening brace. Walk forward counting braces, respecting
-		// strings and escape sequences, to find the matching closing brace.
 		end := matchingBrace(text, i)
 		if end < 0 {
-			// Unbalanced brace — skip this position.
 			continue
 		}
 

@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 60 |
+| Completed | 61 |
 | In Progress | 0 |
-| Not Started | 29 |
+| Not Started | 28 |
 
 ---
 
@@ -383,6 +383,30 @@
 
 ---
 
+### T-058: JSON Extraction Utility
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Extract(text string) (json.RawMessage, error)` — returns first valid JSON object or array using multi-strategy extraction
+  - `ExtractAll(text string) []json.RawMessage` — returns all valid JSON objects/arrays in order of appearance
+  - `ExtractInto(text string, target interface{}) error` — updated to delegate to multi-strategy `Extract`; backward compatible
+  - `ExtractFromFile(path string, target interface{}) error` — reads file from disk and calls `ExtractInto`
+  - `ExtractFirst(text string) (string, bool)` — retained unchanged for backward compatibility (object-only, no arrays)
+  - Extraction strategies (in order): (1) markdown code fence `\`\`\`json` or `\`\`\`` with `TrimSpace` and `json.Valid`, (2) brace/bracket matching for top-level `{}` and `[]` structures
+  - `sanitize()` helper: strips UTF-8 BOM, strips ANSI escape codes (`\x1b[...m`), enforces 10 MB cap
+  - `fenceSpan` range tracking: prevents brace-matching from emitting the same JSON already found in a fence
+  - `matchingDelimiter()`: handles both `{}`/`[]`, nested delimiters, quoted strings, backslash escapes
+  - 40+ unit tests in `extract_test.go`: objects, arrays, code fences, ANSI stripping, BOM removal, empty fences, non-json language tags, file extraction, max size cap, benchmarks, fuzz seeds
+  - All existing tests in `jsonutil_test.go` continue to pass unchanged
+- **Files created/modified:**
+  - `internal/jsonutil/extract.go` — new primary extraction API with multi-strategy engine
+  - `internal/jsonutil/extract_test.go` — comprehensive tests for new API
+  - `internal/jsonutil/jsonutil.go` — updated: removed old `ExtractInto` (now in extract.go), retained `ExtractFirst` and helpers with backward-compat doc comment
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/jsonutil/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -393,7 +417,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057 completed)
+- **Status:** In Progress (T-056, T-057, T-058 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -404,7 +428,7 @@ _None currently_
 |------|------|----------|--------|--------|
 | T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Completed |
 | T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Completed |
-| T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Not Started |
+| T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Completed |
 | T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Not Started |
 | T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Not Started |
 | T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Not Started |
