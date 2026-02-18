@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 15 |
+| Completed | 16 |
 | In Progress | 0 |
-| Not Started | 72 |
+| Not Started | 71 |
 
 ---
 
@@ -37,6 +37,7 @@
 | Embedded project templates | T-013 | `//go:embed all:templates`, `TemplateVars`, `ListTemplates()`, `TemplateExists()`, `RenderTemplate()` with `text/template` processing |
 | Init command | T-014 | `raven init [template]` with `--name`/`--force` flags, path-traversal guard, PersistentPreRunE override skipping config load |
 | Git client wrapper | T-015 | `GitClient` wrapping all git CLI ops, branch/status/stash/diff/log/push methods, `EnsureClean()` auto-stash recovery |
+| Task spec markdown parser | T-016 | `ParseTaskSpec`, `ParseTaskFile`, `DiscoverTasks`, `ParsedTaskSpec.ToTask()`, pre-compiled regexes, 1 MiB size guard, CRLF/BOM normalisation |
 
 #### Key Technical Decisions
 
@@ -73,6 +74,8 @@
 | Init command | `internal/cli/init_cmd.go` |
 | Git client wrapper | `internal/git/client.go` |
 | Git auto-stash recovery | `internal/git/recovery.go` |
+| Task spec markdown parser | `internal/task/parser.go` |
+| Task spec test fixtures | `internal/task/testdata/task-specs/` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -93,7 +96,7 @@ _None currently_
 
 ### Phase 2: Task System & Agent Adapters (T-016 to T-030)
 
-- **Status:** Not Started
+- **Status:** In Progress
 - **Tasks:** 15 (14 Must Have, 1 Should Have)
 - **Estimated Effort:** 110-175 hours
 - **PRD Roadmap:** Weeks 3-4
@@ -102,7 +105,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-016 | Task Spec Markdown Parser | Must Have | Medium (6-10hrs) | Not Started |
+| T-016 | Task Spec Markdown Parser | Must Have | Medium (6-10hrs) | Completed |
 | T-017 | Task State Management (task-state.conf) | Must Have | Medium (8-12hrs) | Not Started |
 | T-018 | Phase Configuration Parser (phases.conf) | Must Have | Small (3-5hrs) | Not Started |
 | T-019 | Dependency Resolution & Next-Task Selection | Must Have | Medium (8-12hrs) | Not Started |
