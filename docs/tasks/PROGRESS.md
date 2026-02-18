@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 45 |
+| Completed | 46 |
 | In Progress | 0 |
-| Not Started | 44 |
+| Not Started | 43 |
 
 ---
 
@@ -268,6 +268,27 @@
 ---
 
 
+---
+
+### T-043: Workflow Event Types and Constants
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - Six transition event constants (`EventSuccess`, `EventFailure`, `EventBlocked`, `EventRateLimited`, `EventNeedsHuman`, `EventPartial`) in `internal/workflow/events.go`
+  - Two terminal pseudo-step constants (`StepDone = "__done__"`, `StepFailed = "__failed__"`) with `__` prefix to prevent collisions
+  - Nine `WE*` lifecycle constants for TUI/logging consumption (`WEStepStarted`, `WEStepCompleted`, `WEStepFailed`, `WEWorkflowStarted`, `WEWorkflowCompleted`, `WEWorkflowFailed`, `WEWorkflowResumed`, `WEStepSkipped`, `WECheckpoint`)
+  - `StepHandler` interface with `Execute(ctx, state) (string, error)`, `DryRun(state) string`, and `Name() string`
+  - `WorkflowEvent` struct (JSON-serializable, `error` field uses `omitempty`)
+  - `WorkflowDefinition` and `StepDefinition` types with JSON + TOML struct tags
+  - 25 table-driven unit tests covering all constants, JSON round-trips, omitempty behavior, and interface satisfaction
+- **Files created/modified:**
+  - `internal/workflow/events.go` -- all workflow event constants, interface, and data types with full godoc
+  - `internal/workflow/events_test.go` -- 478-line comprehensive test suite
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -278,7 +299,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** Not Started
+- **Status:** In Progress (1/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -287,7 +308,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Not Started |
+| T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Completed |
 | T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Not Started |
 | T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Not Started |
 | T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Not Started |
