@@ -101,68 +101,105 @@ write_python_helper() {
     cat > "$pyfile" << 'PYEOF'
 #!/usr/bin/env python3
 """
-consolidate_helper.py  command  progress_file  start_num  end_num  [new_content_file]
+consolidate_helper.py  command  progress_file  ...
 
 Commands:
-  extract  -- print task sections for the given numeric range to stdout
-  replace  -- replace those sections with the content in new_content_file
+  extract  progress_file  start_num  end_num
+      -- print task sections for the given numeric range to stdout
+  replace  progress_file  start_num  end_num  new_content_file
+      -- replace those sections with the content in new_content_file
+  remove_not_started_phase  progress_file  phase_id
+      -- remove the ### Phase <id>: block from the Not Started Tasks section
 """
 import sys
 import re
 
-command         = sys.argv[1]
-fname           = sys.argv[2]
-s_num           = int(sys.argv[3])
-e_num           = int(sys.argv[4])
+command = sys.argv[1]
+fname   = sys.argv[2]
 
 with open(fname, encoding="utf-8") as fh:
     content = fh.read()
 
-# Find all ### T-NNN: header positions
-TASK_RE = re.compile(r"^### T-(\d+):", re.MULTILINE)
-matches = list(TASK_RE.finditer(content))
+if command in ("extract", "replace"):
+    s_num = int(sys.argv[3])
+    e_num = int(sys.argv[4])
 
+    # Find all ### T-NNN: header positions
+    TASK_RE = re.compile(r"^### T-(\d+):", re.MULTILINE)
+    matches = list(TASK_RE.finditer(content))
 
-def section_end(idx: int) -> int:
-    """Return the content end-offset for the task section at matches[idx]."""
-    if idx + 1 < len(matches):
-        # End just before the next task header
-        return matches[idx + 1].start()
-    # Last task: end at the next top-level section or EOF
-    next_major = re.search(r"^## ", content[matches[idx].start():], re.MULTILINE)
-    if next_major:
-        return matches[idx].start() + next_major.start()
-    return len(content)
+    def section_end(idx: int) -> int:
+        """Return the content end-offset for the task section at matches[idx]."""
+        if idx + 1 < len(matches):
+            # End just before the next task header
+            return matches[idx + 1].start()
+        # Last task: end at the next top-level section or EOF
+        next_major = re.search(r"^## ", content[matches[idx].start():], re.MULTILINE)
+        if next_major:
+            return matches[idx].start() + next_major.start()
+        return len(content)
 
+    in_range = [
+        (i, m, int(m.group(1)))
+        for i, m in enumerate(matches)
+        if s_num <= int(m.group(1)) <= e_num
+    ]
 
-in_range = [
-    (i, m, int(m.group(1)))
-    for i, m in enumerate(matches)
-    if s_num <= int(m.group(1)) <= e_num
-]
+    if command == "extract":
+        parts = []
+        for i, m, _ in in_range:
+            chunk = content[m.start() : section_end(i)].rstrip()
+            parts.append(chunk)
+        print("\n\n".join(parts))
 
-if command == "extract":
-    parts = []
-    for i, m, _ in in_range:
-        chunk = content[m.start() : section_end(i)].rstrip()
-        parts.append(chunk)
-    print("\n\n".join(parts))
+    elif command == "replace":
+        new_content_file = sys.argv[5]
+        with open(new_content_file, encoding="utf-8") as fh:
+            new_block = fh.read().strip()
 
-elif command == "replace":
-    new_content_file = sys.argv[5]
-    with open(new_content_file, encoding="utf-8") as fh:
-        new_block = fh.read().strip()
+        if not in_range:
+            sys.exit(0)
 
-    if not in_range:
+        first_idx, first_m, _ = in_range[0]
+        last_idx,  last_m,  _ = in_range[-1]
+
+        replace_start = first_m.start()
+        replace_end   = section_end(last_idx)
+
+        new_content = content[:replace_start] + new_block + "\n\n" + content[replace_end:]
+
+        with open(fname, "w", encoding="utf-8") as fh:
+            fh.write(new_content)
+
+elif command == "remove_not_started_phase":
+    phase_id = sys.argv[3]
+
+    # Locate the ## Not Started Tasks section
+    ns_re = re.compile(r"^## Not Started Tasks", re.MULTILINE)
+    ns_m = ns_re.search(content)
+    if not ns_m:
         sys.exit(0)
 
-    first_idx, first_m, _ = in_range[0]
-    last_idx,  last_m,  _ = in_range[-1]
+    # Find the next ## section to bound the Not Started block
+    next_h2_re = re.compile(r"^## ", re.MULTILINE)
+    next_h2_m = next_h2_re.search(content, ns_m.end())
+    ns_end = next_h2_m.start() if next_h2_m else len(content)
 
-    replace_start = first_m.start()
-    replace_end   = section_end(last_idx)
+    # Find ### Phase <id>: header within the Not Started section
+    phase_re = re.compile(
+        r"^### Phase " + re.escape(phase_id) + r":",
+        re.MULTILINE,
+    )
+    ph_m = phase_re.search(content, ns_m.start(), ns_end)
+    if not ph_m:
+        sys.exit(0)
 
-    new_content = content[:replace_start] + new_block + "\n\n" + content[replace_end:]
+    # End at the next ### Phase block, or at the end of the Not Started section
+    next_phase_re = re.compile(r"^### Phase \d", re.MULTILINE)
+    next_ph_m = next_phase_re.search(content, ph_m.end(), ns_end)
+    remove_end = next_ph_m.start() if next_ph_m else ns_end
+
+    new_content = content[: ph_m.start()] + content[remove_end:]
 
     with open(fname, "w", encoding="utf-8") as fh:
         fh.write(new_content)
@@ -305,6 +342,9 @@ PROMPT_EOF
 
     # Replace per-task sections in PROGRESS.md
     python3 "$pyfile" replace "$PROGRESS_FILE" "$start_num" "$end_num" "$consolidated_file"
+
+    # Remove the phase block from the Not Started Tasks section
+    python3 "$pyfile" remove_not_started_phase "$PROGRESS_FILE" "$PHASE_ID"
 
     # Commit only if the file actually changed
     git -C "$PROJECT_ROOT" add "$PROGRESS_FILE"

@@ -293,6 +293,9 @@ create_pr() {
         return 0
     fi
 
+    log_step "$_SYM_ARROW" "Pushing ${_BOLD}${HEAD_BRANCH}${_RESET} to origin"
+    git push -u origin "$HEAD_BRANCH"
+
     gh pr create \
         --base "$BASE_BRANCH" \
         --head "$HEAD_BRANCH" \

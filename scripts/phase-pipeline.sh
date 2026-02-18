@@ -1500,7 +1500,17 @@ run_pr_creation() {
         pr_args+=(--dry-run)
     fi
 
+    local pr_rc=0
+    set +e
     "$pr_script" "${pr_args[@]}"
+    pr_rc=$?
+    set -e
+
+    if [[ "$pr_rc" -ne 0 ]]; then
+        PR_STATUS="failed"
+        persist_metadata
+        die "PR creation failed (exit code $pr_rc)"
+    fi
 
     PR_STATUS="completed"
     log_step "$_SYM_CHECK" "Pull request ${_GREEN}created${_RESET}"

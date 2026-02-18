@@ -91,37 +91,6 @@ _None currently_
 
 ## Not Started Tasks
 
-### Phase 1: Foundation (T-001 to T-015)
-
-- **Status:** Not Started
-- **Tasks:** 15 (15 Must Have)
-- **Estimated Effort:** 50-90 hours
-- **PRD Roadmap:** Weeks 1-2
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Completed |
-| T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Completed |
-| T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Completed |
-| T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Completed |
-| T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Completed |
-| T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Completed |
-| T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Completed |
-| T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Completed |
-| T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Completed |
-| T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Completed |
-| T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Completed |
-| T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Completed |
-| T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Completed |
-| T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Completed |
-| T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Completed |
-
-**Deliverable:** `raven version`, `raven init go-cli`, and `raven config debug` work correctly.
-
----
-
 ### Phase 2: Task System & Agent Adapters (T-016 to T-030)
 
 - **Status:** Not Started
