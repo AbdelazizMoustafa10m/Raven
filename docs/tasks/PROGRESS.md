@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 38 |
+| Completed | 39 |
 | In Progress | 0 |
-| Not Started | 51 |
+| Not Started | 50 |
 
 ---
 
@@ -340,6 +340,39 @@
 
 ---
 
+### T-038: Review Fix Engine
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `FixEngine` struct orchestrating fix-verify cycles with `Fix()` and `DryRun()` methods
+  - `FixPromptBuilder` building fix prompts from findings, diff, conventions, and previous failure context using embedded `text/template` with `[[`/`]]` delimiters
+  - `FixOpts` specifying runtime options (findings, review report, base branch, dry-run, max-cycles override)
+  - `FixEvent` with 7 event types (fix_started, cycle_started, agent_invoked, verification_started, verification_result, cycle_completed, fix_completed) for TUI consumption
+  - `FixCycleResult` capturing agent result, verification report, git diff after fix, and duration per cycle
+  - `FixReport` aggregating all cycle results with FinalStatus, TotalCycles, FixesApplied, and Duration
+  - Fast paths: zero findings or maxCycles<=0 return immediately with VerificationPassed
+  - Iterative fix-verify loop up to maxCycles; agent errors recorded but do not abort the loop
+  - Context cancellation returns partial results without error
+  - Git diff capture via `os/exec` after each fix attempt
+  - `captureGitDiff()` helper using `git diff` to show what the agent changed
+  - Lazy prompt builder initialisation via `ensurePromptBuilder()` to avoid nil panics
+  - Embedded `fix_template.tmpl` with findings list, diff (truncated at 50KB), conventions, verification commands, and previous failure sections
+  - 55+ test functions covering all acceptance criteria, edge cases, benchmarks, and event sequence verification
+- **Files created/modified:**
+  - `internal/review/fix.go` -- FixEngine, FixPromptBuilder, FixCycleResult, FixReport, FixEvent, FixOpts, captureGitDiff
+  - `internal/review/fix_template.tmpl` -- embedded fix prompt template with `[[`/`]]` delimiters
+  - `internal/review/fix_test.go` -- comprehensive unit tests, benchmarks, edge cases
+- **Key Decisions:**
+  1. `[[`/`]]` template delimiters consistent with existing review package templates
+  2. Lazy `ensurePromptBuilder()` avoids requiring callers to always provide a FixPromptBuilder
+  3. Agent errors (run failure) record nil AgentResult but continue loop; this is distinct from non-zero exit code
+  4. Context cancellation check at top of each cycle iteration returns partial results cleanly
+  5. `WithPromptBuilder()` method enables dependency injection for testing without exposing internal fields
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -366,7 +399,7 @@ _None currently_
 | T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Completed |
 | T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Completed |
 | T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Completed |
-| T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Not Started |
+| T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Completed |
 | T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Not Started |
 | T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Not Started |
 | T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Not Started |
