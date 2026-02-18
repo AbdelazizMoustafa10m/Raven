@@ -1419,3 +1419,58 @@ func TestClientInterface(t *testing.T) {
 
 	var _ Client = (*GitClient)(nil)
 }
+
+// ---------------------------------------------------------------------------
+// Fetch tests
+// ---------------------------------------------------------------------------
+
+// TestFetch_NoRemote_ReturnsError verifies that Fetch returns a wrapped error
+// when no remote is configured (the typical state for a freshly initialised
+// test repo that has no origin).
+func TestFetch_NoRemote_ReturnsError(t *testing.T) {
+	c := newTestRepo(t)
+	err := c.Fetch(context.Background(), "origin")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git: fetch")
+}
+
+// TestFetch_EmptyRemote_DefaultsToOrigin verifies that passing an empty remote
+// string causes the client to fetch from "origin" (the default). Since the
+// test repo has no remotes, an error is expected — but the error message must
+// reference "origin" to confirm the default was applied.
+func TestFetch_EmptyRemote_DefaultsToOrigin(t *testing.T) {
+	c := newTestRepo(t)
+	err := c.Fetch(context.Background(), "")
+	require.Error(t, err)
+	// The error wraps "git: fetch origin:..." confirming "origin" was used.
+	assert.Contains(t, err.Error(), "git: fetch origin")
+}
+
+// TestFetch_NonexistentRemote_ReturnsError verifies that Fetch fails cleanly
+// when a remote name that does not exist is supplied.
+func TestFetch_NonexistentRemote_ReturnsError(t *testing.T) {
+	c := newTestRepo(t)
+	err := c.Fetch(context.Background(), "nonexistent-remote")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git: fetch nonexistent-remote")
+}
+
+// TestFetch_AcceptsContext verifies that Fetch honours context cancellation
+// without panicking. The fast test repo means the command may finish before
+// the context propagates — both success and error are acceptable outcomes.
+func TestFetch_AcceptsContext(t *testing.T) {
+	c := newTestRepo(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// Must not panic; error is expected but not required.
+	_ = c.Fetch(ctx, "origin")
+}
+
+// TestFetch_WithRemote_ReturnsError verifies that a named remote that is not
+// configured produces an error with the correct "git: fetch <remote>:" prefix.
+func TestFetch_WithRemote_NamedRemote_ReturnsError(t *testing.T) {
+	c := newTestRepo(t)
+	err := c.Fetch(context.Background(), "upstream")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git: fetch upstream")
+}
