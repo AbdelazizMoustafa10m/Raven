@@ -2,6 +2,14 @@ package agent
 
 import "time"
 
+// OutputFormatJSON requests final JSON output from the agent.
+const OutputFormatJSON = "json"
+
+// OutputFormatStreamJSON requests JSONL streaming output from the agent.
+// Each line of stdout is a self-contained JSON event that can be decoded
+// with StreamDecoder for real-time observability into agent activity.
+const OutputFormatStreamJSON = "stream-json"
+
 // RunOpts specifies options for a single agent invocation.
 type RunOpts struct {
 	Prompt       string   `json:"prompt,omitempty"`
@@ -12,6 +20,12 @@ type RunOpts struct {
 	OutputFormat string   `json:"output_format,omitempty"`
 	WorkDir      string   `json:"work_dir,omitempty"`
 	Env          []string `json:"env,omitempty"`
+
+	// StreamEvents receives real-time stream events when OutputFormat
+	// is "stream-json". The agent adapter decodes JSONL from stdout
+	// and sends each event to this channel. Nil means no streaming.
+	// The channel is NOT closed by the agent -- the caller owns it.
+	StreamEvents chan<- StreamEvent `json:"-"`
 }
 
 // RunResult captures the output of an agent invocation.
