@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 79 |
+| Completed | 81 |
 | In Progress | 0 |
-| Not Started | 10 |
+| Not Started | 8 |
 
 ---
 
@@ -671,6 +671,33 @@
 
 ---
 
+### T-077: Pipeline Wizard TUI Integration
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `PipelineWizardConfig` struct holding all pipeline parameters: PhaseMode (single/range/all), PhaseID, FromPhase, ToPhase, ImplAgent, ReviewAgents ([]string), FixAgent, ReviewConcurrency, MaxReviewCycles, MaxIterations, and four skip flags (SkipImplement, SkipReview, SkipFix, SkipPR)
+  - `WizardCompleteMsg` and `WizardCancelledMsg` Bubble Tea message types for lifecycle signalling
+  - `WizardModel` Bubble Tea sub-model with `theme`, `form *huh.Form`, `width/height`, `active`, `config`, `availableAgents`, `availablePhases`, and raw string fields for numeric huh.Input values
+  - `NewWizardModel(theme, agents, phases)` constructor with sensible defaults: PhaseMode="all", ReviewConcurrency=2, MaxReviewCycles=3, MaxIterations=10
+  - `SetDimensions(width, height)` pointer-receiver method updating form width on resize
+  - `IsActive() bool` value-receiver predicate
+  - `Start() tea.Cmd` building the form and returning `form.Init()`
+  - `Update(msg) (WizardModel, tea.Cmd)` forwarding to huh, handling Esc for cancellation, emitting WizardCompleteMsg/WizardCancelledMsg on state transitions
+  - `View() string` rendering the form wrapped in a rounded-border lipgloss container, centered with `lipgloss.Place` when dimensions are known
+  - 5-group huh form: (1) Phase selection with mode select + 3 Input fields for IDs; (2) Agent selection with impl/review(multi)/fix selects — fallback Note when no agents; (3) Settings with 3 validated Input fields; (4) Skip flags with 4 Confirm toggles; (5) Confirmation Note with live `DescriptionFunc` summary
+  - `buildHuhTheme(theme Theme) *huh.Theme` translating Raven color palette into a custom `huh.ThemeBase()` derivative
+  - `positiveIntValidator(fieldName)` and `capitalizeFirst(s)` helper functions
+  - `parseFormValues()` converting raw string inputs into typed config fields on completion
+  - Edge cases: empty agents/phases show informational Note fields; single agent pre-selected; form width capped at 100
+  - 25+ unit tests covering all acceptance criteria, defaults, validators, and edge cases
+- **Files created/modified:**
+  - `internal/tui/wizard.go` -- `PipelineWizardConfig`, `WizardCompleteMsg`, `WizardCancelledMsg`, `WizardModel` with all required methods and 5-group huh form construction
+  - `internal/tui/wizard_test.go` -- 25+ tests for constructor, IsActive, SetDimensions, buildHuhTheme, buildForm, config defaults, parseFormValues, validators, and messages
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -702,7 +729,7 @@ _None currently_
 | T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Completed |
 | T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Completed |
 | T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Completed |
-| T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Not Started |
+| T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Completed |
 | T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Not Started |
 
 **Deliverable:** `raven dashboard` launches a beautiful, responsive command center with live agent monitoring.
