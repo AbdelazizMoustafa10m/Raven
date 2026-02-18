@@ -1018,7 +1018,7 @@ extract_implementation_block_reason() {
     fi
 
     local blocked_line=""
-    blocked_line="$(grep -Eim1 'TASK_BLOCKED|blocked dependencies|No eligible tasks found' "$log_file" || true)"
+    blocked_line="$(grep -Eim1 '^[[:space:]]*(\[[^]]+\][[:space:]]*)?(TASK_BLOCKED([[:space:]]*$|:)|No eligible tasks found|.*blocked dependencies)' "$log_file" || true)"
     if [[ -z "$blocked_line" ]]; then
         return 1
     fi
@@ -1036,6 +1036,18 @@ extract_implementation_block_reason() {
 
     printf '%s\n' "$blocked_line"
     return 0
+}
+
+count_phase_remaining_tasks() {
+    local phase_id="$1"
+    local task_range
+    task_range="$(get_phase_range "$phase_id")"
+    if [[ -z "$task_range" ]]; then
+        return 1
+    fi
+
+    TASK_STATE_FILE="${TASK_STATE_FILE:-$PROJECT_ROOT/docs/tasks/task-state.conf}" \
+        "$PROJECT_ROOT/scripts/task-state.sh" count-remaining "$task_range" 2>/dev/null
 }
 
 assert_expected_branch() {
@@ -1277,6 +1289,31 @@ run_implementation() {
         IMPLEMENT_STATUS="failed"
         IMPLEMENT_REASON="implementation exited with code $impl_rc (see ${impl_log#"$PROJECT_ROOT"/})"
         log_step "$_SYM_CROSS" "Implementation ${_RED}failed${_RESET}: $IMPLEMENT_REASON"
+        persist_metadata
+        return 1
+    fi
+
+    local remaining_after_impl
+    if ! remaining_after_impl="$(count_phase_remaining_tasks "$PHASE_ID")"; then
+        IMPLEMENT_STATUS="failed"
+        IMPLEMENT_REASON="implementation succeeded but phase completion could not be verified from task-state.conf"
+        log_step "$_SYM_CROSS" "Implementation ${_RED}failed${_RESET}: $IMPLEMENT_REASON"
+        persist_metadata
+        return 1
+    fi
+
+    if ! [[ "$remaining_after_impl" =~ ^[0-9]+$ ]]; then
+        IMPLEMENT_STATUS="failed"
+        IMPLEMENT_REASON="implementation succeeded but remaining-task check returned invalid value: $remaining_after_impl"
+        log_step "$_SYM_CROSS" "Implementation ${_RED}failed${_RESET}: $IMPLEMENT_REASON"
+        persist_metadata
+        return 1
+    fi
+
+    if [[ "$remaining_after_impl" -gt 0 ]]; then
+        IMPLEMENT_STATUS="blocked"
+        IMPLEMENT_REASON="implementation exited successfully but ${remaining_after_impl} task(s) remain in phase $PHASE_ID"
+        log_step "$_SYM_WARN" "${_YELLOW}Implementation blocked:${_RESET} $IMPLEMENT_REASON"
         persist_metadata
         return 1
     fi

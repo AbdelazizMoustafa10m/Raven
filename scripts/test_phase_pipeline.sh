@@ -150,6 +150,8 @@ EXTRACT_FROM_CONSOLIDATED_CALLS=0
 EXTRACT_FROM_LOG_CALLS=0
 EXTRACT_FROM_CONSOLIDATED_RESULT="APPROVED"
 EXTRACT_FROM_LOG_RESULT="UNKNOWN"
+STUB_REMAINING_RC=0
+STUB_REMAINING_OUTPUT="0"
 
 assert_expected_branch() {
     : # no-op for unit tests
@@ -171,6 +173,12 @@ log_step() {
 
 persist_metadata() {
     PERSIST_CALLS=$((PERSIST_CALLS + 1))
+}
+
+count_phase_remaining_tasks() {
+    local _phase_id="$1"
+    echo "$STUB_REMAINING_OUTPUT"
+    return "$STUB_REMAINING_RC"
 }
 
 capture_cmd() {
@@ -228,6 +236,8 @@ EOF_REVIEW
     EXTRACT_FROM_LOG_CALLS=0
     EXTRACT_FROM_CONSOLIDATED_RESULT="APPROVED"
     EXTRACT_FROM_LOG_RESULT="UNKNOWN"
+    STUB_REMAINING_RC=0
+    STUB_REMAINING_OUTPUT="0"
 }
 
 echo ""
@@ -302,6 +312,8 @@ fi
 begin_test "Success path remains completed"
 CAPTURE_RC=0
 CAPTURE_OUTPUT='task completed'
+STUB_REMAINING_RC=0
+STUB_REMAINING_OUTPUT="0"
 if run_implementation; then
     if assert_eq "completed" "$IMPLEMENT_STATUS" && \
        assert_eq "" "$IMPLEMENT_REASON"; then
@@ -309,6 +321,48 @@ if run_implementation; then
     fi
 else
     fail_test "Expected success path to return 0"
+fi
+
+begin_test "Success exit with remaining tasks marks implementation as blocked"
+CAPTURE_RC=0
+CAPTURE_OUTPUT='task completed'
+STUB_REMAINING_RC=0
+STUB_REMAINING_OUTPUT="3"
+if run_implementation; then
+    fail_test "Expected blocked status when remaining tasks are non-zero"
+else
+    if assert_eq "blocked" "$IMPLEMENT_STATUS" && \
+       assert_contains "$IMPLEMENT_REASON" "3 task(s) remain"; then
+        pass_test
+    fi
+fi
+
+begin_test "Success exit with invalid remaining-count marks implementation as failed"
+CAPTURE_RC=0
+CAPTURE_OUTPUT='task completed'
+STUB_REMAINING_RC=0
+STUB_REMAINING_OUTPUT="not-a-number"
+if run_implementation; then
+    fail_test "Expected failure when remaining-task verifier is invalid"
+else
+    if assert_eq "failed" "$IMPLEMENT_STATUS" && \
+       assert_contains "$IMPLEMENT_REASON" "invalid value"; then
+        pass_test
+    fi
+fi
+
+begin_test "Success exit with verifier error marks implementation as failed"
+CAPTURE_RC=0
+CAPTURE_OUTPUT='task completed'
+STUB_REMAINING_RC=7
+STUB_REMAINING_OUTPUT=""
+if run_implementation; then
+    fail_test "Expected failure when remaining-task verifier errors"
+else
+    if assert_eq "failed" "$IMPLEMENT_STATUS" && \
+       assert_contains "$IMPLEMENT_REASON" "could not be verified"; then
+        pass_test
+    fi
 fi
 
 echo ""
