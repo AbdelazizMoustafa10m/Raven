@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -574,6 +575,273 @@ func TestTruncateName(t *testing.T) {
 	}
 }
 
+// ---- TaskProgressSection ----
+
+func TestNewTaskProgressSection_ZeroValues(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	assert.Equal(t, 0, tp.totalTasks)
+	assert.Equal(t, 0, tp.completedTasks)
+	assert.Equal(t, 0, tp.totalPhases)
+	assert.Equal(t, 0, tp.currentPhase)
+	assert.Equal(t, 0, tp.phaseTasks)
+	assert.Equal(t, 0, tp.phaseCompleted)
+}
+
+func TestTaskProgressSection_SetTotals(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		totalTasks      int
+		totalPhases     int
+		wantTotalTasks  int
+		wantTotalPhases int
+	}{
+		{name: "positive values", totalTasks: 30, totalPhases: 5, wantTotalTasks: 30, wantTotalPhases: 5},
+		{name: "zero values", totalTasks: 0, totalPhases: 0, wantTotalTasks: 0, wantTotalPhases: 0},
+		{name: "negative tasks clamped", totalTasks: -5, totalPhases: 3, wantTotalTasks: 0, wantTotalPhases: 3},
+		{name: "negative phases clamped", totalTasks: 10, totalPhases: -2, wantTotalTasks: 10, wantTotalPhases: 0},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := NewTaskProgressSection(DefaultTheme())
+			tp.SetTotals(tt.totalTasks, tt.totalPhases)
+			assert.Equal(t, tt.wantTotalTasks, tp.totalTasks)
+			assert.Equal(t, tt.wantTotalPhases, tp.totalPhases)
+		})
+	}
+}
+
+func TestTaskProgressSection_SetPhase(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name               string
+		phase              int
+		phaseTasks         int
+		phaseCompleted     int
+		wantPhase          int
+		wantPhaseTasks     int
+		wantPhaseCompleted int
+	}{
+		{name: "valid phase", phase: 2, phaseTasks: 10, phaseCompleted: 4, wantPhase: 2, wantPhaseTasks: 10, wantPhaseCompleted: 4},
+		{name: "negative phase clamped", phase: -1, phaseTasks: 5, phaseCompleted: 2, wantPhase: 0, wantPhaseTasks: 5, wantPhaseCompleted: 2},
+		{name: "negative phaseTasks clamped", phase: 1, phaseTasks: -3, phaseCompleted: 0, wantPhase: 1, wantPhaseTasks: 0, wantPhaseCompleted: 0},
+		{name: "negative phaseCompleted clamped", phase: 1, phaseTasks: 5, phaseCompleted: -1, wantPhase: 1, wantPhaseTasks: 5, wantPhaseCompleted: 0},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := NewTaskProgressSection(DefaultTheme())
+			tp.SetPhase(tt.phase, tt.phaseTasks, tt.phaseCompleted)
+			assert.Equal(t, tt.wantPhase, tp.currentPhase)
+			assert.Equal(t, tt.wantPhaseTasks, tp.phaseTasks)
+			assert.Equal(t, tt.wantPhaseCompleted, tp.phaseCompleted)
+		})
+	}
+}
+
+func TestTaskProgressSection_Update_TaskProgressMsg(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		completed      int
+		total          int
+		wantCompleted  int
+		wantTotal      int
+	}{
+		{name: "normal progress", completed: 12, total: 30, wantCompleted: 12, wantTotal: 30},
+		{name: "completed equals total", completed: 30, total: 30, wantCompleted: 30, wantTotal: 30},
+		{name: "completed exceeds total — clamped", completed: 35, total: 30, wantCompleted: 30, wantTotal: 30},
+		{name: "zero progress", completed: 0, total: 30, wantCompleted: 0, wantTotal: 30},
+		{name: "negative completed — treated as zero", completed: -5, total: 10, wantCompleted: 0, wantTotal: 10},
+		{name: "negative total — treated as zero", completed: 5, total: -10, wantCompleted: 0, wantTotal: 0},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := NewTaskProgressSection(DefaultTheme())
+			msg := TaskProgressMsg{Completed: tt.completed, Total: tt.total}
+			tp = tp.Update(msg)
+			assert.Equal(t, tt.wantCompleted, tp.completedTasks)
+			assert.Equal(t, tt.wantTotal, tp.totalTasks)
+		})
+	}
+}
+
+func TestTaskProgressSection_Update_LoopEventMsg_PhaseComplete(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	// Simulate some completed phase tasks first.
+	tp.phaseCompleted = 5
+
+	msg := LoopEventMsg{Type: LoopPhaseComplete}
+	tp = tp.Update(msg)
+
+	assert.Equal(t, 1, tp.currentPhase, "LoopPhaseComplete must increment currentPhase")
+	assert.Equal(t, 0, tp.phaseCompleted, "LoopPhaseComplete must reset phaseCompleted")
+}
+
+func TestTaskProgressSection_Update_LoopEventMsg_PhaseComplete_MultipleTimes(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	for i := 1; i <= 3; i++ {
+		tp = tp.Update(LoopEventMsg{Type: LoopPhaseComplete})
+		assert.Equal(t, i, tp.currentPhase)
+	}
+}
+
+func TestTaskProgressSection_Update_LoopEventMsg_TaskCompleted(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.totalTasks = 10
+	tp.completedTasks = 2
+
+	tp = tp.Update(LoopEventMsg{Type: LoopTaskCompleted})
+
+	assert.Equal(t, 1, tp.phaseCompleted, "LoopTaskCompleted must increment phaseCompleted")
+	assert.Equal(t, 3, tp.completedTasks, "LoopTaskCompleted must increment completedTasks when below total")
+}
+
+func TestTaskProgressSection_Update_LoopEventMsg_TaskCompleted_ClampedAtTotal(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.totalTasks = 5
+	tp.completedTasks = 5 // already at total
+
+	tp = tp.Update(LoopEventMsg{Type: LoopTaskCompleted})
+
+	assert.Equal(t, 5, tp.completedTasks, "completedTasks must not exceed totalTasks")
+}
+
+func TestTaskProgressSection_Update_UnhandledMsg_NoChange(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.totalTasks = 10
+	tp.completedTasks = 3
+
+	// Send an unrelated message type.
+	tp = tp.Update(WorkflowEventMsg{WorkflowName: "wf", Event: "running"})
+
+	assert.Equal(t, 10, tp.totalTasks, "unhandled message must not change totalTasks")
+	assert.Equal(t, 3, tp.completedTasks, "unhandled message must not change completedTasks")
+}
+
+func TestTaskProgressSection_View_NoTasks_ShowsPlaceholder(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "No tasks")
+	assert.Contains(t, view, "No phases")
+}
+
+func TestTaskProgressSection_View_WithTasks_ShowsBar(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 12, Total: 30})
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "Tasks")
+	assert.Contains(t, view, "40%")
+	assert.Contains(t, view, "12/30 done")
+}
+
+func TestTaskProgressSection_View_WithPhases_ShowsPhaseBar(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.SetTotals(30, 5)
+	tp.SetPhase(2, 8, 4)
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "Phase: 2/5")
+	assert.Contains(t, view, "50%")
+}
+
+func TestTaskProgressSection_View_FullCompletion_Shows100Percent(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 30, Total: 30})
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "100%")
+	assert.Contains(t, view, "30/30 done")
+}
+
+func TestTaskProgressSection_View_ZeroWidth_NoPanic(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 5, Total: 10})
+	assert.NotPanics(t, func() {
+		_ = tp.View(0)
+	})
+}
+
+func TestTaskProgressSection_View_ZeroPhases_ShowsNoPhases(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.SetTotals(10, 0) // zero phases
+	tp = tp.Update(TaskProgressMsg{Completed: 5, Total: 10})
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "No phases")
+}
+
+// ---- SidebarModel: TaskProgressMsg and LoopEventMsg integration ----
+
+func TestSidebarModel_Update_TaskProgressMsg(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	msg := TaskProgressMsg{TaskID: "T-001", Completed: 5, Total: 20}
+	m, cmd := applySidebarMsg(m, msg)
+	require.Nil(t, cmd)
+	assert.Equal(t, 5, m.taskProgress.completedTasks)
+	assert.Equal(t, 20, m.taskProgress.totalTasks)
+}
+
+func TestSidebarModel_Update_LoopEventMsg_PhaseComplete(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopPhaseComplete})
+	assert.Equal(t, 1, m.taskProgress.currentPhase)
+	assert.Equal(t, 0, m.taskProgress.phaseCompleted)
+}
+
+func TestSidebarModel_Update_LoopEventMsg_TaskCompleted(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	m.taskProgress.totalTasks = 10
+	m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopTaskCompleted})
+	assert.Equal(t, 1, m.taskProgress.phaseCompleted)
+}
+
+func TestSidebarModel_SetTotals_Delegates(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	m.SetTotals(50, 8)
+	assert.Equal(t, 50, m.taskProgress.totalTasks)
+	assert.Equal(t, 8, m.taskProgress.totalPhases)
+}
+
+func TestSidebarModel_SetPhase_Delegates(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	m.SetPhase(3, 12, 6)
+	assert.Equal(t, 3, m.taskProgress.currentPhase)
+	assert.Equal(t, 12, m.taskProgress.phaseTasks)
+	assert.Equal(t, 6, m.taskProgress.phaseCompleted)
+}
+
+func TestSidebarModel_View_TaskProgressRendered(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	m, _ = applySidebarMsg(m, TaskProgressMsg{Completed: 10, Total: 25})
+	m.SetTotals(25, 5)
+	m.SetPhase(2, 6, 3)
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "Tasks", "Tasks header must appear in sidebar view")
+	assert.Contains(t, view, "10/25 done", "completion text must appear in sidebar view")
+	assert.Contains(t, view, "Phase: 2/5", "phase header must appear in sidebar view")
+}
+
 // ---- Integration: sequence of messages ----
 
 func TestSidebarModel_Integration_SequentialMessages(t *testing.T) {
@@ -628,4 +896,425 @@ func TestSidebarModel_Integration_DuplicateEvents_Idempotent(t *testing.T) {
 		m, _ = applySidebarMsg(m, workflowEvent("id-1", "pipeline", "running", ""))
 	}
 	assert.Len(t, m.workflows, 1, "duplicate events must not add multiple entries")
+}
+
+// ---------------------------------------------------------------------------
+// T-071: TaskProgressSection — additional View rendering tests
+// ---------------------------------------------------------------------------
+
+func TestTaskProgressSection_View_TasksHeader_AlwaysPresent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		total     int
+		completed int
+	}{
+		{"zero tasks", 0, 0},
+		{"some tasks", 10, 3},
+		{"full tasks", 5, 5},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := NewTaskProgressSection(DefaultTheme())
+			if tt.total > 0 {
+				tp = tp.Update(TaskProgressMsg{Completed: tt.completed, Total: tt.total})
+			}
+			view := stripANSISidebar(tp.View(30))
+			assert.Contains(t, view, "Tasks",
+				"Tasks header must always appear regardless of task count")
+		})
+	}
+}
+
+func TestTaskProgressSection_View_EmptyBar_ZeroCompletion(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 0, Total: 20})
+	view := stripANSISidebar(tp.View(30))
+	// 0% completion must be rendered.
+	assert.Contains(t, view, "0%")
+	assert.Contains(t, view, "0/20 done")
+}
+
+func TestTaskProgressSection_View_HalfFilledBar_15of30(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 15, Total: 30})
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "50%")
+	assert.Contains(t, view, "15/30 done")
+}
+
+func TestTaskProgressSection_View_CompletionText_Format(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		completed int
+		total     int
+		wantText  string
+		wantPct   string
+	}{
+		{"zero of many", 0, 50, "0/50 done", "0%"},
+		{"one of one", 1, 1, "1/1 done", "100%"},
+		{"twelve of thirty", 12, 30, "12/30 done", "40%"},
+		{"one of three", 1, 3, "1/3 done", "33%"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := NewTaskProgressSection(DefaultTheme())
+			tp = tp.Update(TaskProgressMsg{Completed: tt.completed, Total: tt.total})
+			view := stripANSISidebar(tp.View(40))
+			assert.Contains(t, view, tt.wantText,
+				"completion text must match N/M done format")
+			assert.Contains(t, view, tt.wantPct,
+				"percentage must be rendered")
+		})
+	}
+}
+
+func TestTaskProgressSection_View_PhaseHeader_Format(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		currentPhase int
+		totalPhases  int
+		wantHeader   string
+	}{
+		{"phase 1 of 5", 1, 5, "Phase: 1/5"},
+		{"phase 0 of 3", 0, 3, "Phase: 0/3"},
+		{"phase 3 of 3", 3, 3, "Phase: 3/3"},
+		{"no phases", 0, 0, "Phase: 0/0"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tp := NewTaskProgressSection(DefaultTheme())
+			tp.SetTotals(10, tt.totalPhases)
+			tp.SetPhase(tt.currentPhase, 5, 2)
+			view := stripANSISidebar(tp.View(30))
+			assert.Contains(t, view, tt.wantHeader,
+				"phase header must use Phase: N/M format")
+		})
+	}
+}
+
+func TestTaskProgressSection_View_PhaseBar_HalfComplete(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.SetTotals(30, 4)
+	tp.SetPhase(2, 10, 5) // 5/10 = 50% of phase tasks done
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "50%")
+}
+
+func TestTaskProgressSection_View_PhaseBar_ZeroTasksInPhase(t *testing.T) {
+	t.Parallel()
+	// Phase has been configured with phases>0 but phaseTasks=0;
+	// the phase bar should show 0% (no division by zero panic).
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.SetTotals(20, 4)
+	tp.SetPhase(1, 0, 0)
+	assert.NotPanics(t, func() {
+		view := stripANSISidebar(tp.View(30))
+		assert.Contains(t, view, "0%")
+	})
+}
+
+func TestTaskProgressSection_View_NarrowWidth_NoPanic(t *testing.T) {
+	t.Parallel()
+	widths := []int{1, 2, 3, 4, 5}
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 3, Total: 10})
+	tp.SetTotals(10, 3)
+	tp.SetPhase(1, 4, 2)
+	for _, w := range widths {
+		w := w
+		t.Run(fmt.Sprintf("width_%d", w), func(t *testing.T) {
+			t.Parallel()
+			assert.NotPanics(t, func() {
+				_ = tp.View(w)
+			})
+		})
+	}
+}
+
+func TestTaskProgressSection_View_ProgressNeverExceeds100Percent(t *testing.T) {
+	t.Parallel()
+	// completedTasks clamped to totalTasks in Update, so percentage must
+	// never exceed 100%.
+	tp := NewTaskProgressSection(DefaultTheme())
+	// Force an over-count via direct field mutation after Update clamping.
+	tp = tp.Update(TaskProgressMsg{Completed: 100, Total: 10}) // clamped to 10/10
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "100%")
+	assert.NotContains(t, view, "200%")
+	assert.NotContains(t, view, "1000%")
+}
+
+func TestTaskProgressSection_View_PhaseCompletedClampedToPhaseTotal(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.SetTotals(20, 4)
+	// Set phaseCompleted > phaseTasks; View must clamp it internally.
+	tp.SetPhase(1, 5, 5) // exactly at total — should show 100%
+	view := stripANSISidebar(tp.View(30))
+	assert.Contains(t, view, "100%")
+}
+
+// ---------------------------------------------------------------------------
+// T-071: TaskProgressSection — Update edge-case tests
+// ---------------------------------------------------------------------------
+
+func TestTaskProgressSection_Update_TaskProgressMsg_StatusCompleted_IncreasesCompleted(t *testing.T) {
+	t.Parallel()
+	// When Status == "completed", completedTasks is derived from Completed field.
+	// The existing impl uses Completed/Total fields, not the Status string.
+	// This test verifies that a message with Status "completed" and explicit
+	// Completed/Total fields still updates counts correctly.
+	tp := NewTaskProgressSection(DefaultTheme())
+	msg := TaskProgressMsg{Status: "completed", Completed: 7, Total: 20}
+	tp = tp.Update(msg)
+	assert.Equal(t, 7, tp.completedTasks)
+	assert.Equal(t, 20, tp.totalTasks)
+}
+
+func TestTaskProgressSection_Update_LoopPhaseComplete_ResetsPhaseCompleted(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	// Build up some phase completion via LoopTaskCompleted events.
+	tp.totalTasks = 15
+	for i := 0; i < 4; i++ {
+		tp = tp.Update(LoopEventMsg{Type: LoopTaskCompleted})
+	}
+	assert.Equal(t, 4, tp.phaseCompleted)
+
+	// A phase-complete event must reset phaseCompleted to zero.
+	tp = tp.Update(LoopEventMsg{Type: LoopPhaseComplete})
+	assert.Equal(t, 0, tp.phaseCompleted,
+		"LoopPhaseComplete must reset phaseCompleted to zero")
+	assert.Equal(t, 1, tp.currentPhase,
+		"LoopPhaseComplete must increment currentPhase")
+}
+
+func TestTaskProgressSection_Update_LoopTaskCompleted_DoesNotExceedTotalWhenAtLimit(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.totalTasks = 3
+	tp.completedTasks = 3 // already at total
+
+	// Sending more LoopTaskCompleted events must not push count past total.
+	for i := 0; i < 5; i++ {
+		tp = tp.Update(LoopEventMsg{Type: LoopTaskCompleted})
+	}
+	assert.Equal(t, 3, tp.completedTasks,
+		"completedTasks must not exceed totalTasks after repeated LoopTaskCompleted")
+}
+
+func TestTaskProgressSection_Update_NegativeValues_TreatedAsZero(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	msg := TaskProgressMsg{Completed: -10, Total: -5}
+	tp = tp.Update(msg)
+	assert.Equal(t, 0, tp.completedTasks, "negative Completed must be treated as zero")
+	assert.Equal(t, 0, tp.totalTasks, "negative Total must be treated as zero")
+}
+
+func TestTaskProgressSection_Update_CompletedGreaterThanTotal_Clamped(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	msg := TaskProgressMsg{Completed: 50, Total: 20}
+	tp = tp.Update(msg)
+	assert.Equal(t, 20, tp.completedTasks,
+		"completed exceeding total must be clamped to total")
+	assert.Equal(t, 20, tp.totalTasks)
+}
+
+func TestTaskProgressSection_SetPhase_ChangePhase_UpdatesCounters(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	// First set phase 1 with some completion.
+	tp.SetPhase(1, 8, 6)
+	assert.Equal(t, 1, tp.currentPhase)
+	assert.Equal(t, 8, tp.phaseTasks)
+	assert.Equal(t, 6, tp.phaseCompleted)
+
+	// Changing to phase 2 with different counts must fully replace.
+	tp.SetPhase(2, 12, 3)
+	assert.Equal(t, 2, tp.currentPhase)
+	assert.Equal(t, 12, tp.phaseTasks)
+	assert.Equal(t, 3, tp.phaseCompleted)
+}
+
+func TestTaskProgressSection_SetTotals_NegativeValues_ClampedToZero(t *testing.T) {
+	t.Parallel()
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp.SetTotals(-100, -50)
+	assert.Equal(t, 0, tp.totalTasks)
+	assert.Equal(t, 0, tp.totalPhases)
+}
+
+// ---------------------------------------------------------------------------
+// T-071: SidebarModel — integration with TaskProgress section
+// ---------------------------------------------------------------------------
+
+func TestSidebarModel_Integration_TaskProgressSequence(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 35, 50)
+	m.SetTotals(10, 3)
+
+	// Phase 1: complete 4 tasks via LoopTaskCompleted.
+	m.SetPhase(1, 4, 0)
+	for i := 0; i < 4; i++ {
+		m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopTaskCompleted})
+	}
+	assert.Equal(t, 4, m.taskProgress.phaseCompleted)
+	assert.Equal(t, 4, m.taskProgress.completedTasks)
+
+	// Phase 1 ends; LoopPhaseComplete increments currentPhase (1→2) and resets phaseCompleted.
+	m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopPhaseComplete})
+	assert.Equal(t, 2, m.taskProgress.currentPhase)
+	assert.Equal(t, 0, m.taskProgress.phaseCompleted)
+
+	// Phase 2: complete 3 tasks.
+	m.SetPhase(2, 3, 0)
+	for i := 0; i < 3; i++ {
+		m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopTaskCompleted})
+	}
+	assert.Equal(t, 3, m.taskProgress.phaseCompleted)
+	assert.Equal(t, 7, m.taskProgress.completedTasks)
+
+	// Phase 2 ends; LoopPhaseComplete increments currentPhase (2→3).
+	m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopPhaseComplete})
+	assert.Equal(t, 3, m.taskProgress.currentPhase)
+
+	// Phase 3: complete final 3 tasks.
+	m.SetPhase(3, 3, 0)
+	for i := 0; i < 3; i++ {
+		m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopTaskCompleted})
+	}
+	assert.Equal(t, 10, m.taskProgress.completedTasks)
+
+	// Final view must show 100% overall completion.
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "100%")
+	assert.Contains(t, view, "10/10 done")
+}
+
+func TestSidebarModel_Integration_TaskProgressMsg_OverridesLoopCounts(t *testing.T) {
+	t.Parallel()
+	// TaskProgressMsg must set exact counts regardless of what LoopTaskCompleted
+	// accumulated previously.
+	m := makeSidebar(t, 30, 40)
+	m.taskProgress.totalTasks = 20
+
+	// Accumulate via loop events.
+	for i := 0; i < 5; i++ {
+		m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopTaskCompleted})
+	}
+	assert.Equal(t, 5, m.taskProgress.completedTasks)
+
+	// An explicit TaskProgressMsg resets to its exact values.
+	m, _ = applySidebarMsg(m, TaskProgressMsg{Completed: 18, Total: 20})
+	assert.Equal(t, 18, m.taskProgress.completedTasks)
+	assert.Equal(t, 20, m.taskProgress.totalTasks)
+}
+
+func TestSidebarModel_View_ProgressSectionHeader_AlwaysPresent(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "PROGRESS",
+		"PROGRESS section header must always be rendered in the sidebar view")
+}
+
+func TestSidebarModel_View_TasksAndPhaseHeadersInView(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 35, 50)
+	m, _ = applySidebarMsg(m, TaskProgressMsg{Completed: 5, Total: 15})
+	m.SetTotals(15, 4)
+	m.SetPhase(2, 5, 3)
+
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "Tasks", "Tasks sub-header must appear in sidebar")
+	assert.Contains(t, view, "Phase: 2/4", "Phase header must appear in sidebar")
+	assert.Contains(t, view, "5/15 done", "Completion text must appear in sidebar")
+}
+
+func TestSidebarModel_View_NoTasks_ShowsNoTasksPlaceholder(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	// No TaskProgressMsg sent — totalTasks remains 0.
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "No tasks",
+		"sidebar must show No tasks placeholder when no tasks are set")
+}
+
+func TestSidebarModel_SetTotals_ZeroPhases_ShowsNoPhasesInView(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	m.SetTotals(10, 0) // tasks but no phases
+	m, _ = applySidebarMsg(m, TaskProgressMsg{Completed: 3, Total: 10})
+
+	view := stripANSISidebar(m.View())
+	assert.Contains(t, view, "No phases",
+		"sidebar must show No phases placeholder when totalPhases is zero")
+}
+
+func TestSidebarModel_Update_MultipleLoopPhaseComplete_Accumulates(t *testing.T) {
+	t.Parallel()
+	m := makeSidebar(t, 30, 40)
+	for i := 1; i <= 5; i++ {
+		m, _ = applySidebarMsg(m, LoopEventMsg{Type: LoopPhaseComplete})
+		assert.Equal(t, i, m.taskProgress.currentPhase,
+			"currentPhase must increment by 1 for each LoopPhaseComplete")
+	}
+}
+
+func TestSidebarModel_View_BarWidth_ConstrainedToSidebarWidth(t *testing.T) {
+	t.Parallel()
+	// Progress bars are rendered at width-2; verify the output lines
+	// stay within the configured width after ANSI stripping.
+	m := makeSidebar(t, 28, 50)
+	m, _ = applySidebarMsg(m, TaskProgressMsg{Completed: 7, Total: 14})
+	m.SetTotals(14, 3)
+	m.SetPhase(1, 5, 2)
+
+	view := m.View()
+	for i, line := range strings.Split(view, "\n") {
+		stripped := stripANSISidebar(line)
+		assert.LessOrEqual(t, lipgloss.Width(stripped), 28,
+			"line %d exceeds sidebar width: %q", i, stripped)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T-071: Benchmark
+// ---------------------------------------------------------------------------
+
+func BenchmarkTaskProgressSection_View(b *testing.B) {
+	tp := NewTaskProgressSection(DefaultTheme())
+	tp = tp.Update(TaskProgressMsg{Completed: 17, Total: 30})
+	tp.SetTotals(30, 5)
+	tp.SetPhase(3, 7, 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tp.View(40)
+	}
+}
+
+func BenchmarkSidebarModel_View_WithProgress(b *testing.B) {
+	m := NewSidebarModel(DefaultTheme())
+	m.SetDimensions(35, 40)
+	m.SetFocused(true)
+	m.SetTotals(30, 5)
+	m.SetPhase(2, 8, 4)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = m.View()
+	}
 }

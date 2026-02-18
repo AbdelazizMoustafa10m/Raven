@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 73 |
+| Completed | 74 |
 | In Progress | 0 |
-| Not Started | 16 |
+| Not Started | 15 |
 
 ---
 
@@ -540,6 +540,29 @@
 
 ---
 
+### T-071: Sidebar -- Task Progress Bars and Phase Progress
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `TaskProgressSection` value-type struct tracking overall task completion (`totalTasks`, `completedTasks`) and per-phase progress (`currentPhase`, `totalPhases`, `phaseTasks`, `phaseCompleted`)
+  - `NewTaskProgressSection(theme Theme)` constructor with zero-initialised counters
+  - `SetTotals(totalTasks, totalPhases int)` pointer-receiver mutator with negative-value guards
+  - `SetPhase(phase, phaseTasks, phaseCompleted int)` pointer-receiver mutator with negative-value guards
+  - `Update(msg tea.Msg) TaskProgressSection` value-receiver returning updated copy; handles `TaskProgressMsg` (sets `completedTasks`/`totalTasks`, clamps completed to total, guards negatives) and `LoopEventMsg` (`LoopPhaseComplete` increments `currentPhase` + resets `phaseCompleted`; `LoopTaskCompleted` increments `phaseCompleted` and `completedTasks` when below total)
+  - `View(width int) string` rendering two sub-sections: "Tasks" (header + progress bar + percentage + "N/M done" label, or "No tasks" placeholder when total=0) and "Phase: N/M" (header + bar + percentage, or "No phases" placeholder when totalPhases=0); bar width calculated as `width - 2` with a floor of 1; uses `Theme.ProgressBar`, `Theme.ProgressPercent`, `Theme.ProgressLabel`, `Theme.SidebarTitle`, `Theme.SidebarItem`
+  - Division-by-zero guard: progress bar only rendered when total > 0
+  - Clamping: `completedTasks` and `phaseCompleted` clamped to their respective totals in `View`
+  - Integrated into `SidebarModel`: added `taskProgress TaskProgressSection` field, initialised in `NewSidebarModel`, `Update` delegates `TaskProgressMsg` and `LoopEventMsg` to `m.taskProgress.Update(msg)`, `View()` replaces the `"(task progress)"` placeholder with `m.taskProgress.View(m.width)`
+  - `SidebarModel.SetTotals` and `SidebarModel.SetPhase` public delegating methods
+  - 25 new unit and integration tests covering all edge cases: zero totals, negative values, clamping, LoopPhaseComplete sequences, LoopTaskCompleted bounded increment, View placeholders, View with real data, delegation from SidebarModel, SidebarModel View rendering
+- **Files created/modified:**
+  - `internal/tui/sidebar.go` -- `TaskProgressSection` type with all methods; `SidebarModel` integration (field, init, Update cases, View replacement, SetTotals/SetPhase delegates); added `"fmt"` import
+  - `internal/tui/sidebar_test.go` -- 25 new table-driven and unit tests for `TaskProgressSection` and `SidebarModel` integration
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -565,7 +588,7 @@ _None currently_
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Completed |
 | T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Completed |
 | T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Completed |
-| T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Not Started |
+| T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Completed |
 | T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Not Started |
 | T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Not Started |
 | T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Not Started |

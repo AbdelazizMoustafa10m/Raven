@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -87,13 +88,193 @@ type WorkflowEntry struct {
 }
 
 // ---------------------------------------------------------------------------
+// TaskProgressSection
+// ---------------------------------------------------------------------------
+
+// TaskProgressSection tracks task and phase completion for the sidebar.
+// It is a value type; all mutations return a new copy, consistent with the
+// Bubble Tea Elm-architecture pattern used throughout the TUI package.
+type TaskProgressSection struct {
+	theme Theme
+
+	// Overall task progress across all phases.
+	totalTasks     int
+	completedTasks int
+
+	// Phase progress.
+	currentPhase   int
+	totalPhases    int
+	phaseTasks     int // Total tasks in the current phase.
+	phaseCompleted int // Completed tasks in the current phase.
+}
+
+// NewTaskProgressSection creates a TaskProgressSection with the given theme
+// and zero-initialised counters.
+func NewTaskProgressSection(theme Theme) TaskProgressSection {
+	return TaskProgressSection{theme: theme}
+}
+
+// SetTotals initialises the overall task count and the total number of phases.
+// Negative values are treated as zero.
+func (tp *TaskProgressSection) SetTotals(totalTasks, totalPhases int) {
+	if totalTasks < 0 {
+		totalTasks = 0
+	}
+	if totalPhases < 0 {
+		totalPhases = 0
+	}
+	tp.totalTasks = totalTasks
+	tp.totalPhases = totalPhases
+}
+
+// SetPhase updates the current phase number and the task counts for that phase.
+// Negative values are treated as zero.
+func (tp *TaskProgressSection) SetPhase(phase, phaseTasks, phaseCompleted int) {
+	if phase < 0 {
+		phase = 0
+	}
+	if phaseTasks < 0 {
+		phaseTasks = 0
+	}
+	if phaseCompleted < 0 {
+		phaseCompleted = 0
+	}
+	tp.currentPhase = phase
+	tp.phaseTasks = phaseTasks
+	tp.phaseCompleted = phaseCompleted
+}
+
+// Update processes tea.Msg values relevant to task progress and returns the
+// updated section. Handled messages:
+//   - TaskProgressMsg     — updates overall completedTasks / totalTasks from
+//     the message's Completed / Total fields.
+//   - LoopEventMsg        — LoopPhaseComplete increments currentPhase and
+//     resets phaseCompleted; LoopTaskCompleted increments phaseCompleted.
+func (tp TaskProgressSection) Update(msg tea.Msg) TaskProgressSection {
+	switch msg := msg.(type) {
+	case TaskProgressMsg:
+		completed := msg.Completed
+		total := msg.Total
+		if completed < 0 {
+			completed = 0
+		}
+		if total < 0 {
+			total = 0
+		}
+		// Clamp completed to total.
+		if completed > total {
+			completed = total
+		}
+		tp.completedTasks = completed
+		tp.totalTasks = total
+
+	case LoopEventMsg:
+		switch msg.Type {
+		case LoopPhaseComplete:
+			tp.currentPhase++
+			tp.phaseCompleted = 0
+		case LoopTaskCompleted:
+			tp.phaseCompleted++
+			// Also increment the overall completed count to stay in sync when
+			// the overall total has been set via SetTotals but no TaskProgressMsg
+			// has arrived yet.
+			if tp.completedTasks < tp.totalTasks {
+				tp.completedTasks++
+			}
+		}
+	}
+
+	return tp
+}
+
+// View renders the task progress section as a string constrained to width
+// columns. It renders two sub-sections:
+//
+//  1. Overall task progress  (header "Tasks", bar, percentage, "N/M done")
+//  2. Phase progress          (header "Phase: N/M", bar, percentage)
+//
+// When total counts are zero the respective sub-section shows a "No tasks" /
+// "No phases" placeholder instead of a progress bar.
+func (tp TaskProgressSection) View(width int) string {
+	var sb strings.Builder
+
+	// --- Overall task progress ---
+	sb.WriteString(tp.theme.SidebarTitle.Render("Tasks"))
+	sb.WriteString("\n")
+
+	if tp.totalTasks == 0 {
+		sb.WriteString(tp.theme.SidebarItem.Render("No tasks"))
+		sb.WriteString("\n")
+	} else {
+		completed := tp.completedTasks
+		if completed > tp.totalTasks {
+			completed = tp.totalTasks
+		}
+		fraction := float64(completed) / float64(tp.totalTasks)
+
+		barWidth := width - 2 // 1-char padding each side
+		if barWidth < 1 {
+			barWidth = 1
+		}
+
+		sb.WriteString(tp.theme.ProgressBar(fraction, barWidth))
+		sb.WriteString("\n")
+		sb.WriteString(tp.theme.ProgressPercent.Render(fmt.Sprintf("%d%%", int(fraction*100))))
+		sb.WriteString("\n")
+		sb.WriteString(tp.theme.ProgressLabel.Render(fmt.Sprintf("%d/%d done", completed, tp.totalTasks)))
+		sb.WriteString("\n")
+	}
+
+	// Blank line between sub-sections.
+	sb.WriteString("\n")
+
+	// --- Phase progress ---
+	phaseHeader := fmt.Sprintf("Phase: %d/%d", tp.currentPhase, tp.totalPhases)
+	sb.WriteString(tp.theme.SidebarTitle.Render(phaseHeader))
+	sb.WriteString("\n")
+
+	if tp.totalPhases == 0 {
+		sb.WriteString(tp.theme.SidebarItem.Render("No phases"))
+		sb.WriteString("\n")
+	} else {
+		phaseCompleted := tp.phaseCompleted
+		phaseTasks := tp.phaseTasks
+		if phaseTasks < 0 {
+			phaseTasks = 0
+		}
+		if phaseCompleted < 0 {
+			phaseCompleted = 0
+		}
+		if phaseTasks > 0 && phaseCompleted > phaseTasks {
+			phaseCompleted = phaseTasks
+		}
+
+		var phaseFraction float64
+		if phaseTasks > 0 {
+			phaseFraction = float64(phaseCompleted) / float64(phaseTasks)
+		}
+
+		barWidth := width - 2
+		if barWidth < 1 {
+			barWidth = 1
+		}
+
+		sb.WriteString(tp.theme.ProgressBar(phaseFraction, barWidth))
+		sb.WriteString("\n")
+		sb.WriteString(tp.theme.ProgressPercent.Render(fmt.Sprintf("%d%%", int(phaseFraction*100))))
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// ---------------------------------------------------------------------------
 // SidebarModel
 // ---------------------------------------------------------------------------
 
 // SidebarModel is the Bubble Tea sub-model for the sidebar panel.
-// It maintains the workflow list section and provides hooks for the task
-// progress (T-071) and rate-limit status (T-072) sections that will be
-// added by subsequent tasks.
+// It maintains the workflow list section (T-070), the task progress section
+// (T-071), and a placeholder for the rate-limit status section (T-072).
 //
 // Update returns (SidebarModel, tea.Cmd) — not (tea.Model, tea.Cmd) — so the
 // parent App must store the returned value in its own sidebar field.
@@ -114,9 +295,11 @@ type SidebarModel struct {
 	// scrollOffset is the first visible row index inside the workflow list.
 	scrollOffset int
 
-	// Sub-section placeholders populated by T-071 and T-072.
-	// taskProgress TaskProgressModel
-	// rateLimits   RateLimitModel
+	// taskProgress tracks overall and per-phase task completion.
+	taskProgress TaskProgressSection
+
+	// rateLimits is reserved for the rate-limit status section (T-072).
+	// rateLimits RateLimitModel
 }
 
 // NewSidebarModel creates a SidebarModel with the given theme and an empty
@@ -125,7 +308,20 @@ func NewSidebarModel(theme Theme) SidebarModel {
 	return SidebarModel{
 		theme:         theme,
 		workflowIndex: make(map[string]int),
+		taskProgress:  NewTaskProgressSection(theme),
 	}
+}
+
+// SetTotals initialises the overall task count and total phase count shown in
+// the task progress section. It delegates to TaskProgressSection.SetTotals.
+func (m *SidebarModel) SetTotals(totalTasks, totalPhases int) {
+	m.taskProgress.SetTotals(totalTasks, totalPhases)
+}
+
+// SetPhase updates the current phase number and its task counts in the task
+// progress section. It delegates to TaskProgressSection.SetPhase.
+func (m *SidebarModel) SetPhase(phase, phaseTasks, phaseCompleted int) {
+	m.taskProgress.SetPhase(phase, phaseTasks, phaseCompleted)
 }
 
 // SetDimensions updates the sidebar panel size. This should be called
@@ -162,12 +358,20 @@ func (m SidebarModel) SelectedWorkflow() string {
 //
 // Handled messages:
 //   - WorkflowEventMsg  — adds or updates a workflow in the list
+//   - TaskProgressMsg   — updates overall task completion counters
+//   - LoopEventMsg      — updates phase and per-phase task counters
 //   - FocusChangedMsg   — updates the focused flag
 //   - tea.KeyMsg        — j/k/up/down navigation when focused
 func (m SidebarModel) Update(msg tea.Msg) (SidebarModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case WorkflowEventMsg:
 		m = m.handleWorkflowEvent(msg)
+
+	case TaskProgressMsg:
+		m.taskProgress = m.taskProgress.Update(msg)
+
+	case LoopEventMsg:
+		m.taskProgress = m.taskProgress.Update(msg)
 
 	case FocusChangedMsg:
 		m.focused = msg.Panel == FocusSidebar
@@ -420,11 +624,11 @@ func (m SidebarModel) workflowListView() string {
 // View renders the full sidebar panel as a string sized to the configured
 // width and height. Sections are stacked vertically:
 //
-//  1. Workflow list  (this task)
-//  2. Empty separator
-//  3. Agent activity placeholder  (T-071)
-//  4. Empty separator
-//  5. Task progress placeholder   (T-072)
+//  1. Workflow list     (T-070)
+//  2. Separator
+//  3. Agent activity    (placeholder; T-073)
+//  4. Separator
+//  5. Task progress     (T-071)
 //  6. Padding rows to fill height
 func (m SidebarModel) View() string {
 	if m.width == 0 && m.height == 0 {
@@ -445,11 +649,11 @@ func (m SidebarModel) View() string {
 	sb.WriteString("\n")
 	sb.WriteString("\n")
 
-	// Section 3: task progress placeholder.
+	// Section 3: task progress.
 	progressHeader := m.theme.SidebarTitle.Render("PROGRESS")
 	sb.WriteString(progressHeader)
 	sb.WriteString("\n")
-	sb.WriteString(m.theme.SidebarItem.Render("(task progress)"))
+	sb.WriteString(m.taskProgress.View(m.width))
 	sb.WriteString("\n")
 
 	content := sb.String()
