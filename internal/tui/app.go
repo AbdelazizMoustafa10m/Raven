@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -43,6 +44,10 @@ type App struct {
 	ready    bool // true after first WindowSizeMsg
 	quitting bool
 
+	// Keyboard navigation
+	keyMap      KeyMap
+	helpOverlay HelpOverlay
+
 	// Sub-model placeholders (populated by subsequent tasks)
 	// sidebar    SidebarModel    // T-070, T-071, T-072
 	// agentPanel AgentPanelModel // T-073
@@ -53,11 +58,15 @@ type App struct {
 // NewApp constructs an App with sensible defaults:
 // focus is on the sidebar, ready and quitting are false.
 func NewApp(cfg AppConfig) App {
+	km := DefaultKeyMap()
+	theme := DefaultTheme()
 	return App{
-		config:   cfg,
-		focus:    FocusSidebar,
-		ready:    false,
-		quitting: false,
+		config:      cfg,
+		focus:       FocusSidebar,
+		ready:       false,
+		quitting:    false,
+		keyMap:      km,
+		helpOverlay: NewHelpOverlay(theme, km),
 	}
 }
 
@@ -68,26 +77,64 @@ func (a App) Init() tea.Cmd {
 }
 
 // Update dispatches incoming messages and returns the updated model plus any
-// follow-up command. It handles window resizing and quit key bindings; all
-// other messages are passed to sub-models as they become available.
+// follow-up command. It handles window resizing, the help overlay, and all
+// keyboard bindings. Sub-model messages are forwarded as they become available.
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = m.Width
 		a.height = m.Height
 		a.ready = true
+		a.helpOverlay.SetDimensions(m.Width, m.Height)
 		return a, nil
 
 	case tea.KeyMsg:
-		switch m.Type {
-		case tea.KeyCtrlC, tea.KeyCtrlQ:
+		// When the help overlay is visible, delegate all key events to it so
+		// that only '?' and 'Esc' are handled (overlay keys suppress others).
+		if a.helpOverlay.IsVisible() {
+			var cmd tea.Cmd
+			a.helpOverlay, cmd = a.helpOverlay.Update(m)
+			return a, cmd
+		}
+
+		switch {
+		case key.Matches(m, a.keyMap.Help):
+			a.helpOverlay.Toggle()
+			return a, nil
+
+		case key.Matches(m, a.keyMap.Quit):
 			a.quitting = true
 			return a, tea.Quit
-		case tea.KeyRunes:
-			if string(m.Runes) == "q" {
-				a.quitting = true
-				return a, tea.Quit
-			}
+
+		case key.Matches(m, a.keyMap.FocusNext):
+			a.focus = NextFocus(a.focus)
+			return a, func() tea.Msg { return FocusChangedMsg{Panel: a.focus} }
+
+		case key.Matches(m, a.keyMap.FocusPrev):
+			a.focus = PrevFocus(a.focus)
+			return a, func() tea.Msg { return FocusChangedMsg{Panel: a.focus} }
+
+		case key.Matches(m, a.keyMap.Pause):
+			return a, func() tea.Msg { return PauseRequestMsg{} }
+
+		case key.Matches(m, a.keyMap.Skip):
+			return a, func() tea.Msg { return SkipRequestMsg{} }
+
+		case key.Matches(m, a.keyMap.ToggleLog):
+			// ToggleLog is a no-op until the event log sub-model is wired in
+			// (T-074/T-078). The key is handled here to prevent it from falling
+			// through to the default no-op branch.
+			return a, nil
+
+		// Scrolling keys are forwarded to the focused panel's sub-model once
+		// sub-models are wired in. For now they are consumed without action.
+		case key.Matches(m, a.keyMap.Up),
+			key.Matches(m, a.keyMap.Down),
+			key.Matches(m, a.keyMap.PageUp),
+			key.Matches(m, a.keyMap.PageDown),
+			key.Matches(m, a.keyMap.Home),
+			key.Matches(m, a.keyMap.End):
+			return a, nil
 		}
 	}
 
@@ -100,6 +147,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 //   - If quitting, return an empty string to clear the screen on exit.
 //   - If not yet ready (no WindowSizeMsg received), show an initializing message.
 //   - If the terminal is too small (< 80 wide or < 24 tall), show a resize warning.
+//   - If the help overlay is visible, render it on top of the full view.
 //   - Otherwise, render the title bar followed by stub panel areas.
 func (a App) View() string {
 	if a.quitting {
@@ -112,6 +160,10 @@ func (a App) View() string {
 
 	if a.width < 80 || a.height < 24 {
 		return terminalTooSmallView()
+	}
+
+	if a.helpOverlay.IsVisible() {
+		return a.helpOverlay.View()
 	}
 
 	return a.fullView()

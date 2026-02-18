@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 78 |
+| Completed | 79 |
 | In Progress | 0 |
-| Not Started | 11 |
+| Not Started | 10 |
 
 ---
 
@@ -646,6 +646,29 @@
   - `internal/tui/status_bar_test.go` -- 45+ tests for all acceptance criteria, edge cases, and integration lifecycle
 - **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
 
+### T-076: Keyboard Navigation and Help Overlay
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `KeyMap` struct with all 15 keybindings using `charmbracelet/bubbles/key` (Quit, Help, Pause, Skip, ToggleLog, FocusNext, FocusPrev, Up, Down, PageUp, PageDown, Home, End, NextAgent, PrevAgent)
+  - `DefaultKeyMap()` function populating all bindings with correct Bubble Tea key names ("tab", "shift+tab", "pgup", "pgdown", "ctrl+c", etc.)
+  - `NextFocus(FocusPanel) FocusPanel` and `PrevFocus(FocusPanel) FocusPanel` modular arithmetic focus cycling over 3 panels
+  - `PauseRequestMsg{}` and `SkipRequestMsg{}` control message types for workflow integration
+  - `HelpOverlay` struct with `NewHelpOverlay`, `SetDimensions`, `Toggle`, `IsVisible`, `Update`, `View` methods
+  - `HelpOverlay.View()` renders a centered, rounded-border box with three keybinding categories (Navigation, Actions, Scrolling) using `lipgloss.Place`
+  - `HelpOverlay.Update()` handles `?` and `Esc` to dismiss; all other keys are consumed without action
+  - `App` struct updated with `keyMap KeyMap` and `helpOverlay HelpOverlay` fields
+  - `App.Update()` fully overhauled: help overlay visible path delegates to overlay; `key.Matches` dispatch for all global keys; `FocusChangedMsg` sent on Tab/Shift+Tab; `PauseRequestMsg`/`SkipRequestMsg` returned as commands; scrolling keys consumed
+  - `App.View()` renders help overlay on top when visible via `helpOverlay.View()`
+  - `App.Init()` unchanged (returns nil)
+  - 40+ unit and integration tests covering all acceptance criteria
+- **Files created/modified:**
+  - `internal/tui/keybindings.go` -- `KeyMap`, `DefaultKeyMap`, `NextFocus`, `PrevFocus`, `PauseRequestMsg`, `SkipRequestMsg`, `HelpOverlay` (all methods)
+  - `internal/tui/keybindings_test.go` -- 40+ tests for keybindings, focus cycling, overlay behavior, and App integration
+  - `internal/tui/app.go` -- Added `keyMap`/`helpOverlay` fields, integrated in `NewApp`, `Update`, `View`
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
 ---
 
 ## In Progress Tasks
@@ -678,7 +701,7 @@ _None currently_
 | T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Completed |
 | T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Completed |
 | T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Completed |
-| T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Not Started |
+| T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Completed |
 | T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Not Started |
 | T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Not Started |
 
