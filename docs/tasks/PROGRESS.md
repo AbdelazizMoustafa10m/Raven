@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 18 |
+| Completed | 19 |
 | In Progress | 0 |
-| Not Started | 69 |
+| Not Started | 68 |
 
 ---
 
@@ -40,6 +40,7 @@
 | Task spec markdown parser | T-016 | `ParseTaskSpec`, `ParseTaskFile`, `DiscoverTasks`, `ParsedTaskSpec.ToTask()`, pre-compiled regexes, 1 MiB size guard, CRLF/BOM normalisation |
 | Task state management | T-017 | `StateManager` with `Load`, `LoadMap`, `Get`, `Update`, `UpdateStatus`, `Initialize`, `StatusCounts`, `TasksWithStatus`; pipe-delimited `task-state.conf`; atomic write + mutex for concurrent safety; `ValidStatuses()` and `IsValid()` on `TaskStatus` |
 | Phase configuration parser | T-018 | `LoadPhases`, `ParsePhaseLine` (4-field and 6-field format auto-detection), `PhaseForTask`, `PhaseByID`, `TaskIDNumber`, `TasksInPhase`, `FormatPhaseLine`, `ValidatePhases`; reads `phases.conf`; sorts phases by ID; validates non-overlapping ranges |
+| Dependency resolution & next-task selection | T-019 | `TaskSelector` with `NewTaskSelector`, `SelectNext`, `SelectNextInRange`, `SelectByID`, `GetPhaseProgress`, `GetAllProgress`, `IsPhaseComplete`, `BlockedTasks`, `CompletedTaskIDs`, `RemainingTaskIDs`; `PhaseProgress` aggregate struct; O(1) spec lookup via specMap; read-only (never mutates state) |
 
 #### Key Technical Decisions
 
@@ -82,6 +83,7 @@
 | Task state test fixtures | `internal/task/testdata/state/` |
 | Phase configuration parser | `internal/task/phases.go` |
 | Phase config test fixtures | `internal/task/testdata/phases/` |
+| Dependency resolver & task selector | `internal/task/selector.go` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -114,7 +116,7 @@ _None currently_
 | T-016 | Task Spec Markdown Parser | Must Have | Medium (6-10hrs) | Completed |
 | T-017 | Task State Management (task-state.conf) | Must Have | Medium (8-12hrs) | Completed |
 | T-018 | Phase Configuration Parser (phases.conf) | Must Have | Small (3-5hrs) | Completed |
-| T-019 | Dependency Resolution & Next-Task Selection | Must Have | Medium (8-12hrs) | Not Started |
+| T-019 | Dependency Resolution & Next-Task Selection | Must Have | Medium (8-12hrs) | Completed |
 | T-020 | Status Command -- raven status | Must Have | Medium (6-10hrs) | Not Started |
 | T-021 | Agent Interface & Registry | Must Have | Medium (6-10hrs) | Not Started |
 | T-022 | Claude Agent Adapter | Must Have | Medium (8-12hrs) | Not Started |
@@ -280,4 +282,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-018 completed)
+_Last updated: 2026-02-18_ (T-019 completed)
