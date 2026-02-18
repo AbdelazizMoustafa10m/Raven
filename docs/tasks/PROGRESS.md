@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 61 |
+| Completed | 62 |
 | In Progress | 0 |
-| Not Started | 28 |
+| Not Started | 27 |
 
 ---
 
@@ -154,7 +154,7 @@
 
 - **Status:** Completed
 - **Date:** 2026-02-18
-- **Tasks Completed:** 12 tasks (T-031 to T-042, including T-058)
+- **Tasks Completed:** 13 tasks (T-031 to T-042, including T-058, T-059)
 
 #### Features Implemented
 
@@ -407,6 +407,44 @@
 
 ---
 
+### T-059: Parallel Epic Workers
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `ScatterOrchestrator` struct orchestrating bounded-concurrency parallel decomposition of epics into tasks
+  - `ScatterOption` functional option type with `WithScatterMaxRetries`, `WithScatterLogger`, `WithScatterEvents`, `WithConcurrency`, `WithRateLimiter`
+  - `ScatterOpts` struct for per-call parameters (PRDContent, Breakdown, Model, Effort)
+  - `ScatterResult` struct with Results ([]*EpicTaskResult sorted by epic ID), Failures, Duration
+  - `ScatterFailure` struct capturing EpicID, last ValidationErrors, and underlying Err
+  - `ScatterEvent` / `ScatterEventType` for progress tracking (worker_started, worker_completed, worker_retry, worker_failed, rate_limited)
+  - `scatterValidationFailure` sentinel type: distinguishes validation exhaustion (non-fatal, other workers continue) from fatal errors (context cancel, rate-limit exceeded)
+  - `errgroup.WithContext` + `g.SetLimit(concurrency)` for bounded parallel execution; workers always return nil so sibling goroutines are not cancelled on partial failure
+  - `runWithRetry` per-epic worker: honors context cancellation, checks `rateLimiter.ShouldWait` before each attempt, calls `WaitForReset` if needed, emits `rate_limited` events, removes stale output files on retry, injects validation errors into retry prompt
+  - `sanitizeEpicID` helper: strips all non-`[A-Za-z0-9_-]` characters using compiled regexp; `epicFilePath` verifies derived path stays inside `workDir`
+  - `buildScatterPrompt` with embedded template using `[[`/`]]` delimiters; `buildOtherEpicsSummary` builds bulleted cross-epic reference list
+  - `extractTaskResult`: output file first, falls back to `jsonutil.ExtractInto` on stdout, validates via `ParseEpicTaskResult`
+  - Mutex-protected result/failure accumulators; results sorted by EpicID post-wait for determinism
+  - Non-blocking event sends via `select { case ch <- evt: default: }`
+  - Full test suite: success via file/stdout, sorted results, partial/total failure, retry paths, concurrency limiting, event types, stale-file removal, rate-limiter integration, sanitizeEpicID table tests, prompt content assertions
+- **Test augmentation (2026-02-18):**
+  - Fixed `MockAgent.Calls` data race: added `sync.Mutex` protection for concurrent `Run()` calls; added `GetCalls()` safe snapshot helper
+  - Added `TestScatterOrchestrator_Scatter_ConcurrencyOne`: verifies serialized execution with concurrency=1
+  - Added `TestScatterOrchestrator_Scatter_ThreeEpicsWithConcurrencyTwo`: explicit AC test — 3 epics, concurrency=2, all succeed, max concurrent <= 2
+  - Added `TestScatterOrchestrator_Scatter_ContextCancelledMidScatter`: AC test — one fast worker cancels mid-scatter, partial results returned with `context.Canceled`
+  - Added `TestScatterOrchestrator_WithScatterLogger`: verifies `WithScatterLogger` functional option stores logger
+  - Added `TestScatterOrchestrator_Scatter_OneFailAllRetries_TwoSucceed`: AC test — 3 epics, E-001 exhausts all retries, E-002/E-003 succeed; ScatterResult has 2 results, 1 failure
+  - Added `TestScatterOrchestrator_Scatter_OutputFileWritten`: verifies output file path is derived from epic ID, written inside workDir
+  - Added `TestScatterOrchestrator_Scatter_OtherEpicsSummaryInPrompt`: verifies each prompt lists other epics but excludes self
+  - Added `TestScatterValidationFailure_ErrorsPreserved`: verifies `ScatterFailure.Errors` is populated from `scatterValidationFailure` sentinel
+- **Files created/modified:**
+  - `internal/agent/mock.go` — added `sync.Mutex` to `MockAgent` for concurrent-safe `Calls` tracking; added `GetCalls()` helper
+  - `internal/prd/worker.go` — ScatterOrchestrator, all option types, prompt template, per-epic worker logic (unchanged)
+  - `internal/prd/worker_test.go` — 38 test functions (8 new) + 1 benchmark covering all acceptance criteria
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/prd/...` ✓  `go test -race ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -417,7 +455,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057, T-058 completed)
+- **Status:** In Progress (T-056, T-057, T-058, T-059 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -429,7 +467,7 @@ _None currently_
 | T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Completed |
 | T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Completed |
 | T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Completed |
-| T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Not Started |
+| T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Completed |
 | T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Not Started |
 | T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Not Started |
 | T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Not Started |
