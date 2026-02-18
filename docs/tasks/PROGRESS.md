@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 55 |
+| Completed | 56 |
 | In Progress | 0 |
-| Not Started | 34 |
+| Not Started | 33 |
 
 ---
 
@@ -503,6 +503,39 @@
 
 ---
 
+### T-053: Pipeline Interactive Wizard
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `WizardConfig` struct with `Phases`, `Agents`, `DefaultAgent`, and `Config` fields
+  - `ErrWizardCancelled` sentinel error returned when the user cancels or declines confirmation
+  - `RunWizard(cfg WizardConfig) (*PipelineOpts, error)` — top-level orchestrator running 4 separate `huh.Form` calls
+  - Page 1 (`runPhaseModePage`): `huh.NewSelect[string]` with "All phases", "Single phase", "From phase" options; `phaseModeAll/phaseModeSingle/phaseModeFrom` internal constants
+  - Page 1b (`runPhasePickerPage`): conditional second form shown only for single/from mode; pre-selects first phase; title adapts to mode
+  - Page 2 (`runAgentPage`): three `huh.NewSelect[string]` dropdowns for impl/review/fix agents; skipped entirely when only 1 agent is available
+  - Page 3 (`runOptionsPage`): `huh.NewInput` with `validateConcurrency` (1-10) and `validateMaxCycles` (1-5); `huh.NewMultiSelect[string]` for 4 skip flag toggles; `huh.NewConfirm` for dry-run toggle
+  - Page 4 (`runConfirmPage`): `huh.NewConfirm` with "Run Pipeline"/"Cancel" buttons and full summary description built by `buildSummary`
+  - `buildOpts` helper mapping phase mode + selections + skip flags into `PipelineOpts`
+  - `buildSummary` helper producing a human-readable summary string for the confirmation page
+  - `mapWizardErr` translating `huh.ErrUserAborted` → `ErrWizardCancelled`; wrapping all other errors with "wizard:" prefix
+  - `validateConcurrency`/`validateMaxCycles` as standalone exported-equivalent functions for direct testing
+  - `containsString` and `phaseNameByID` pure helper functions
+  - All forms use `huh.ThemeCharm()` and `WithWidth(80)`
+  - 35+ table-driven unit tests covering all helpers, validators, skip flags, phase modes, and sentinel error identity
+- **Files created:**
+  - `internal/pipeline/wizard.go` — full implementation with godoc (437 lines)
+  - `internal/pipeline/wizard_test.go` — comprehensive test suite (35+ tests)
+- **Key Decisions:**
+  1. **Multiple `form.Run()` calls instead of one monolithic form** — Conditional pages (phase picker, agent selection) are cleanest when implemented as separate sequential `huh.Form` runs; avoids complex `HideFunc` logic and makes each page independently testable
+  2. **Skip agent page when only 1 agent** — Pre-fills all three agent fields to the single available agent and skips the interaction entirely; UI shows no unnecessary choices
+  3. **`ErrWizardCancelled` wraps `huh.ErrUserAborted`** — Callers do not need to import `huh`; a single sentinel covers both Ctrl+C abort and confirmation-page decline
+  4. **Declined confirmation returns `ErrWizardCancelled`, not nil** — The wizard treats "Cancel" as a user abort for consistent exit code semantics in the CLI layer (T-055)
+  5. **`wizardWidth = 80`** — Meets the minimum 80-column terminal width requirement; avoids runtime terminal-width detection complexity
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ### T-052: Pipeline Metadata Tracking
 
 - **Status:** Completed
@@ -544,7 +577,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** In Progress (6/13 complete)
+- **Status:** In Progress (11/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -563,7 +596,7 @@ _None currently_
 | T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Completed |
 | T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Completed |
 | T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Completed |
-| T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Not Started |
+| T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Completed |
 | T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Not Started |
 | T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Not Started |
 
