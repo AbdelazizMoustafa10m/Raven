@@ -20,6 +20,7 @@ type Engine struct {
 	singleStep    string // if non-empty, run only this step
 	maxIterations int
 	logger        *log.Logger
+	postStepHook  func(*WorkflowState) error // called after each step; nil if not set
 }
 
 // EngineOption configures the Engine.
@@ -224,6 +225,14 @@ func (e *Engine) Run(ctx context.Context, def *WorkflowDefinition, state *Workfl
 				return state, fmt.Errorf("engine: step %q: no transition for event %q", currentStep, event)
 			}
 			state.CurrentStep = nextStep
+		}
+
+		// Call post-step hook (e.g., checkpointing) after CurrentStep has been
+		// advanced so the checkpoint reflects the next step to execute.
+		if e.postStepHook != nil {
+			if hookErr := e.postStepHook(state); hookErr != nil {
+				e.log("post-step hook error", "error", hookErr)
+			}
 		}
 
 		// Check for terminal pseudo-steps.

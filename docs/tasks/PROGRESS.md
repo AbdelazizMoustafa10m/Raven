@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 48 |
+| Completed | 49 |
 | In Progress | 0 |
-| Not Started | 41 |
+| Not Started | 40 |
 
 ---
 
@@ -331,6 +331,26 @@
 
 ---
 
+### T-046: Workflow State Checkpointing and Persistence
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `StateStore` struct with `NewStateStore`, `Save`, `Load`, `List`, `Delete`, `LatestRun` methods
+  - Atomic file writes: marshal to `<id>.json.tmp`, fsync, rename to `<id>.json` (crash-safe)
+  - `RunSummary` struct for lightweight run listing (`raven resume --list`)
+  - `StatusFromState` function deriving "completed", "failed", "running", or "interrupted" from `WorkflowState`
+  - `WithCheckpointing(store)` `EngineOption` that auto-saves state after each step (hook fires after `CurrentStep` is advanced)
+  - `sanitizeID` helper replacing non-`[a-zA-Z0-9_-]` chars with `_` for filesystem safety
+  - 30+ unit tests covering all 12 acceptance criteria, including concurrent saves, corrupt-file skipping, large metadata, and race-detector validation
+- **Files created/modified:**
+  - `internal/workflow/state.go` -- added `StateStore`, `RunSummary`, `StatusFromState`, `WithCheckpointing`, `sanitizeID`
+  - `internal/workflow/engine.go` -- added `postStepHook` field; hook called after `CurrentStep` advance
+  - `internal/workflow/state_test.go` -- comprehensive test suite (30+ tests + benchmarks)
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -353,7 +373,7 @@ _None currently_
 | T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Completed |
 | T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Completed |
 | T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Completed |
-| T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Not Started |
+| T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Completed |
 | T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Not Started |
 | T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Not Started |
 | T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Not Started |
