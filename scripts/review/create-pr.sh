@@ -108,6 +108,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+_on_err() {
+    local code=$? line=${1:-?}
+    printf '\n  %b%b create-pr error%b  line %d  exit %d\n' \
+        "$_RED" "$_BOLD" "$_RESET" "$line" "$code" >&2
+    printf '  %b  failed command: %s%b\n' "$_DIM" "${BASH_COMMAND:-?}" "$_RESET" >&2
+}
+trap '_on_err $LINENO' ERR
+
 resolve_base_ref() {
     if git show-ref --verify --quiet "refs/heads/$BASE_BRANCH"; then
         echo "$BASE_BRANCH"
@@ -391,32 +399,43 @@ detect_change_types() {
 
 fill_pr_checkboxes() {
     # Type of Change
-    [[ "$CHANGE_BUGFIX"   == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        "Bug fix (non-breaking change fixing an issue)"
-    [[ "$CHANGE_FEATURE"  == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        "New feature (non-breaking change adding functionality)"
-    [[ "$CHANGE_BREAKING" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        "Breaking change (fix or feature causing existing functionality to change)"
-    [[ "$CHANGE_REFACTOR" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        "Refactor (code change that neither fixes a bug nor adds a feature)"
-    [[ "$CHANGE_DOCS"     == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        "Documentation / config update"
+    if [[ "$CHANGE_BUGFIX"   == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" "Bug fix (non-breaking change fixing an issue)"
+    fi
+    if [[ "$CHANGE_FEATURE"  == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" "New feature (non-breaking change adding functionality)"
+    fi
+    if [[ "$CHANGE_BREAKING" == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" "Breaking change (fix or feature causing existing functionality to change)"
+    fi
+    if [[ "$CHANGE_REFACTOR" == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" "Refactor (code change that neither fixes a bug nor adds a feature)"
+    fi
+    if [[ "$CHANGE_DOCS"     == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" "Documentation / config update"
+    fi
 
     # Verification
-    [[ "$VERIFY_BUILD"     == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        '`go build ./cmd/raven/` passes'
-    [[ "$VERIFY_VET"       == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        '`go vet ./...` passes'
-    [[ "$VERIFY_TEST"      == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        '`go test ./...` passes'
-    [[ "$VERIFY_TEST_RACE" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        '`go test -race ./...` passes'
-    [[ "$VERIFY_MOD_TIDY"  == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        '`go mod tidy` produces no diff'
+    if [[ "$VERIFY_BUILD"     == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" '`go build ./cmd/raven/` passes'
+    fi
+    if [[ "$VERIFY_VET"       == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" '`go vet ./...` passes'
+    fi
+    if [[ "$VERIFY_TEST"      == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" '`go test ./...` passes'
+    fi
+    if [[ "$VERIFY_TEST_RACE" == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" '`go test -race ./...` passes'
+    fi
+    if [[ "$VERIFY_MOD_TIDY"  == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" '`go mod tidy` produces no diff'
+    fi
 
     # Task Tracking
-    [[ "$PROGRESS_UPDATED" == "true" ]] && tick_checkbox "$TEMP_BODY_FILE" \
-        '`docs/tasks/PROGRESS.md` updated if task completion status changed'
+    if [[ "$PROGRESS_UPDATED" == "true" ]]; then
+        tick_checkbox "$TEMP_BODY_FILE" '`docs/tasks/PROGRESS.md` updated if task completion status changed'
+    fi
 }
 
 create_pr() {

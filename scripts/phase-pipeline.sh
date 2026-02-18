@@ -1500,16 +1500,18 @@ run_pr_creation() {
         pr_args+=(--dry-run)
     fi
 
+    local pr_log="$RUN_DIR/pr-create.log"
     local pr_rc=0
-    set +e
-    "$pr_script" "${pr_args[@]}"
-    pr_rc=$?
-    set -e
+    if capture_cmd "$pr_log" "$pr_script" "${pr_args[@]}"; then
+        pr_rc=0
+    else
+        pr_rc=$?
+    fi
 
     if [[ "$pr_rc" -ne 0 ]]; then
         PR_STATUS="failed"
         persist_metadata
-        die "PR creation failed (exit code $pr_rc)"
+        die "PR creation failed (exit code $pr_rc) — see ${pr_log#"$PROJECT_ROOT"/}"
     fi
 
     PR_STATUS="completed"

@@ -63,12 +63,24 @@ Update `docs/tasks/PROGRESS.md`:
 
 1. **Summary table**: Increment "Completed", decrement "Not Started"
 2. **Phase task table**: Change task status from "Not Started" to "Completed"
-3. **Completed Tasks section**: Add entry with:
-   - Task ID and title
-   - Date (today)
-   - What was built (bullet points)
-   - Files created/modified
-   - Verification status
+3. **Completed Tasks section**: Add a new individual task entry using **exactly** this format,
+   directly inside `## Completed Tasks` — do NOT append to any existing consolidated phase block:
+
+```markdown
+### T-XXX: Task Name
+
+- **Status:** Completed
+- **Date:** YYYY-MM-DD
+- **What was built:**
+  - <bullet describing key component or feature>
+  - <bullet describing key component or feature>
+- **Files created/modified:**
+  - `path/to/file.go` -- one-line description
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+```
+
+The `### T-XXX:` header is required — it is how the consolidation script identifies
+per-task entries. Never add completions as rows inside an existing phase table.
 
 Update `docs/tasks/task-state.conf`:
 

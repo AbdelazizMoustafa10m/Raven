@@ -62,3 +62,13 @@ func (t *Task) IsReady(completedTasks map[string]bool) bool {
 func ValidStatus(s TaskStatus) bool {
 	return validStatuses[s]
 }
+
+// ValidStatuses returns all valid task status values.
+func ValidStatuses() []TaskStatus {
+	return []TaskStatus{StatusNotStarted, StatusInProgress, StatusCompleted, StatusBlocked, StatusSkipped}
+}
+
+// IsValid returns true if the status is a recognized value.
+func (s TaskStatus) IsValid() bool {
+	return validStatuses[s]
+}
