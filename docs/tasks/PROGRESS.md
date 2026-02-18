@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 34 |
+| Completed | 36 |
 | In Progress | 0 |
-| Not Started | 55 |
+| Not Started | 53 |
 
 ---
 
@@ -249,6 +249,38 @@
 
 ---
 
+### T-035: Multi-Agent Parallel Review Orchestrator (+ T-058 jsonutil package)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `internal/jsonutil` package with `ExtractInto(text, dst)` and `ExtractFirst(text)` — brace-counting JSON extraction from freeform AI agent output (no regex, handles nested objects, escaped quotes, markdown code fences, multiple JSON blobs)
+  - `ReviewEvent` struct (Type, Agent, Message, Timestamp) for TUI consumption
+  - `AgentError` struct recording per-agent failures that do not abort the pipeline
+  - `OrchestratorResult` struct (Consolidated, Stats, DiffResult, Duration, AgentErrors)
+  - `ReviewOrchestrator` struct wiring together agent.Registry, DiffGenerator, PromptBuilder, Consolidator, concurrency, logger, and an optional events channel
+  - `NewReviewOrchestrator` constructor clamping concurrency to ≥1
+  - `Run(ctx, opts)` pipeline: validates inputs, generates diff, assigns file buckets per mode, fans out via errgroup with SetLimit, captures per-agent errors without aborting, consolidates results
+  - `DryRun(ctx, opts)` returns human-readable plan (base branch, mode, agents, file counts, DryRunCommand per agent) without invoking any agent
+  - `runAgent` private helper: builds prompt, calls agent.Run, checks rate limit, checks exit code, extracts JSON, validates, emits events
+  - `assignFiles` private helper: all-mode sends all files to every agent; split-mode uses SplitFiles with per-agent bucket assignment
+  - `emit` private helper: non-blocking channel send (event dropped if channel full or nil)
+  - Full table-driven test suite: 20+ tests covering success paths, all error paths, event emission, nil events, dry run, assignFiles modes
+- **Files created:**
+  - `internal/jsonutil/jsonutil.go` -- ExtractInto, ExtractFirst, collectCandidates, matchingBrace
+  - `internal/jsonutil/jsonutil_test.go` -- 20+ table-driven test cases including ReviewResult extraction from prose
+  - `internal/review/orchestrator.go` -- ReviewOrchestrator and all supporting types
+  - `internal/review/orchestrator_test.go` -- 20+ test functions covering full pipeline, error handling, events
+- **Key Decisions:**
+  1. `collectCandidates` returns candidates in order of first `{` position (outer objects first), so `ExtractInto` naturally prefers the outermost JSON blob matching the target type
+  2. Per-agent errors always return `nil` from the errgroup worker goroutine — failures are captured in `AgentError` slices and never abort the pipeline
+  3. `concurrency` from `ReviewOpts` overrides the orchestrator's field-level default at call time, consistent with the rest of the codebase (call-site wins over constructor default)
+  4. `emit` uses a non-blocking select to avoid workers stalling if the consumer is slow
+  5. `assignFiles` always returns a slice of length `n` (one bucket per agent) so the loop index is always safe even in split mode with fewer files than agents
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./internal/jsonutil/... ./internal/review/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -272,7 +304,7 @@ _None currently_
 | T-032 | Git Diff Generation and Risk Classification | Must Have | Medium (6-10hrs) | Completed |
 | T-033 | Review Prompt Synthesis | Must Have | Medium (6-10hrs) | Completed |
 | T-034 | Finding Consolidation and Deduplication | Must Have | Medium (6-10hrs) | Completed |
-| T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Not Started |
+| T-035 | Multi-Agent Parallel Review Orchestrator | Must Have | Large (14-20hrs) | Completed |
 | T-036 | Review Report Generation (Markdown) | Must Have | Medium (6-10hrs) | Not Started |
 | T-037 | Verification Command Runner | Must Have | Medium (6-10hrs) | Not Started |
 | T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Not Started |
