@@ -1,0 +1,7 @@
+[agents.claude-3]
+command = "claude"
+model = "claude-3-opus"
+
+[agents."gpt.4"]
+command = "gpt"
+model = "gpt-4"

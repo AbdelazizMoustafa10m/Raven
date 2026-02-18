@@ -4,15 +4,82 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 0 |
+| Completed | 15 |
 | In Progress | 0 |
-| Not Started | 87 |
+| Not Started | 72 |
 
 ---
 
 ## Completed Tasks
 
-_None yet_
+### Phase 1: Foundation (T-001 to T-015)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 15 tasks
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Go module & project scaffold | T-001 | Module initialization, 12 internal package stubs, dependency declarations, `testdata/` and `templates/` directories |
+| Makefile & build targets | T-002 | 12 GNU make targets, ldflags version injection, `CGO_ENABLED=0`, debug build support |
+| Build info package | T-003 | `Info` struct, `GetInfo()` accessor, `String()` formatter with JSON struct tags |
+| Core data types | T-004 | `WorkflowState`, `StepRecord`, `RunOpts`, `RunResult`, `RateLimitInfo`, `Task`, `Phase`, `TaskStatus` with JSON serialization |
+| Structured logging | T-005 | `internal/logging` package: `Setup()`, `New(component)`, `SetOutput()`, level constants, stderr-only output |
+| Cobra root command | T-006 | Root command, 6 global persistent flags, `PersistentPreRunE` with env-var overrides, `Execute() int` |
+| Version command | T-007 | `raven version` with `--json` flag, uses `buildinfo.GetInfo()` |
+| Shell completion | T-008 | `raven completion <shell>` for bash/zsh/fish/PowerShell via Cobra built-ins |
+| TOML config types & loading | T-009 | `Config` type hierarchy, `FindConfigFile()` dir-walk, `LoadFromFile()`, `NewDefaults()` |
+| Config resolution | T-010 | Four-layer merge (CLI > env > file > defaults), `ResolvedConfig` with source tracking, `CLIOverrides`, `EnvFunc` injection |
+| Config validation | T-011 | `Validate()`, `ValidationResult`/`ValidationIssue`/`ValidationSeverity` types, unknown-key detection via `toml.MetaData.Undecoded()` |
+| Config debug & validate commands | T-012 | `raven config debug` (color-coded source annotations), `raven config validate` (errors/warnings), shared `loadAndResolveConfig()` helper |
+| Embedded project templates | T-013 | `//go:embed all:templates`, `TemplateVars`, `ListTemplates()`, `TemplateExists()`, `RenderTemplate()` with `text/template` processing |
+| Init command | T-014 | `raven init [template]` with `--name`/`--force` flags, path-traversal guard, PersistentPreRunE override skipping config load |
+| Git client wrapper | T-015 | `GitClient` wrapping all git CLI ops, branch/status/stash/diff/log/push methods, `EnsureClean()` auto-stash recovery |
+
+#### Key Technical Decisions
+
+1. **BurntSushi/toml over encoding/toml** -- `MetaData.Undecoded()` enables unknown-key detection without reflection hacks
+2. **Pointer types in CLIOverrides** -- `*string`/`*bool` fields distinguish "not set" from "set to zero value" for correct priority merging
+3. **`all:` embed prefix for templates** -- Required to include dotfiles (`.github/`, `.gitkeep`) in the embedded FS
+4. **`TaskStatus` as string constants, not iota** -- Values must round-trip through JSON/TOML without a custom marshaler
+5. **`runSilent` helper in GitClient** -- Separates exec failures (exitCode=-1) from non-zero git exit codes for accurate error handling
+6. **`CGO_ENABLED=0` for all builds** -- Pure Go cross-compilation; no C dependencies anywhere in the stack
+7. **charmbracelet/log over slog** -- Pretty terminal output with component prefixes, consistent with the TUI ecosystem
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Entry point | `cmd/raven/main.go` |
+| Build targets & ldflags | `Makefile` |
+| Build info variables | `internal/buildinfo/buildinfo.go` |
+| WorkflowState, StepRecord | `internal/workflow/state.go` |
+| RunOpts, RunResult, RateLimitInfo | `internal/agent/types.go` |
+| Task, Phase, TaskStatus | `internal/task/types.go` |
+| Logger factory | `internal/logging/logging.go` |
+| Root command & global flags | `internal/cli/root.go` |
+| Version command | `internal/cli/version.go` |
+| Shell completion command | `internal/cli/completion.go` |
+| Config type hierarchy | `internal/config/config.go` |
+| Default config values | `internal/config/defaults.go` |
+| Config file discovery & loading | `internal/config/load.go` |
+| Four-layer config resolution | `internal/config/resolve.go` |
+| Config validation | `internal/config/validate.go` |
+| Config debug/validate commands | `internal/cli/config_cmd.go` |
+| Template embedding & rendering | `internal/config/templates.go` |
+| Embedded go-cli template | `internal/config/templates/go-cli/raven.toml.tmpl` |
+| Init command | `internal/cli/init_cmd.go` |
+| Git client wrapper | `internal/git/client.go` |
+| Git auto-stash recovery | `internal/git/recovery.go` |
+| Dependency declarations | `tools.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
 
 ---
 
@@ -23,37 +90,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 1: Foundation (T-001 to T-015)
-
-- **Status:** Not Started
-- **Tasks:** 15 (15 Must Have)
-- **Estimated Effort:** 50-90 hours
-- **PRD Roadmap:** Weeks 1-2
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-001 | Go Project Initialization and Module Setup | Must Have | Medium (4-8hrs) | Not Started |
-| T-002 | Makefile with Build Targets and ldflags | Must Have | Small (2-4hrs) | Not Started |
-| T-003 | Build Info Package -- internal/buildinfo | Must Have | Small (1-2hrs) | Not Started |
-| T-004 | Central Data Types (WorkflowState, RunOpts, RunResult, Task, Phase) | Must Have | Medium (4-8hrs) | Not Started |
-| T-005 | Structured Logging with charmbracelet/log | Must Have | Small (2-4hrs) | Not Started |
-| T-006 | Cobra CLI Root Command and Global Flags | Must Have | Medium (4-8hrs) | Not Started |
-| T-007 | Version Command -- raven version | Must Have | Small (1-2hrs) | Not Started |
-| T-008 | Shell Completion Command -- raven completion | Must Have | Small (2-3hrs) | Not Started |
-| T-009 | TOML Configuration Types and Loading | Must Have | Medium (6-10hrs) | Not Started |
-| T-010 | Config Resolution -- CLI > env > file > defaults | Must Have | Medium (6-10hrs) | Not Started |
-| T-011 | Configuration Validation and Unknown Key Detection | Must Have | Medium (4-6hrs) | Not Started |
-| T-012 | Config Debug and Validate Commands | Must Have | Medium (4-6hrs) | Not Started |
-| T-013 | Embedded Project Templates -- go-cli | Must Have | Medium (4-8hrs) | Not Started |
-| T-014 | Init Command -- raven init [template] | Must Have | Medium (4-6hrs) | Not Started |
-| T-015 | Git Client Wrapper -- internal/git/client.go | Must Have | Medium (6-10hrs) | Not Started |
-
-**Deliverable:** `raven version`, `raven init go-cli`, and `raven config debug` work correctly.
-
----
 
 ### Phase 2: Task System & Agent Adapters (T-016 to T-030)
 
@@ -235,4 +271,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-17_
+_Last updated: 2026-02-18_

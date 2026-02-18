@@ -2,6 +2,12 @@
 
 set -eo pipefail
 
+if ((BASH_VERSINFO[0] < 4)); then
+    printf 'ERROR: Bash 4+ is required (found %s).\n' "$BASH_VERSION" >&2
+    printf '  macOS fix: brew install bash\n' >&2
+    exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
@@ -42,12 +48,23 @@ _SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 # ── Phase Configuration ─────────────────────────────────────────────
 
 DEFAULT_IMPL_AGENT="codex"
+DEFAULT_IMPL_MODEL=""  # Empty means use agent's default; preset: "opus" or "sonnet" for claude
 DEFAULT_REVIEW_MODE="all"
 DEFAULT_REVIEW_AGENT="codex"
 DEFAULT_REVIEW_CONCURRENCY=4
 DEFAULT_MAX_REVIEW_CYCLES=2
 DEFAULT_FIX_AGENT="codex"
 DEFAULT_BASE_BRANCH="main"
+
+# Model preset mappings (agent -> preset -> full model ID)
+declare -A CLAUDE_MODEL_PRESETS=(
+    ["opus"]="claude-opus-4-6"
+    ["sonnet"]="claude-sonnet-4-6"
+)
+declare -A CODEX_MODEL_PRESETS=(
+    ["default"]="gpt-5.3-codex"
+    ["o3"]="o3"
+)
 
 PHASE_ID=""
 # shellcheck disable=SC2034  # used for debugging/metadata
@@ -56,6 +73,8 @@ FROM_PHASE=""
 PHASES_TO_RUN=()
 CHAIN_BASE=""          # Tracks previous phase branch for multi-phase chaining
 IMPL_AGENT="$DEFAULT_IMPL_AGENT"
+IMPL_MODEL="$DEFAULT_IMPL_MODEL"  # Full model ID or empty for agent default
+IMPL_MODEL_PRESET=""               # User-selected preset: opus, sonnet, o3, etc.
 REVIEW_MODE="$DEFAULT_REVIEW_MODE"
 REVIEW_AGENT="$DEFAULT_REVIEW_AGENT"
 REVIEW_CONCURRENCY="$DEFAULT_REVIEW_CONCURRENCY"
@@ -112,6 +131,10 @@ Required (one of):
 Options:
   --interactive                Force interactive wizard prompts
   --impl-agent <claude|codex>
+  --impl-model <preset|model-id>
+                               Model for implementation agent:
+                               - claude: opus, sonnet (or full model ID)
+                               - codex: default, o3 (or full model ID)
   --review <none|agent|all>
   --review-agent <claude|codex|gemini>
   --review-concurrency <n>
@@ -296,6 +319,74 @@ capture_cmd() {
     local rc=$?
     set -e
     return $rc
+}
+
+# Resolve IMPL_MODEL from IMPL_MODEL_PRESET and IMPL_AGENT.
+# If IMPL_MODEL_PRESET is a known preset for the agent, maps to full model ID.
+# If IMPL_MODEL_PRESET looks like a full model ID (contains hyphen or dot), uses as-is.
+# If empty, leaves IMPL_MODEL empty (agent uses its default).
+resolve_impl_model() {
+    if [[ -z "$IMPL_MODEL_PRESET" ]]; then
+        IMPL_MODEL=""
+        return 0
+    fi
+
+    local preset="${IMPL_MODEL_PRESET,,}"  # lowercase for matching
+
+    if [[ "$IMPL_AGENT" == "claude" ]]; then
+        if [[ -n "${CLAUDE_MODEL_PRESETS[$preset]:-}" ]]; then
+            IMPL_MODEL="${CLAUDE_MODEL_PRESETS[$preset]}"
+            return 0
+        fi
+    elif [[ "$IMPL_AGENT" == "codex" ]]; then
+        if [[ -n "${CODEX_MODEL_PRESETS[$preset]:-}" ]]; then
+            IMPL_MODEL="${CODEX_MODEL_PRESETS[$preset]}"
+            return 0
+        fi
+    fi
+
+    # Cross-agent mismatch: error early instead of failing deep in the agent CLI
+    if [[ "$IMPL_AGENT" == "claude" && -n "${CODEX_MODEL_PRESETS[$preset]:-}" ]]; then
+        die "--impl-model '$IMPL_MODEL_PRESET' is a codex preset, not valid for claude. Claude presets: $(get_model_presets_for_agent claude)"
+        return 1  # safety net if die() doesn't exit
+    elif [[ "$IMPL_AGENT" == "codex" && -n "${CLAUDE_MODEL_PRESETS[$preset]:-}" ]]; then
+        die "--impl-model '$IMPL_MODEL_PRESET' is a claude preset, not valid for codex. Codex presets: $(get_model_presets_for_agent codex)"
+        return 1  # safety net if die() doesn't exit
+    fi
+
+    # Not a recognized preset - treat as full model ID if it looks like one
+    if [[ "$IMPL_MODEL_PRESET" == *-* || "$IMPL_MODEL_PRESET" == *.* ]]; then
+        IMPL_MODEL="$IMPL_MODEL_PRESET"
+        return 0
+    fi
+
+    # Unknown short name that isn't a preset for any agent
+    die "Unknown model preset '$IMPL_MODEL_PRESET' for $IMPL_AGENT agent. Known presets: $(get_model_presets_for_agent "$IMPL_AGENT"). Use a full model ID (e.g., claude-opus-4-6) for custom models."
+    return 1  # safety net if die() doesn't exit
+}
+
+# Get available model presets for an agent.
+# Arguments: agent (claude|codex)
+# Outputs: space-separated list of preset names
+get_model_presets_for_agent() {
+    local agent="$1"
+    case "$agent" in
+        claude) echo "opus sonnet" ;;
+        codex)  echo "default o3" ;;
+        *)      echo "" ;;
+    esac
+}
+
+# Get the default model preset for an agent.
+# Arguments: agent (claude|codex)
+# Outputs: default preset name
+get_default_model_preset() {
+    local agent="$1"
+    case "$agent" in
+        claude) echo "opus" ;;
+        codex)  echo "default" ;;
+        *)      echo "" ;;
+    esac
 }
 
 resolve_phases_to_run() {
@@ -749,6 +840,11 @@ _display_config_summary() {
         local body=""
         body+="$(printf '  %-22s %s\n' "Phase(s)" "$phases_display")"
         body+="$(printf '\n  %-22s %s' "Impl agent" "$IMPL_AGENT")"
+        if [[ -n "$IMPL_MODEL" ]]; then
+            body+="$(printf '\n  %-22s %s' "Impl model" "$IMPL_MODEL")"
+        elif [[ -n "$IMPL_MODEL_PRESET" ]]; then
+            body+="$(printf '\n  %-22s %s (preset)' "Impl model" "$IMPL_MODEL_PRESET")"
+        fi
         body+="$(printf '\n  %-22s %s' "Review mode" "$REVIEW_MODE")"
         if [[ "$REVIEW_MODE" != "none" ]]; then
             body+="$(printf '\n  %-22s %s' "Review agent" "$REVIEW_AGENT")"
@@ -780,6 +876,11 @@ _display_config_summary() {
         printf '  %b│%b\n' "$_YELLOW" "$_RESET"
         printf '  %b│%b  %-20s  %b%s%b\n' "$_YELLOW" "$_RESET" "Phase(s)" "$_WHITE" "$phases_display" "$_RESET"
         printf '  %b│%b  %-20s  %b%s%b\n' "$_YELLOW" "$_RESET" "Impl agent" "$_MAGENTA" "$IMPL_AGENT" "$_RESET"
+        if [[ -n "$IMPL_MODEL" ]]; then
+            printf '  %b│%b  %-20s  %b%s%b\n' "$_YELLOW" "$_RESET" "Impl model" "$_CYAN" "$IMPL_MODEL" "$_RESET"
+        elif [[ -n "$IMPL_MODEL_PRESET" ]]; then
+            printf '  %b│%b  %-20s  %b%s (preset)%b\n' "$_YELLOW" "$_RESET" "Impl model" "$_CYAN" "$IMPL_MODEL_PRESET" "$_RESET"
+        fi
         printf '  %b│%b  %-20s  %s\n' "$_YELLOW" "$_RESET" "Review mode" "$REVIEW_MODE"
         if [[ "$REVIEW_MODE" != "none" ]]; then
             printf '  %b│%b  %-20s  %s\n' "$_YELLOW" "$_RESET" "Review agent" "$REVIEW_AGENT"
@@ -830,6 +931,18 @@ run_interactive_wizard() {
     fi
 
     prompt_choice IMPL_AGENT "Select implementation agent:" "$IMPL_AGENT" "codex" "claude"
+
+    # Model selection for implementation agent
+    local model_presets
+    model_presets="$(get_model_presets_for_agent "$IMPL_AGENT")"
+    if [[ -n "$model_presets" ]]; then
+        local default_preset
+        default_preset="$(get_default_model_preset "$IMPL_AGENT")"
+        # shellcheck disable=SC2086  # word splitting is intentional
+        prompt_choice IMPL_MODEL_PRESET "Select ${IMPL_AGENT} model:" "${IMPL_MODEL_PRESET:-$default_preset}" $model_presets
+        resolve_impl_model
+    fi
+
     prompt_choice REVIEW_MODE "Select review mode:" "$REVIEW_MODE" "all" "agent" "none"
 
     if [[ "$REVIEW_MODE" == "agent" ]]; then
@@ -960,6 +1073,8 @@ phase=$PHASE_ID
 branch=$EXPECTED_BRANCH
 base_branch=$BASE_BRANCH
 impl_agent=$IMPL_AGENT
+impl_model=$IMPL_MODEL
+impl_model_preset=$IMPL_MODEL_PRESET
 review_mode=$REVIEW_MODE
 review_agent=$REVIEW_AGENT
 review_concurrency=$REVIEW_CONCURRENCY
@@ -1126,9 +1241,17 @@ run_implementation() {
     local impl_log="$RUN_DIR/implementation.log"
     local impl_rc=0
     local blocked_reason=""
-    log_step "$_SYM_RUNNING" "Implementation starting ${_DIM}($IMPL_AGENT agent, phase $PHASE_ID)${_RESET}"
+    local model_display="${IMPL_MODEL:-default}"
+    log_step "$_SYM_RUNNING" "Implementation starting ${_DIM}($IMPL_AGENT agent, model=$model_display, phase $PHASE_ID)${_RESET}"
 
-    if capture_cmd "$impl_log" "$impl_script" --phase "$PHASE_ID"; then
+    # Build implementation command arguments
+    local impl_args=()
+    impl_args+=(--phase "$PHASE_ID")
+    if [[ -n "$IMPL_MODEL" ]]; then
+        impl_args+=(--model "$IMPL_MODEL")
+    fi
+
+    if capture_cmd "$impl_log" "$impl_script" "${impl_args[@]}"; then
         impl_rc=0
     else
         impl_rc=$?
@@ -1377,7 +1500,17 @@ run_pr_creation() {
         pr_args+=(--dry-run)
     fi
 
+    local pr_rc=0
+    set +e
     "$pr_script" "${pr_args[@]}"
+    pr_rc=$?
+    set -e
+
+    if [[ "$pr_rc" -ne 0 ]]; then
+        PR_STATUS="failed"
+        persist_metadata
+        die "PR creation failed (exit code $pr_rc)"
+    fi
 
     PR_STATUS="completed"
     log_step "$_SYM_CHECK" "Pull request ${_GREEN}created${_RESET}"
@@ -1399,6 +1532,10 @@ parse_args() {
                 ;;
             --impl-agent)
                 IMPL_AGENT="$2"
+                shift 2
+                ;;
+            --impl-model)
+                IMPL_MODEL_PRESET="$2"
                 shift 2
                 ;;
             --review)
@@ -1604,6 +1741,8 @@ main() {
     # for non-interactive, call it here
     if [[ "$INTERACTIVE" != "true" ]]; then
         resolve_phases_to_run
+        # Resolve model preset to full model ID for CLI usage
+        resolve_impl_model
     fi
 
     preflight

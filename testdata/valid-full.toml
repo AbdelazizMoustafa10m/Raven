@@ -1,0 +1,43 @@
+[project]
+name = "my-project"
+language = "go"
+tasks_dir = "docs/tasks"
+task_state_file = "docs/tasks/task-state.conf"
+phases_conf = "docs/tasks/phases.conf"
+progress_file = "docs/tasks/PROGRESS.md"
+log_dir = "scripts/logs"
+prompt_dir = "prompts"
+branch_template = "phase/{phase_id}-{slug}"
+verification_commands = ["go build ./...", "go test ./...", "go vet ./..."]
+
+[agents.claude]
+command = "claude"
+model = "claude-opus-4-6"
+effort = "high"
+prompt_template = "prompts/implement-claude.md"
+allowed_tools = "Edit,Write,Read,Glob,Grep,Bash(go*),Bash(git*)"
+
+[agents.codex]
+command = "codex"
+model = "gpt-5.3-codex"
+effort = "high"
+prompt_template = "prompts/implement-codex.md"
+
+[review]
+extensions = '(\.go$|go\.mod$|go\.sum$)'
+risk_patterns = '^(cmd/|internal/|scripts/)'
+prompts_dir = ".github/review/prompts"
+rules_dir = ".github/review/rules"
+project_brief_file = ".github/review/PROJECT_BRIEF.md"
+
+[workflows.implement-review-pr]
+description = "Full implementation cycle"
+steps = ["implement", "review", "fix", "pr"]
+
+[workflows.implement-review-pr.transitions.implement]
+success = "review"
+failure = "implement"
+
+[workflows.implement-review-pr.transitions.review]
+success = "fix"
+failure = "review"

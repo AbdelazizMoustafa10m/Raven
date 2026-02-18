@@ -1,0 +1,6 @@
+[workflows.test]
+description = """
+This is a multi-line
+workflow description
+"""
+steps = ["step1", "step2"]

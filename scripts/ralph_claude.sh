@@ -12,7 +12,7 @@
 #   ./scripts/ralph_claude.sh --task T-003                  # Run single task
 #   ./scripts/ralph_claude.sh --phase 1 --dry-run           # Preview prompt only
 #   ./scripts/ralph_claude.sh --phase all                   # Run all phases sequentially
-#   ./scripts/ralph_claude.sh --model claude-sonnet-4-5-20250929  # Use specific model
+#   ./scripts/ralph_claude.sh --model claude-sonnet-4-6  # Use specific model
 #
 # Prerequisites:
 #   - Claude Code CLI installed (`claude` command available)
@@ -50,7 +50,12 @@ source "$SCRIPT_DIR/ralph-lib.sh"
 # Claude-Specific Allowed Tools
 # =============================================================================
 
-CLAUDE_ALLOWED_TOOLS='Edit,Write,Read,Glob,Grep,Task,WebSearch,WebFetch,Bash(go build*),Bash(go test*),Bash(go vet*),Bash(go mod*),Bash(go get*),Bash(go run*),Bash(go fmt*),Bash(go install*),Bash(go version*),Bash(go generate*),Bash(git add*),Bash(git commit*),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(mkdir*),Bash(ls*),Bash(make*),Bash(chmod*),Bash(curl *),Bash(wget *),Bash(golangci-lint*),Bash(./bin/*),Bash(./scripts/*)'
+# Note: "git commit" in dontAsk mode is unreliable due to Claude Code
+# hallucinating permission denials (issue #1520). The recovery mechanism
+# in ralph-lib.sh handles this by extracting the agent's intended commit
+# message and auto-committing. Using "Bash(git *)" for simplicity since
+# the model doesn't actually try the command regardless of pattern specificity.
+CLAUDE_ALLOWED_TOOLS='Edit,Write,Read,Glob,Grep,Task,WebSearch,WebFetch,Bash(go build*),Bash(go test*),Bash(go vet*),Bash(go mod*),Bash(go get*),Bash(go run*),Bash(go fmt*),Bash(go install*),Bash(go version*),Bash(go generate*),Bash(git *),Bash(mkdir*),Bash(ls*),Bash(make*),Bash(chmod*),Bash(curl *),Bash(wget *),Bash(golangci-lint*),Bash(./bin/*),Bash(./scripts/*)'
 
 # =============================================================================
 # Agent-Specific Functions (required by ralph-lib.sh)
@@ -125,7 +130,7 @@ Options:
 
 Examples:
   ./scripts/ralph_claude.sh --phase 1                        # Run all Phase 1 tasks
-  ./scripts/ralph_claude.sh --phase 1 --model claude-sonnet-4-5-20250929  # Use Sonnet
+  ./scripts/ralph_claude.sh --phase 1 --model claude-sonnet-4-6  # Use Sonnet
   ./scripts/ralph_claude.sh --phase 1 --effort medium        # Lower thinking effort
   ./scripts/ralph_claude.sh --phase 1 --max-iterations 5     # Cap at 5 iterations
   ./scripts/ralph_claude.sh --phase 1 --max-limit-waits 3    # Allow 3 rate-limit waits
