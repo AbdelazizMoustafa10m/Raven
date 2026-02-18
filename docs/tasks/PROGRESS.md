@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 42 |
+| Completed | 43 |
 | In Progress | 0 |
-| Not Started | 47 |
+| Not Started | 46 |
 
 ---
 
@@ -406,6 +406,26 @@
 
 ---
 
+### T-041: CLI Command -- raven review
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `raven review` Cobra command wiring together the full review pipeline (DiffGenerator, PromptBuilder, Consolidator, ReviewOrchestrator, ReportGenerator)
+  - `--agents` flag for comma-separated agent selection with fallback to `raven.toml` configured agents
+  - `--concurrency`, `--mode` (all/split), `--base`, `--output` flags with validation
+  - Global `--dry-run` flag support via `orchestrator.DryRun()` path
+  - Exit code semantics: 0=APPROVED, 1=error, 2=CHANGES_NEEDED/BLOCKING via `os.Exit(2)`
+  - Agent registry reuse via existing `buildAgentRegistry()` helper from `implement.go`
+  - Shell completions for `--mode` and `--agents` flags
+  - 55+ unit tests covering flag parsing, mode validation, agent resolution, config loading, output writing, and edge cases
+- **Files created/modified:**
+  - `internal/cli/review.go` -- `raven review` command with full pipeline wiring
+  - `internal/cli/review_test.go` -- 55+ table-driven tests; 85%+ coverage
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ### T-040: PR Creation via gh CLI
 
 - **Status:** Completed
@@ -457,7 +477,7 @@ _None currently_
 | T-038 | Review Fix Engine | Must Have | Large (14-20hrs) | Completed |
 | T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Completed |
 | T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Completed |
-| T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Not Started |
+| T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Completed |
 | T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Not Started |
 
 **Deliverable:** `raven review --agents claude,codex --concurrency 4` produces a consolidated review report.
