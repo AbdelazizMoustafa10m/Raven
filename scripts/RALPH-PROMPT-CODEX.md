@@ -34,8 +34,13 @@ Implement the assigned task, verify it, update progress, and commit.
 2. Read the task spec carefully
 3. Read skills/*.md for GO, Cobra, and CLI best practices.
 4. Create/modify files per the spec
+   - Spawn a Go engineer subagent for implementation
+   - check if implementation tasks are independent and can be paralleized without affecting each other
+   - if they can be paralleized, spawn multiple Go engineer subagents for implementation
 5. Write tests alongside implementation
+   - Spawn a testing engineer subagent for tests
 6. Follow Go conventions and best practices from your skill directory (.codex/skills/)
+7. Run final verification
 
 ### Step 3: Verify
 
@@ -89,7 +94,8 @@ Update `docs/tasks/task-state.conf`:
 
 Stage and commit the changes.
 
-This is critical: do not exit after updating code/`PROGRESS.md` unless a commit was created for `{{TASK_ID}}`.
+- **This is critical:** do not exit after updating code/`PROGRESS.md` unless a commit was created for `{{TASK_ID}}`.
+- **If you find that you are denied the permission to commit**, leave the commit message in your logs and the auto commit recovery of the pipeline will commit it for you and exit. 
 
 ```bash
 git add <specific-files>
