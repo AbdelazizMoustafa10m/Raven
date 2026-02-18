@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 52 |
+| Completed | 53 |
 | In Progress | 0 |
-| Not Started | 37 |
+| Not Started | 36 |
 
 ---
 
@@ -410,6 +410,44 @@
 
 ---
 
+### T-050: Pipeline Orchestrator Core -- Multi-Phase Lifecycle
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `PipelineOrchestrator` struct with `engine`, `store`, `gitClient`, `config`, `logger`, `events` fields
+  - `PipelineOpts` struct: `PhaseID`, `FromPhase`, `SkipImplement`, `SkipReview`, `SkipFix`, `SkipPR`, `ImplAgent`, `ReviewAgent`, `FixAgent`, `ReviewConcurrency`, `MaxReviewCycles`, `DryRun`, `Interactive`
+  - `PhaseResult` struct with 10 JSON-tagged fields capturing per-phase lifecycle outcome
+  - `PipelineResult` struct with per-phase slice, total duration, and aggregate status
+  - `NewPipelineOrchestrator(engine, store, gitClient, cfg, opts...)` constructor with functional options
+  - `WithPipelineLogger` and `WithPipelineEvents` functional option constructors
+  - `Run(ctx, opts) (*PipelineResult, error)` -- full multi-phase lifecycle with context cancellation between phases, agent normalisation, resume-from-checkpoint, per-phase `runPhase` dispatch, and post-phase checkpointing
+  - `DryRun(opts) string` -- formatted plan listing all phases, branches, active steps, and agent names
+  - `resolvePhases` -- loads phases.conf, supports `PhaseID=""/"all"`, specific numeric ID, and `FromPhase` filter
+  - `filterFromPhase` -- selects phases with ID >= fromPhase
+  - `runPhase` -- creates per-phase run ID, manages git branch via `ensureBranch`, deep-copies workflow definition via `applySkipFlags`, sets 11 metadata keys on `WorkflowState`, drives `engine.Run`, extracts `PhaseResult` from final state
+  - `applySkipFlags` -- deep-copies and rewires the `implement-review-pr` builtin definition based on 4 orthogonal skip flags; guards against terminal initial step (all-skip edge case)
+  - `ensureBranch` -- creates `raven/phase-N` branch or checks it out if it exists; skipped when `gitClient` is nil
+  - `savePipelineState` / `loadOrCreatePipelineState` -- JSON round-trip of `[]PhaseResult` and `PipelineOpts` into `workflow.StateStore`; detects resumable incomplete pipeline runs
+  - `extractPhaseResult` -- reads `impl_status`, `review_verdict`, `fix_status`, `pr_url`, `error` metadata into `PhaseResult`
+  - `normalizeAgent` -- falls back to `"claude"` for empty or unknown agent names
+  - `activeSteps` -- computes ordered list of step names considering skip flags; used in dry-run output
+  - Phase/pipeline status constants: 8 phase statuses + 3 pipeline statuses
+  - 35+ table-driven unit tests covering all skip flag combinations, phase resolution, context cancellation, checkpointing, agent normalisation, metadata propagation, and result aggregation
+- **Files created/modified:**
+  - `internal/pipeline/orchestrator.go` -- full implementation (728 lines)
+  - `internal/pipeline/orchestrator_test.go` -- comprehensive test suite (35+ tests)
+- **Key Decisions:**
+  1. **`applySkipFlags` deep-copies the builtin definition** -- `workflow.GetDefinition` returns a pointer into a package-level singleton map; mutating it directly would corrupt all subsequent calls
+  2. **Terminal initial step guard in `runPhase`** -- When all 4 skip flags are set simultaneously, `applySkipFlags` produces `InitialStep = "__done__"` which the engine cannot handle; the guard returns a completed result without invoking the engine
+  3. **`gitClient` nil check in `runPhase` and `ensureBranch`** -- Allows tests to run without a real git repo; branch management is a side effect that tests don't need
+  4. **JSON round-trip for pipeline checkpoint metadata** -- `WorkflowState.Metadata` is `map[string]any`; serialising `[]PhaseResult` through JSON ensures the stored value survives the `float64`-for-int JSON decode behaviour
+  5. **Phase-level errors swallowed into `PhaseResult.Error`** -- `Run` never returns an error for individual phase failures; only context cancellation produces a non-nil `Run` error, enabling partial result reporting
+  6. **`loadOrCreatePipelineState` ignores opts parameter** -- Current implementation identifies a resumable run purely by `WorkflowName == "pipeline"` and non-terminal status; opts-based filtering (e.g. same PhaseID) is deferred to T-051+
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ### T-049: Built-in Workflow Definitions and Step Handlers
 
 - **Status:** Completed
@@ -464,7 +502,7 @@ _None currently_
 | T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Completed |
 | T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Completed |
 | T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Completed |
-| T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Not Started |
+| T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Completed |
 | T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Not Started |
 | T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Not Started |
 | T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Not Started |
