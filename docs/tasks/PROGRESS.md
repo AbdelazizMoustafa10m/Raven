@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 20 |
+| Completed | 21 |
 | In Progress | 0 |
-| Not Started | 67 |
+| Not Started | 66 |
 
 ---
 
@@ -42,6 +42,7 @@
 | Phase configuration parser | T-018 | `LoadPhases`, `ParsePhaseLine` (4-field and 6-field format auto-detection), `PhaseForTask`, `PhaseByID`, `TaskIDNumber`, `TasksInPhase`, `FormatPhaseLine`, `ValidatePhases`; reads `phases.conf`; sorts phases by ID; validates non-overlapping ranges |
 | Dependency resolution & next-task selection | T-019 | `TaskSelector` with `NewTaskSelector`, `SelectNext`, `SelectNextInRange`, `SelectByID`, `GetPhaseProgress`, `GetAllProgress`, `IsPhaseComplete`, `BlockedTasks`, `CompletedTaskIDs`, `RemainingTaskIDs`; `PhaseProgress` aggregate struct; O(1) spec lookup via specMap; read-only (never mutates state) |
 | Status command with progress bars | T-020 | `raven status` CLI command with `--phase`, `--json`, `--verbose` flags; `renderPhaseProgress` (bubbles/progress.ViewAs static bar), `renderSummary`, `renderTaskDetails`; `buildUngroupedProgress` for no-phases mode; graceful handling of missing phases.conf; JSON output via `statusOutput`/`statusPhaseOutput` structs |
+| Agent interface & registry | T-021 | `Agent` interface (5 methods: Name, Run, CheckPrerequisites, ParseRateLimit, DryRunCommand); `Registry` type with Register, Get, MustGet, List, Has; `AgentConfig` struct for raven.toml `[agents.*]` sections; `MockAgent` with builder methods (WithRunFunc, WithRateLimit, WithPrereqError); sentinel errors (ErrNotFound, ErrDuplicateName, ErrInvalidName); agent name validation via regex; compile-time interface check |
 
 #### Key Technical Decisions
 
@@ -86,6 +87,8 @@
 | Phase config test fixtures | `internal/task/testdata/phases/` |
 | Dependency resolver & task selector | `internal/task/selector.go` |
 | Status command | `internal/cli/status.go` |
+| Agent interface & registry | `internal/agent/agent.go` |
+| Mock agent for testing | `internal/agent/mock.go` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -120,7 +123,7 @@ _None currently_
 | T-018 | Phase Configuration Parser (phases.conf) | Must Have | Small (3-5hrs) | Completed |
 | T-019 | Dependency Resolution & Next-Task Selection | Must Have | Medium (8-12hrs) | Completed |
 | T-020 | Status Command -- raven status | Must Have | Medium (6-10hrs) | Completed |
-| T-021 | Agent Interface & Registry | Must Have | Medium (6-10hrs) | Not Started |
+| T-021 | Agent Interface & Registry | Must Have | Medium (6-10hrs) | Completed |
 | T-022 | Claude Agent Adapter | Must Have | Medium (8-12hrs) | Not Started |
 | T-023 | Codex Agent Adapter | Must Have | Medium (6-10hrs) | Not Started |
 | T-024 | Gemini Agent Stub | Should Have | Small (2-3hrs) | Not Started |
@@ -284,4 +287,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-020 completed)
+_Last updated: 2026-02-18_ (T-021 completed)
