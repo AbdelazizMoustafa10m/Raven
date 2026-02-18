@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 57 |
+| Completed | 58 |
 | In Progress | 0 |
-| Not Started | 32 |
+| Not Started | 31 |
 
 ---
 
@@ -596,6 +596,41 @@
 
 ---
 
+### T-055: Pipeline CLI Command
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `newPipelineCmd()` -- Cobra command with Usage "pipeline", all 15 flags defined with defaults
+  - `pipelineFlags` struct holding all parsed flag values
+  - `runPipeline(cmd, flags)` -- RunE implementation with 18-step flow: mutual exclusivity check, config load, phase load, TTY detection / wizard launch, global dry-run merge, flag validation, branch name safety check, dry-run mode, state store construction, workflow registry + engine construction, git client construction, pipeline orchestrator creation, signal context setup, optional sync-base fetch, start logging, orchestrator run, result summary print, exit code mapping
+  - `runPipelineDryRun(cmd, opts, phases, phasesConf)` -- builds `PipelineDryRunInfo` from filtered phases and opts; constructs branch chain (raven/phase-N from previous phase branch); delegates to `workflow.DryRunFormatter.FormatPipelineDryRun`; uses TTY detection for styled output
+  - `filterPhasesForDryRun(phases, opts)` -- mirrors orchestrator phase-resolution logic for dry-run without requiring a full orchestrator instance
+  - `buildSkippedList(opts)` -- builds `[]string` of skipped stage names from `PipelineOpts`
+  - `buildPipelineOpts(flags)` -- converts `pipelineFlags` to `pipeline.PipelineOpts`; normalises "all" to ""
+  - `applyWizardOpts(wizardOpts, flags)` -- merges wizard output into CLI flags (only non-empty values applied; skip booleans always overwritten)
+  - `validatePipelineFlags(flags, phases)` -- validates concurrency >= 1, max-cycles >= 1, not all stages skipped, valid phase ID (with available-phases list in error), valid from-phase integer >= 1, valid agent names with list of available agents
+  - `printPipelineSummary(cmd, result)` -- formats phase summary table to stdout with status, branch, PR URL, and error columns
+  - `completePipelinePhase` / `completePipelineAgent` -- shell completion funcs for --phase, --from-phase, --impl-agent, --review-agent, --fix-agent
+  - `isStdinTTY()` / `isStdoutTTY()` -- TTY detection using `os.ModeCharDevice` without new dependency
+  - `availableAgentNames()` -- returns canonical agent list; `phaseIDList(phases)` -- comma-separated phase IDs for error messages
+  - `safeBranchRE` -- compiled regex for `--base` branch name safety validation
+  - Exit code handling: 0 = PipelineStatusCompleted, 2 = PipelineStatusPartial (via `os.Exit(2)`), 3 = wizard cancelled or Ctrl+C (via `os.Exit(3)`), 1 = error (returned from RunE)
+  - 50+ table-driven unit tests covering command registration, flag existence and defaults, shell completions, flag validation, opts building, wizard-opts merging, phase filtering, skip list building, phase ID listing, and branch regex validation
+- **Files created:**
+  - `internal/cli/pipeline.go` -- complete implementation (675 lines)
+  - `internal/cli/pipeline_test.go` -- comprehensive test suite (50+ tests)
+- **Key Decisions:**
+  1. **TTY detection via `os.ModeCharDevice`** -- avoids adding `golang.org/x/term` (not in go.mod); `isStdinTTY()` and `isStdoutTTY()` use stdlib-only `os.Stdin.Stat()` / `os.Stdout.Stat()`
+  2. **Mutual exclusivity enforced in RunE** -- `cobra.MarkFlagsMutuallyExclusive` requires Cobra v1.8+; manual check preserves compatibility with v1.10 and gives a clearer error message
+  3. **`applyWizardOpts` merges rather than replaces** -- only non-empty/non-zero wizard values are applied; explicit CLI flags set before wizard launch are preserved; skip booleans are always copied since their zero value (false) is meaningful
+  4. **Fresh `workflow.NewRegistry()` for every run** -- the `DefaultRegistry` is a package-level singleton that `init()` functions may already populate; using a new registry avoids registration panics on duplicate handlers
+  5. **git client failure is non-fatal** -- if `git.NewGitClient("")` fails (e.g. not in a git repo), a warning is logged and `gitClient = nil` is passed to the orchestrator, which handles nil git client gracefully
+  6. **`os.Exit` for partial (2) and cancel (3)** -- Cobra RunE cannot signal non-error non-zero exit codes; using `os.Exit` after printing the summary is the established pattern (same as `fix.go`)
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -606,7 +641,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** In Progress (12/13 complete)
+- **Status:** Completed (13/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -627,7 +662,7 @@ _None currently_
 | T-052 | Pipeline Metadata Tracking | Must Have | Small (2-4hrs) | Completed |
 | T-053 | Pipeline Interactive Wizard | Should Have | Medium (6-10hrs) | Completed |
 | T-054 | Pipeline and Workflow Dry-Run Mode | Must Have | Medium (6-10hrs) | Completed |
-| T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Not Started |
+| T-055 | Pipeline CLI Command | Must Have | Medium (6-10hrs) | Completed |
 
 **Deliverable:** `raven pipeline --phase all` orchestrates the full lifecycle with checkpoint/resume.
 
