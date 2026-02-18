@@ -1228,6 +1228,574 @@ func TestAssignGlobalIDs_IDMapping_ValuesSorted(t *testing.T) {
 	assert.Equal(t, expected, values)
 }
 
+// --- RemapDependencies tests ---
+
+// TestRemapDependencies_EmptyTasks verifies that an empty task slice produces an empty
+// result and a zeroed report.
+func TestRemapDependencies_EmptyTasks(t *testing.T) {
+	t.Parallel()
+
+	updated, report := RemapDependencies(nil, IDMapping{}, nil)
+	assert.Empty(t, updated)
+	assert.Equal(t, 0, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+	assert.Empty(t, report.Ambiguous)
+}
+
+// TestRemapDependencies_NoDeps verifies tasks with no LocalDependencies or CrossEpicDeps
+// receive an empty Dependencies slice and the report shows zero remapped.
+func TestRemapDependencies_NoDeps(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", TempID: "E001-T01", EpicID: "E-001", Title: "Alpha"},
+		{GlobalID: "T-002", TempID: "E001-T02", EpicID: "E-001", Title: "Beta"},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E001-T02": "T-002",
+	}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 2)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Empty(t, updated[1].Dependencies)
+	assert.Equal(t, 0, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+	assert.Empty(t, report.Ambiguous)
+}
+
+// TestRemapDependencies_LocalDeps_Resolved verifies that local temp_id dependencies
+// are correctly translated to global IDs.
+func TestRemapDependencies_LocalDeps_Resolved(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", TempID: "E001-T01", EpicID: "E-001", Title: "First"},
+		{
+			GlobalID:          "T-002",
+			TempID:            "E001-T02",
+			EpicID:            "E-001",
+			Title:             "Second",
+			LocalDependencies: []string{"E001-T01"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E001-T02": "T-002",
+	}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 2)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Equal(t, []string{"T-001"}, updated[1].Dependencies)
+	assert.Equal(t, 1, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+}
+
+// TestRemapDependencies_LocalDep_Unresolved verifies that a local dep referencing an
+// unknown temp_id is added to report.Unresolved and not included in Dependencies.
+func TestRemapDependencies_LocalDep_Unresolved(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{
+			GlobalID:          "T-001",
+			TempID:            "E001-T01",
+			EpicID:            "E-001",
+			Title:             "Alpha",
+			LocalDependencies: []string{"E001-T99"}, // unknown
+		},
+	}
+	mapping := IDMapping{"E001-T01": "T-001"}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Equal(t, 0, report.Remapped)
+	require.Len(t, report.Unresolved, 1)
+	assert.Equal(t, "T-001", report.Unresolved[0].TaskID)
+	assert.Equal(t, "E001-T99", report.Unresolved[0].Reference)
+}
+
+// TestRemapDependencies_LocalDep_SelfReference verifies that a local dep whose resolved
+// global ID equals the task's own global ID is silently dropped (no self-dep, no unresolved).
+func TestRemapDependencies_LocalDep_SelfReference(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{
+			GlobalID:          "T-001",
+			TempID:            "E001-T01",
+			EpicID:            "E-001",
+			Title:             "Self",
+			LocalDependencies: []string{"E001-T01"}, // maps to its own global ID
+		},
+	}
+	mapping := IDMapping{"E001-T01": "T-001"}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Empty(t, updated[0].Dependencies, "self-reference must be dropped")
+	assert.Equal(t, 0, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+}
+
+// TestRemapDependencies_CrossEpicDep_Resolved verifies that a cross-epic dep resolves
+// correctly via exact title match.
+func TestRemapDependencies_CrossEpicDep_Resolved(t *testing.T) {
+	t.Parallel()
+
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "Database schema"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "App bootstrap",
+			CrossEpicDeps: []string{"E-002:database schema"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Equal(t, []string{"T-010"}, updated[0].Dependencies)
+	assert.Equal(t, 1, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+	assert.Empty(t, report.Ambiguous)
+}
+
+// TestRemapDependencies_CrossEpicDep_SlugLabel verifies that a dash-separated slug label
+// resolves against a space-separated title (substring match).
+func TestRemapDependencies_CrossEpicDep_SlugLabel(t *testing.T) {
+	t.Parallel()
+
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "Set up database schema"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Auth",
+			CrossEpicDeps: []string{"E-002:database schema"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Equal(t, []string{"T-010"}, updated[0].Dependencies)
+	assert.Equal(t, 1, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+}
+
+// TestRemapDependencies_CrossEpicDep_UnknownEpic verifies that a cross-epic dep referencing
+// an epic that is not in epicTasks is added to report.Unresolved.
+func TestRemapDependencies_CrossEpicDep_UnknownEpic(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Task",
+			CrossEpicDeps: []string{"E-999:nonexistent"},
+		},
+	}
+	mapping := IDMapping{"E001-T01": "T-001"}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Equal(t, 0, report.Remapped)
+	require.Len(t, report.Unresolved, 1)
+	assert.Equal(t, "T-001", report.Unresolved[0].TaskID)
+	assert.Equal(t, "E-999:nonexistent", report.Unresolved[0].Reference)
+}
+
+// TestRemapDependencies_CrossEpicDep_UnknownLabel verifies that a cross-epic dep where
+// the label matches no task title in the target epic is added to report.Unresolved.
+func TestRemapDependencies_CrossEpicDep_UnknownLabel(t *testing.T) {
+	t.Parallel()
+
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "Database schema"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Auth",
+			CrossEpicDeps: []string{"E-002:totally-unknown-label"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Equal(t, 0, report.Remapped)
+	require.Len(t, report.Unresolved, 1)
+	assert.Equal(t, "E-002:totally-unknown-label", report.Unresolved[0].Reference)
+}
+
+// TestRemapDependencies_CrossEpicDep_Ambiguous verifies that when a label matches multiple
+// task titles in the target epic, the ambiguity is recorded and the first candidate is used.
+func TestRemapDependencies_CrossEpicDep_Ambiguous(t *testing.T) {
+	t.Parallel()
+
+	// Two tasks in E-002 whose titles both contain "schema".
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "Database schema setup"},
+		{GlobalID: "T-011", TempID: "E002-T02", EpicID: "E-002", Title: "API schema definition"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Auth",
+			CrossEpicDeps: []string{"E-002:schema"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+		"E002-T02": "T-011",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	// A best-guess candidate should still be recorded in Dependencies.
+	assert.Len(t, updated[0].Dependencies, 1)
+	assert.Equal(t, 1, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+	require.Len(t, report.Ambiguous, 1)
+	assert.Equal(t, "T-001", report.Ambiguous[0].TaskID)
+	assert.Equal(t, "E-002:schema", report.Ambiguous[0].Reference)
+	assert.Len(t, report.Ambiguous[0].Candidates, 2)
+}
+
+// TestRemapDependencies_Deduplication verifies that the same global ID appearing in both
+// LocalDependencies and CrossEpicDeps is only listed once in Dependencies.
+func TestRemapDependencies_Deduplication(t *testing.T) {
+	t.Parallel()
+
+	// T-010 appears as both a local dep (via temp_id) and a cross-epic dep (via title).
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "Shared service"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:          "T-001",
+			TempID:            "E001-T01",
+			EpicID:            "E-001",
+			Title:             "Consumer",
+			LocalDependencies: []string{"E002-T01"}, // resolves to T-010
+			CrossEpicDeps:     []string{"E-002:shared service"}, // also resolves to T-010
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	// T-010 should appear exactly once.
+	assert.Equal(t, []string{"T-010"}, updated[0].Dependencies)
+	// Remapped should count the first resolution; the duplicate is silently dropped.
+	assert.Equal(t, 1, report.Remapped)
+}
+
+// TestRemapDependencies_MultipleLocalDeps_AllResolved verifies that a task with multiple
+// local deps gets all of them resolved in order.
+func TestRemapDependencies_MultipleLocalDeps_AllResolved(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{GlobalID: "T-001", TempID: "E001-T01", EpicID: "E-001", Title: "First"},
+		{GlobalID: "T-002", TempID: "E001-T02", EpicID: "E-001", Title: "Second"},
+		{
+			GlobalID:          "T-003",
+			TempID:            "E001-T03",
+			EpicID:            "E-001",
+			Title:             "Third",
+			LocalDependencies: []string{"E001-T01", "E001-T02"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E001-T02": "T-002",
+		"E001-T03": "T-003",
+	}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 3)
+	assert.Equal(t, []string{"T-001", "T-002"}, updated[2].Dependencies)
+	assert.Equal(t, 2, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+}
+
+// TestRemapDependencies_CrossEpicDep_ColonInLabel verifies that a label containing a
+// colon (after the first split) is handled correctly; only the first colon is used as
+// the separator between epic ID and label.
+func TestRemapDependencies_CrossEpicDep_ColonInLabel(t *testing.T) {
+	t.Parallel()
+
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "http: server setup"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Client",
+			CrossEpicDeps: []string{"E-002:http: server setup"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Equal(t, []string{"T-010"}, updated[0].Dependencies)
+	assert.Equal(t, 1, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+}
+
+// TestRemapDependencies_MixedLocalAndCrossEpic verifies that a task with both local
+// and cross-epic deps accumulates all resolved IDs into a single Dependencies slice.
+func TestRemapDependencies_MixedLocalAndCrossEpic(t *testing.T) {
+	t.Parallel()
+
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "Auth service"},
+	}
+	tasks := []MergedTask{
+		{GlobalID: "T-001", TempID: "E001-T01", EpicID: "E-001", Title: "Setup"},
+		{
+			GlobalID:          "T-002",
+			TempID:            "E001-T02",
+			EpicID:            "E-001",
+			Title:             "Main",
+			LocalDependencies: []string{"E001-T01"},
+			CrossEpicDeps:     []string{"E-002:auth service"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E001-T02": "T-002",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 2)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Equal(t, []string{"T-001", "T-010"}, updated[1].Dependencies)
+	assert.Equal(t, 2, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+	assert.Empty(t, report.Ambiguous)
+}
+
+// TestRemapDependencies_OriginalTasksUnmutated verifies that the input tasks slice is not
+// mutated by RemapDependencies (the returned slice is a copy).
+func TestRemapDependencies_OriginalTasksUnmutated(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{
+			GlobalID:          "T-001",
+			TempID:            "E001-T01",
+			EpicID:            "E-001",
+			Title:             "Alpha",
+			LocalDependencies: []string{"E001-T02"},
+		},
+		{GlobalID: "T-002", TempID: "E001-T02", EpicID: "E-001", Title: "Beta"},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E001-T02": "T-002",
+	}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	// Record the original Dependencies field before the call.
+	origDeps := tasks[0].Dependencies
+
+	_, _ = RemapDependencies(tasks, mapping, epicTasks)
+
+	// The original slice must not have been modified.
+	assert.Equal(t, origDeps, tasks[0].Dependencies,
+		"input tasks[0].Dependencies must not be mutated")
+}
+
+// TestRemapDependencies_CrossEpicDep_SelfReference verifies that a cross-epic dep that
+// resolves to the task's own global ID is silently dropped (no self-dep in Dependencies).
+func TestRemapDependencies_CrossEpicDep_SelfReference(t *testing.T) {
+	t.Parallel()
+
+	// T-001 is in E-001 but also appears in the E-002 epicTasks map (edge-case: caller
+	// included the wrong task); the key point is that if the resolved global ID matches
+	// the processing task's own GlobalID, it should be skipped.
+	e001Tasks := []MergedTask{
+		{GlobalID: "T-001", TempID: "E001-T01", EpicID: "E-001", Title: "Self task"},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Self task",
+			CrossEpicDeps: []string{"E-001:self task"},
+		},
+	}
+	mapping := IDMapping{"E001-T01": "T-001"}
+	epicTasks := map[string][]MergedTask{"E-001": e001Tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Empty(t, updated[0].Dependencies, "self cross-epic ref must be dropped")
+	assert.Equal(t, 0, report.Remapped)
+	assert.Empty(t, report.Unresolved)
+}
+
+// TestRemapDependencies_TitleNormalization verifies that title matching is case-insensitive
+// and trims surrounding whitespace.
+func TestRemapDependencies_TitleNormalization(t *testing.T) {
+	t.Parallel()
+
+	e002Tasks := []MergedTask{
+		{GlobalID: "T-010", TempID: "E002-T01", EpicID: "E-002", Title: "  Set Up Database Schema  "},
+	}
+	tasks := []MergedTask{
+		{
+			GlobalID:      "T-001",
+			TempID:        "E001-T01",
+			EpicID:        "E-001",
+			Title:         "Migrator",
+			CrossEpicDeps: []string{"E-002:database schema"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E002-T01": "T-010",
+	}
+	epicTasks := map[string][]MergedTask{
+		"E-001": tasks,
+		"E-002": e002Tasks,
+	}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 1)
+	assert.Equal(t, []string{"T-010"}, updated[0].Dependencies)
+	assert.Equal(t, 1, report.Remapped)
+}
+
+// TestRemapDependencies_MultipleUnresolved verifies that multiple unresolved refs from
+// multiple tasks are all captured in the report.
+func TestRemapDependencies_MultipleUnresolved(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		{
+			GlobalID:          "T-001",
+			TempID:            "E001-T01",
+			EpicID:            "E-001",
+			Title:             "Alpha",
+			LocalDependencies: []string{"E001-T99"},
+			CrossEpicDeps:     []string{"E-999:ghost"},
+		},
+		{
+			GlobalID:          "T-002",
+			TempID:            "E001-T02",
+			EpicID:            "E-001",
+			Title:             "Beta",
+			LocalDependencies: []string{"E001-T88"},
+		},
+	}
+	mapping := IDMapping{
+		"E001-T01": "T-001",
+		"E001-T02": "T-002",
+	}
+	epicTasks := map[string][]MergedTask{"E-001": tasks}
+
+	updated, report := RemapDependencies(tasks, mapping, epicTasks)
+
+	require.Len(t, updated, 2)
+	assert.Empty(t, updated[0].Dependencies)
+	assert.Empty(t, updated[1].Dependencies)
+	assert.Equal(t, 0, report.Remapped)
+	assert.Len(t, report.Unresolved, 3)
+}
+
 // buildTasks is a test helper that creates n TaskDef instances with unique TempIDs
 // derived from the provided epic prefix.
 func buildTasks(t *testing.T, epicPrefix string, n int) []TaskDef {

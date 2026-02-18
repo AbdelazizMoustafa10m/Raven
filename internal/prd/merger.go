@@ -3,6 +3,7 @@ package prd
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // IDMapping maps a task's temp_id to its assigned global_id.
@@ -28,10 +29,41 @@ type MergedTask struct {
 	LocalDependencies []string
 	// CrossEpicDeps lists cross-epic dependency references in "E-NNN:label" format (not yet resolved).
 	CrossEpicDeps []string
+	// Dependencies contains the resolved global task IDs after dependency remapping.
+	// Populated by RemapDependencies; empty until that step runs.
+	Dependencies []string
 	// Effort is the size estimate; one of: "small", "medium", "large".
 	Effort string
 	// Priority is the importance classification; one of: "must-have", "should-have", "nice-to-have".
 	Priority string
+}
+
+// RemapReport summarizes the results of a dependency remapping operation.
+type RemapReport struct {
+	// Remapped is the count of dependency references that were successfully resolved.
+	Remapped int
+	// Unresolved holds references that could not be mapped to any global ID.
+	Unresolved []UnresolvedRef
+	// Ambiguous holds cross-epic references that matched more than one task title.
+	Ambiguous []AmbiguousRef
+}
+
+// UnresolvedRef records a dependency reference that could not be mapped to a global ID.
+type UnresolvedRef struct {
+	// TaskID is the global ID of the task that contains the unresolved dependency.
+	TaskID string
+	// Reference is the original temp_id or cross-epic ref that could not be resolved.
+	Reference string
+}
+
+// AmbiguousRef records a cross-epic dependency reference that matched multiple tasks.
+type AmbiguousRef struct {
+	// TaskID is the global ID of the task that contains the ambiguous dependency.
+	TaskID string
+	// Reference is the original cross-epic ref (e.g., "E-003:some-label").
+	Reference string
+	// Candidates lists all global IDs whose title matched the label.
+	Candidates []string
 }
 
 // SortEpicsByDependency returns epic IDs in topological order using Kahn's algorithm.
@@ -197,4 +229,143 @@ func AssignGlobalIDs(
 	}
 
 	return merged, mapping
+}
+
+// RemapDependencies rewrites all task dependencies from temp IDs to global IDs.
+// It processes both LocalDependencies (intra-epic temp_id references) and CrossEpicDeps
+// ("E-NNN:label" references). The resolved global IDs are merged, deduplicated, and stored
+// in each task's Dependencies field.
+//
+// The epicTasks parameter maps an epic ID to the list of MergedTask values belonging to
+// that epic; callers typically build this from the same tasks slice grouped by EpicID.
+//
+// Returns the updated tasks and a report summarising how many references were resolved,
+// which could not be resolved, and which were ambiguous.
+func RemapDependencies(
+	tasks []MergedTask,
+	idMapping IDMapping,
+	epicTasks map[string][]MergedTask,
+) ([]MergedTask, *RemapReport) {
+	report := &RemapReport{}
+
+	// Build a per-epic title index: epicID -> normalised_title -> globalID.
+	// This is used when resolving cross-epic deps by label.
+	titleIndex := make(map[string]map[string]string, len(epicTasks))
+	for epicID, epicTaskList := range epicTasks {
+		idx := make(map[string]string, len(epicTaskList))
+		for _, t := range epicTaskList {
+			norm := strings.TrimSpace(strings.ToLower(t.Title))
+			if norm != "" {
+				idx[norm] = t.GlobalID
+			}
+		}
+		titleIndex[epicID] = idx
+	}
+
+	updated := make([]MergedTask, len(tasks))
+	for i, task := range tasks {
+		// seen tracks global IDs already added to Dependencies for this task,
+		// preventing duplicates that arise when the same task is referenced by
+		// both a local dep and a cross-epic dep.
+		seen := make(map[string]bool)
+		var deps []string
+
+		// --- Resolve LocalDependencies (temp_id -> global_id) ---
+		for _, ref := range task.LocalDependencies {
+			globalID, ok := idMapping[ref]
+			if !ok {
+				report.Unresolved = append(report.Unresolved, UnresolvedRef{
+					TaskID:    task.GlobalID,
+					Reference: ref,
+				})
+				continue
+			}
+
+			// Skip self-references.
+			if globalID == task.GlobalID {
+				continue
+			}
+
+			if !seen[globalID] {
+				seen[globalID] = true
+				deps = append(deps, globalID)
+				report.Remapped++
+			}
+		}
+
+		// --- Resolve CrossEpicDeps ("E-NNN:label" -> global_id) ---
+		for _, ref := range task.CrossEpicDeps {
+			// Split on the FIRST colon only to preserve colons in labels.
+			parts := strings.SplitN(ref, ":", 2)
+			if len(parts) != 2 {
+				// Malformed reference; treat as unresolved.
+				report.Unresolved = append(report.Unresolved, UnresolvedRef{
+					TaskID:    task.GlobalID,
+					Reference: ref,
+				})
+				continue
+			}
+
+			targetEpicID := parts[0]
+			label := strings.TrimSpace(strings.ToLower(parts[1]))
+
+			epicIdx, epicFound := titleIndex[targetEpicID]
+			if !epicFound {
+				report.Unresolved = append(report.Unresolved, UnresolvedRef{
+					TaskID:    task.GlobalID,
+					Reference: ref,
+				})
+				continue
+			}
+
+			// Search for tasks in the target epic whose normalised title contains
+			// the normalised label (substring match to handle slug vs full title).
+			var matches []string
+			for normTitle, globalID := range epicIdx {
+				if normTitle == label || strings.Contains(normTitle, label) || strings.Contains(label, normTitle) {
+					matches = append(matches, globalID)
+				}
+			}
+			sort.Strings(matches) // deterministic ordering of candidates
+
+			switch len(matches) {
+			case 0:
+				report.Unresolved = append(report.Unresolved, UnresolvedRef{
+					TaskID:    task.GlobalID,
+					Reference: ref,
+				})
+			case 1:
+				globalID := matches[0]
+				// Skip self-references.
+				if globalID == task.GlobalID {
+					continue
+				}
+				if !seen[globalID] {
+					seen[globalID] = true
+					deps = append(deps, globalID)
+					report.Remapped++
+				}
+			default:
+				// Multiple matches — record the ambiguity and use the first candidate
+				// as the best guess so the output remains usable.
+				report.Ambiguous = append(report.Ambiguous, AmbiguousRef{
+					TaskID:     task.GlobalID,
+					Reference:  ref,
+					Candidates: matches,
+				})
+				best := matches[0]
+				if best != task.GlobalID && !seen[best] {
+					seen[best] = true
+					deps = append(deps, best)
+					report.Remapped++
+				}
+			}
+		}
+
+		// Assign the resolved dependencies back to the task copy.
+		task.Dependencies = deps
+		updated[i] = task
+	}
+
+	return updated, report
 }

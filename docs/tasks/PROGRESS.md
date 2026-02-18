@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 63 |
+| Completed | 64 |
 | In Progress | 0 |
-| Not Started | 26 |
+| Not Started | 25 |
 
 ---
 
@@ -467,6 +467,37 @@
 
 ---
 
+### T-061: Merge -- Dependency Remapping
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Dependencies []string` field added to `MergedTask` — populated after `RemapDependencies` runs; nil/empty until then
+  - `RemapReport` struct — `Remapped int`, `Unresolved []UnresolvedRef`, `Ambiguous []AmbiguousRef`
+  - `UnresolvedRef` struct — `TaskID string`, `Reference string`
+  - `AmbiguousRef` struct — `TaskID string`, `Reference string`, `Candidates []string`
+  - `RemapDependencies(tasks []MergedTask, idMapping IDMapping, epicTasks map[string][]MergedTask) ([]MergedTask, *RemapReport)`:
+    - Builds per-epic title index (normalised lower-case titles) from `epicTasks`
+    - Resolves `LocalDependencies` (temp_id -> global_id via `idMapping`)
+    - Resolves `CrossEpicDeps` (`E-NNN:label` format, split on first colon, substring title match)
+    - Removes self-references (task.GlobalID == resolved ID)
+    - Deduplicates via `seen` map; cross-epic/local IDs merged into a single `Dependencies` slice
+    - On zero matches: adds to `Unresolved`; on multiple matches: adds to `Ambiguous` and uses first candidate (sorted) as best guess
+    - Returns updated tasks (copy, originals unmutated) and the `RemapReport`
+  - New `strings` import added to `merger.go`
+- **Files created/modified:**
+  - `internal/prd/merger.go` — new types (`RemapReport`, `UnresolvedRef`, `AmbiguousRef`), `Dependencies` field on `MergedTask`, `RemapDependencies` function
+  - `internal/prd/merger_test.go` — 14 new test functions covering: empty input, no deps, local dep resolve, local dep unresolved, self-reference (local + cross-epic), cross-epic exact title, slug label, unknown epic, unknown label, ambiguous multi-match, deduplication, multiple local deps, colon-in-label, mixed local+cross-epic, immutability, title normalisation, multiple unresolved
+- **Key Decisions:**
+  - `strings.SplitN(ref, ":", 2)` on first colon only — preserves colons in labels (e.g., `E-002:http: server setup`)
+  - Substring match in both directions (`contains(title, label) || contains(label, title)`) — handles slug-style labels vs full-title keys
+  - Candidates sorted before selection — guarantees deterministic `best` choice when ambiguous
+  - Returns a copy of the tasks slice — original `MergedTask` values are not mutated
+  - `seen` map per task — prevents duplicates arising from same ID referenced via both local and cross-epic paths
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -477,7 +508,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057, T-058, T-059 completed)
+- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -491,7 +522,7 @@ _None currently_
 | T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Completed |
 | T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Completed |
 | T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Completed |
-| T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Not Started |
+| T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Completed |
 | T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Not Started |
 | T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Not Started |
 | T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Not Started |
