@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 67 |
+| Completed | 68 |
 | In Progress | 0 |
-| Not Started | 22 |
+| Not Started | 21 |
 
 ---
 
@@ -592,6 +592,49 @@
 
 ---
 
+### T-065: PRD CLI Command -- raven prd
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `NewPRDCmd() *cobra.Command` — `raven prd` command registered on root via `init()`
+  - `prdFlags` struct — holds all parsed flag values: File (required), Concurrent (default true), Concurrency (default 3), SinglePass (default false), OutputDir, AgentName, DryRun, Force, StartID (default 1)
+  - `prdPipeline` struct — internal orchestrator with cfg, agent, logger, prdPath, outputDir, workDir, concurrent, concurrency, singlePass, dryRun, force, startID fields
+  - `errPartialSuccess` error type — signals exit code 2 (some epics failed but output was produced); `isErrPartialSuccess` helper for type assertion
+  - `runPRD(cmd, flags)` — full RunE handler: validates --file, loads config, resolves agent name (flag > config > "claude"), builds agent registry, checks prerequisites (skipped in dry-run), resolves output dir (flag > config.TasksDir > "docs/tasks"), creates `raven-prd-*` temp dir with 0700 permissions
+  - `prdPipeline.run(ctx)` — dispatch to runSinglePass or runConcurrent based on singlePass flag
+  - `prdPipeline.runConcurrent(ctx)` — full 4-phase pipeline:
+    - Phase 1 (Shred): `prd.NewShredder` + `Shred()` -> `EpicBreakdown`
+    - Phase 2 (Scatter): reads PRD content, `prd.NewScatterOrchestrator` + `Scatter()` -> `ScatterResult`
+    - Phase 3 (Merge): `SortEpicsByDependency` + `AssignGlobalIDs` + `buildEpicTasksMap` + `RemapDependencies` + `DeduplicateTasks` + `ValidateDAG`; DAG errors terminate pipeline
+    - Phase 4 (Emit): `prd.NewEmitter` + `Emit()` -> `EmitResult`
+    - Returns `errPartialSuccess` when scatter had failures but produced output
+  - `prdPipeline.runSinglePass(ctx)` — sequential mode: logs single-pass intent, flips `singlePass=false` (defer-restores), delegates to `runConcurrent` with `concurrency=1`
+  - `prdPipeline.printDryRun()` — writes plan to stderr: PRD file, output dir, agent, concurrency, mode, start ID, force, all 4 phase descriptions with output paths, agent dry-run command
+  - `prdPipeline.printSummary()` — writes success summary to stderr: output dir, total tasks/phases, file list, 4-phase timing breakdown + total
+  - `validatePRDFile(path)` — checks path is non-empty, file exists, is not a directory, is readable
+  - `resolveDefaultAgentName(agents)` — prefers "claude" if configured; falls back to first configured agent; hard default "claude"
+  - `buildEpicTasksMap(tasks)` — groups MergedTask slice by EpicID for use in RemapDependencies
+  - `countTotalTasks(results)` — sum of task counts across EpicTaskResult slice
+  - Shell completion for --agent: ["claude", "codex", "gemini"]
+  - Honors global `flagDryRun` via `flags.DryRun || flagDryRun`
+  - Temp dir preserved on fatal error (deleted on success and partial success)
+  - Signal handling: `signal.NotifyContext` for SIGINT/SIGTERM
+- **Files created:**
+  - `internal/cli/prd.go` — full implementation (~648 lines)
+  - `internal/cli/prd_test.go` — 30+ test functions covering command setup, flag defaults, validation helpers, errPartialSuccess, dry-run, resolveDefaultAgentName, buildEpicTasksMap, countTotalTasks
+- **Key Decisions:**
+  - Single-pass mode implemented as `runConcurrent(concurrency=1)` rather than a separate prompt — reuses all pipeline stages, simpler, correct; logged for clarity
+  - `buildAgentRegistry` reused from `implement.go` with a zero-value `implementFlags{Agent: agentName}` (no model override needed for PRD)
+  - `errPartialSuccess` custom error type (not `errors.New`) to carry structured data (totalEpics, failedEpics, succeededWith) for potential future exit-code mapping in main.go
+  - `isErrPartialSuccess` helper uses direct type assertion (not `errors.As`) since `errPartialSuccess` is a concrete type without wrapping
+  - Output directory resolves to `cfg.Project.TasksDir` if `--output-dir` not set, falling back to "docs/tasks" for a sensible default without requiring raven.toml
+  - DAG validation errors are fatal (no partial output when the dependency graph is corrupt)
+  - Unresolved dependency references from RemapDependencies are warnings only (logged) — the emitter still runs
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/cli/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -602,7 +645,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061, T-062, T-063, T-064 completed)
+- **Status:** Completed (all 10 tasks done)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -620,7 +663,7 @@ _None currently_
 | T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Completed |
 | T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Completed |
 | T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Completed |
-| T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Not Started |
+| T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Completed |
 
 **Deliverable:** `raven prd --file docs/prd/PRD.md --concurrent` produces a complete task breakdown.
 
