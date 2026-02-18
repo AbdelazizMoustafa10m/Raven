@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 72 |
+| Completed | 73 |
 | In Progress | 0 |
-| Not Started | 17 |
+| Not Started | 16 |
 
 ---
 
@@ -518,6 +518,28 @@
 
 ---
 
+### T-070: Sidebar -- Workflow List with Status Indicators
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `WorkflowStatus` iota enum (Idle/Running/Paused/Completed/Failed) with `String()` and `workflowStatusFromEvent()` helpers
+  - `WorkflowEntry` struct holding ID, Name, Status, StartedAt, and Detail fields
+  - `SidebarModel` Bubble Tea sub-model with workflow list, selectedIdx, scrollOffset, workflowIndex map for O(1) dedup
+  - `NewSidebarModel`, `SetDimensions`, `SetFocused`, `SelectedWorkflow` API methods
+  - `Update` handling `WorkflowEventMsg` (add/update workflows), `FocusChangedMsg` (focus tracking), `tea.KeyMsg` (j/k/up/down navigation when focused)
+  - `workflowListView` rendering "WORKFLOWS" header, status indicators (●○◌✓✗), truncated names with ellipsis
+  - Scrolling support: `adjustScroll` keeps selected row visible; `clampIdx` keeps selection in bounds
+  - `View` composing workflow list + AGENTS and PROGRESS placeholder sections, padding to full height, applying `SidebarContainer` style with border-aware width calculation
+  - Fixed border width accounting: `Width(m.width - 1)` so right border (`│`) doesn't push total beyond m.width
+  - 40+ unit and integration tests achieving 93.2% statement coverage
+- **Files created/modified:**
+  - `internal/tui/sidebar.go` -- SidebarModel, WorkflowStatus, WorkflowEntry, all rendering and navigation logic
+  - `internal/tui/sidebar_test.go` -- comprehensive test suite covering all acceptance criteria and edge cases
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -542,7 +564,7 @@ _None currently_
 | T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Completed |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Completed |
 | T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Completed |
-| T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Not Started |
+| T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Completed |
 | T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Not Started |
 | T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Not Started |
 | T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Not Started |

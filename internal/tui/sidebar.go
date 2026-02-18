@@ -468,9 +468,15 @@ func (m SidebarModel) View() string {
 	}
 
 	// Apply the outer container style (border + padding) if width > 0.
+	// SidebarContainer has BorderRight(true), which adds 1 column. Subtract
+	// it from Width() so the total rendered width equals m.width.
 	if m.width > 0 {
+		innerWidth := m.width - 1 // 1 for the right border character
+		if innerWidth < 0 {
+			innerWidth = 0
+		}
 		return m.theme.SidebarContainer.
-			Width(m.width).
+			Width(innerWidth).
 			Render(content)
 	}
 
