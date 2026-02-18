@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 75 |
+| Completed | 76 |
 | In Progress | 0 |
-| Not Started | 14 |
+| Not Started | 13 |
 
 ---
 
@@ -586,6 +586,25 @@
   - `internal/tui/sidebar_test.go` -- 30+ new table-driven and integration tests for T-072
 - **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
 
+### T-073: Agent Output Panel with Viewport Scrolling and Tabbed Multi-Agent View
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `OutputBuffer` ring buffer capped at 1000 lines per agent with O(1) append and eviction
+  - `AgentView` per-agent display state with `viewport.Model` for scrollable output and `autoScroll` tracking
+  - `AgentPanelModel` top-level sub-model with tab management, focus handling, and Elm-style Update/View
+  - Tab bar rendered only when 2+ agents are active, with active tab visually distinguished
+  - Agent header showing status indicator (●/✓/!/×/◌/○), agent name, and current task ID
+  - Full keyboard navigation: j/k, up/down, PgUp/PgDn, Home/End for scrolling; Tab/Shift-Tab for agent tab switching
+  - Auto-scroll to bottom on new output; stops on manual scroll up; resumes when scrolling back to bottom
+  - Tab key passthrough to parent when only one agent is present (enables focus cycling)
+  - 31 unit and integration tests covering all acceptance criteria + edge cases (85%+ coverage)
+- **Files created/modified:**
+  - `internal/tui/agent_panel.go` -- `OutputBuffer`, `AgentView`, `AgentPanelModel` with full Elm architecture
+  - `internal/tui/agent_panel_test.go` -- 31 tests covering ring buffer, tab switching, auto-scroll, edge cases, integration
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
 ---
 
 ## In Progress Tasks
@@ -615,7 +634,7 @@ _None currently_
 | T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Completed |
 | T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Completed |
 | T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Completed |
-| T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Not Started |
+| T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Completed |
 | T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Not Started |
 | T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Not Started |
 | T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Not Started |
