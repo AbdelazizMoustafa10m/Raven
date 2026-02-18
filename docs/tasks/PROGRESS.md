@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 24 |
+| Completed | 25 |
 | In Progress | 0 |
-| Not Started | 63 |
+| Not Started | 62 |
 
 ---
 
@@ -46,6 +46,7 @@
 | Claude agent adapter | T-022 | `ClaudeAgent` struct implementing `Agent`; `NewClaudeAgent(config, logger)`; `buildCommand` and `buildArgs` helpers; `--permission-mode accept --print` flags; model/allowedTools/outputFormat flag injection with RunOpts-over-config precedence; `CLAUDE_CODE_EFFORT_LEVEL` env var; large-prompt temp-file spill; `ParseRateLimit` with `reClaudeRateLimit`/`reClaudeResetTime`/`reClaudeTryAgain` regexes; `parseResetDuration` unit parser; `DryRunCommand` with prompt truncation; injected `claudeLogger` interface; compile-time `var _ Agent = (*ClaudeAgent)(nil)` |
 | Codex agent adapter | T-023 | `CodexAgent` struct implementing `Agent`; `NewCodexAgent(config, logger)`; `buildCommand` with `codex exec --sandbox --ephemeral -a never` flags; model flag with RunOpts-over-config precedence; prompt via `--prompt` or `--prompt-file`; three-tier `ParseRateLimit`: short decimal-seconds (`5.448s`), long format (`1 days 2 hours`), fallback keyword; `parseCodexDuration` helper; `DryRunCommand` with Unicode-safe prompt truncation; `codexLogger` interface; compile-time `var _ Agent = (*CodexAgent)(nil)` |
 | Gemini agent stub | T-024 | `GeminiAgent` stub struct implementing `Agent`; `NewGeminiAgent(config AgentConfig)`; `Run` and `CheckPrerequisites` return `ErrNotImplemented`; `ParseRateLimit` always returns nil/false; `DryRunCommand` returns placeholder comment; `ErrNotImplemented` sentinel error; compile-time `var _ Agent = (*GeminiAgent)(nil)`; no os/exec imports (pure stub) |
+| Rate-limit detection & coordination | T-025 | `RateLimitCoordinator` with `sync.RWMutex` for thread safety; `ProviderState` per-provider tracking (IsLimited, ResetAt, WaitCount, LastMessage, UpdatedAt); `BackoffConfig` (DefaultWait, MaxWaits, JitterFactor); `DefaultBackoffConfig()` (60s/5/0.1); provider constants (ProviderAnthropic/OpenAI/Google); `AgentProvider` map (claude->anthropic, codex->openai, gemini->google); `providerForAgent` fallback to agent name; `RecordRateLimit` (creates/updates state, increments WaitCount, extends ResetAt to max, captures callback before unlock); `ClearRateLimit` (sets IsLimited=false, preserves WaitCount); `ShouldWait` (read lock, returns copy if limited and reset is future); `WaitForReset` (checks ShouldWait, ExceededMaxWaits, timer+ctx.Done select); `ExceededMaxWaits` (MaxWaits=0 always true, WaitCount>=MaxWaits); `GetState`/`AllStates` (sorted snapshot); `computeWaitDuration` with jitter; `ErrMaxWaitsExceeded` sentinel; callback captured under lock (race-free) |
 
 #### Key Technical Decisions
 
@@ -94,6 +95,7 @@
 | Mock agent for testing | `internal/agent/mock.go` |
 | Claude agent adapter | `internal/agent/claude.go` |
 | Gemini agent stub | `internal/agent/gemini.go` |
+| Rate-limit coordinator | `internal/agent/ratelimit.go` |
 | Dependency declarations | `tools.go` |
 
 #### Verification
@@ -132,7 +134,7 @@ _None currently_
 | T-022 | Claude Agent Adapter | Must Have | Medium (8-12hrs) | Completed |
 | T-023 | Codex Agent Adapter | Must Have | Medium (6-10hrs) | Completed |
 | T-024 | Gemini Agent Stub | Should Have | Small (2-3hrs) | Completed |
-| T-025 | Rate-Limit Detection & Coordination | Must Have | Medium (8-12hrs) | Not Started |
+| T-025 | Rate-Limit Detection & Coordination | Must Have | Medium (8-12hrs) | Completed |
 | T-026 | Prompt Template System | Must Have | Medium (6-10hrs) | Not Started |
 | T-027 | Implementation Loop Runner | Must Have | Large (16-24hrs) | Not Started |
 | T-028 | Loop Recovery (Rate-Limit Wait, Dirty-Tree) | Must Have | Medium (8-12hrs) | Not Started |
@@ -292,4 +294,4 @@ _None currently_
 6. **Lightweight state machine** -- No external framework (Temporal/Prefect are overkill)
 7. **JSON checkpoints** -- Workflow state persisted to `.raven/state/` after every transition
 
-_Last updated: 2026-02-18_ (T-024 completed)
+_Last updated: 2026-02-18_ (T-025 completed)
