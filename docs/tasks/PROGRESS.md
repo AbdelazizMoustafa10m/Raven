@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 43 |
+| Completed | 44 |
 | In Progress | 0 |
-| Not Started | 46 |
+| Not Started | 45 |
 
 ---
 
@@ -406,6 +406,29 @@
 
 ---
 
+### T-042: CLI Commands -- raven fix and raven pr
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `raven fix` Cobra command wiring FixEngine, VerificationRunner, FixPromptBuilder, and agent registry
+  - `--agent`, `--max-fix-cycles`, `--review-report` flags with auto-detect for most recent .md in LogDir
+  - Synthetic finding injection to bypass FixEngine fast-path when a review report is provided
+  - `raven pr` Cobra command wiring PRCreator, PRBodyGenerator, and optional AI summary agent
+  - `--base`, `--draft`, `--title`, `--label`, `--assignee`, `--review-report`, `--no-summary` flags
+  - `StringArrayVar` for repeatable `--label` and `--assignee` flags (no comma-splitting)
+  - Prerequisites check and branch push via PRCreator before PR creation
+  - Exit code 2 for fix verification failure; PR URL printed to stdout on success
+  - 60+ unit tests covering flag parsing, helper functions, command registration, shell completions
+- **Files created/modified:**
+  - `internal/cli/fix.go` -- `raven fix` command with runFix, resolveReviewReport, mostRecentMDFile, firstConfiguredAgentName helpers
+  - `internal/cli/pr.go` -- `raven pr` command with runPR, currentGitBranch helpers
+  - `internal/cli/fix_test.go` -- 30+ table-driven tests covering all fix command flag parsing and helpers
+  - `internal/cli/pr_test.go` -- 25+ tests covering all pr command flag parsing and helpers
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ### T-041: CLI Command -- raven review
 
 - **Status:** Completed
@@ -478,7 +501,7 @@ _None currently_
 | T-039 | PR Body Generation with AI Summary | Must Have | Medium (6-10hrs) | Completed |
 | T-040 | PR Creation via gh CLI | Must Have | Medium (6-10hrs) | Completed |
 | T-041 | CLI Command -- raven review | Must Have | Medium (6-10hrs) | Completed |
-| T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Not Started |
+| T-042 | CLI Commands -- raven fix and raven pr | Must Have | Medium (6-10hrs) | Completed |
 
 **Deliverable:** `raven review --agents claude,codex --concurrency 4` produces a consolidated review report.
 
