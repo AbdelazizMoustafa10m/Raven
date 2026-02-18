@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 66 |
+| Completed | 67 |
 | In Progress | 0 |
-| Not Started | 23 |
+| Not Started | 22 |
 
 ---
 
@@ -553,6 +553,45 @@
 
 ---
 
+### T-064: Task File Emitter
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Emitter` struct with `outputDir string`, `force bool`, `logger *log.Logger` fields
+  - `EmitterOption` functional option type with `WithEmitterLogger(logger)` and `WithForce(bool)` options
+  - `EmitOpts` struct — `Tasks []MergedTask`, `Validation *DAGValidation`, `Epics *EpicBreakdown`, `StartID int`
+  - `EmitResult` struct — `OutputDir`, `TaskFiles []string`, `TaskStateFile`, `PhasesFile`, `ProgressFile`, `IndexFile`, `TotalTasks int`, `TotalPhases int`
+  - `PhaseInfo` struct — `ID int`, `Name string`, `StartTask string`, `EndTask string`, `Tasks []MergedTask`
+  - `NewEmitter(outputDir string, opts ...EmitterOption) *Emitter` constructor
+  - `Emit(opts EmitOpts) (*EmitResult, error)` — orchestrates all file generation
+  - `ResequenceIDs(tasks []MergedTask) ([]MergedTask, IDMapping)` — closes ID gaps from deduplication; uses T-%03d or T-%04d format based on task count; remaps all Dependencies references
+  - `AssignPhases(tasks []MergedTask, depths map[string]int, epics *EpicBreakdown) []PhaseInfo` — groups tasks by topological depth; phase names from most common epic title per depth group; falls back to "Phase N"
+  - `Slugify(title string) string` — lowercase, spaces-to-hyphens, strip non-ASCII, replace non-alphanumeric with hyphens, collapse hyphens, trim, truncate to 50 chars at word boundary
+  - Slug collision handling via `uniqueSlug` — appends "-2", "-3", etc. for duplicate slugs using per-call tracked `usedSlugs` map
+  - Task file template using `[[` `]]` custom delimiters to avoid conflicts with `{{` `}}` in task content
+  - `task-state.conf` generation: comment header + one `TASK_ID|not_started|` line per task
+  - `phases.conf` generation: comment header + `ID|Name|T-start|T-end` four-field format (parseable by `task.ParsePhaseLine`)
+  - `PROGRESS.md` generation: summary table, phase sections with not-started status, empty completion log
+  - `INDEX.md` generation: task summary table, phase groupings, Mermaid `graph TD` dependency graph (omitted when tasks >= 100)
+  - Atomic write via tmp+rename for all generated files
+  - Safety guard: errors when file exists and force=false
+  - Output directory created via `os.MkdirAll` if absent
+  - Large-task warning logged at > 1000 tasks
+  - Pipe characters in Markdown tables escaped as `&#124;`
+- **Files created/modified:**
+  - `internal/prd/emitter.go` — full implementation (668 lines)
+  - `internal/prd/emitter_test.go` — 21 test functions covering Slugify, ResequenceIDs, AssignPhases, Emit integration, uniqueSlug, renderTaskFile
+- **Key Decisions:**
+  - Custom template delimiters `[[` `]]` prevent conflicts when task descriptions/acceptance criteria contain Go template syntax
+  - `ResequenceIDs` returns empty `IDMapping` when no gaps exist, avoiding unnecessary depth-map remapping work in `Emit`
+  - Depth map from `DAGValidation` is remapped through `IDMapping` after re-sequencing so phase assignments reflect new IDs
+  - `phaseNameFromEpics` uses frequency counting + lexicographic tie-breaking for deterministic phase names
+  - Mermaid graph edges sorted before joining for deterministic output
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -563,7 +602,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061, T-062, T-063 completed)
+- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061, T-062, T-063, T-064 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -580,7 +619,7 @@ _None currently_
 | T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Completed |
 | T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Completed |
 | T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Completed |
-| T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Not Started |
+| T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Completed |
 | T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Not Started |
 
 **Deliverable:** `raven prd --file docs/prd/PRD.md --concurrent` produces a complete task breakdown.
