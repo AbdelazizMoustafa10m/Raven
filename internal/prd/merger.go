@@ -508,6 +508,309 @@ func findDuplicateGroups(tasks []MergedTask) []DedupGroup {
 	return groups
 }
 
+// maxDAGTasks is the upper bound on tasks accepted by ValidateDAG. Graphs larger
+// than this limit are rejected immediately to prevent pathological run times.
+const maxDAGTasks = 10_000
+
+// DAGErrorType enumerates the types of DAG validation errors.
+type DAGErrorType int
+
+const (
+	// DanglingReference means a task depends on a nonexistent task ID.
+	DanglingReference DAGErrorType = iota
+	// SelfReference means a task lists itself as a dependency.
+	SelfReference
+	// CycleDetected means a cycle exists in the dependency graph.
+	CycleDetected
+)
+
+// DAGError represents a specific validation error in the dependency graph.
+type DAGError struct {
+	// Type classifies the error.
+	Type DAGErrorType
+	// TaskID is the task with the error (or the first task in a cycle).
+	TaskID string
+	// Details is a human-readable description of the error.
+	Details string
+	// Cycle holds the ordered list of task IDs forming the cycle (CycleDetected only).
+	Cycle []string
+}
+
+// DAGValidation holds the results of DAG validation.
+type DAGValidation struct {
+	// Valid is true when the graph is a valid DAG (no errors found).
+	Valid bool
+	// TopologicalOrder contains task IDs in topological order; empty when invalid.
+	TopologicalOrder []string
+	// Depths maps task GlobalID to its topological depth (0 = no dependencies).
+	Depths map[string]int
+	// MaxDepth is the maximum depth found in the graph.
+	MaxDepth int
+	// Errors lists all validation errors found.
+	Errors []DAGError
+}
+
+// ValidateDAG checks the task dependency graph for:
+//  1. Dangling references (dependencies on nonexistent task IDs)
+//  2. Self-references (task depending on itself)
+//  3. Cycles (using Kahn's algorithm)
+//
+// If the graph is valid, ValidateDAG also computes the topological order and
+// per-task depths (depth 0 = no dependencies, depth N = longest path from a root).
+//
+// Graphs with more than 10 000 tasks are rejected with a single error entry.
+func ValidateDAG(tasks []MergedTask) *DAGValidation {
+	if len(tasks) > maxDAGTasks {
+		return &DAGValidation{
+			Valid: false,
+			Errors: []DAGError{
+				{
+					Type:    DanglingReference,
+					Details: fmt.Sprintf("graph too large: %d tasks exceed maximum of %d", len(tasks), maxDAGTasks),
+				},
+			},
+		}
+	}
+
+	// Build set of all known task IDs for referential-integrity checks.
+	taskSet := make(map[string]bool, len(tasks))
+	for _, t := range tasks {
+		taskSet[t.GlobalID] = true
+	}
+
+	var errs []DAGError
+
+	// First pass: check for self-references and dangling references.
+	// Track which edges are invalid so we exclude them from the Kahn pass.
+	type edgeKey struct{ from, to string }
+	invalidEdges := make(map[edgeKey]bool)
+
+	for _, task := range tasks {
+		for _, dep := range task.Dependencies {
+			if dep == task.GlobalID {
+				invalidEdges[edgeKey{task.GlobalID, dep}] = true
+				errs = append(errs, DAGError{
+					Type:    SelfReference,
+					TaskID:  task.GlobalID,
+					Details: fmt.Sprintf("task %s depends on itself", task.GlobalID),
+				})
+				continue
+			}
+			if !taskSet[dep] {
+				invalidEdges[edgeKey{task.GlobalID, dep}] = true
+				errs = append(errs, DAGError{
+					Type:    DanglingReference,
+					TaskID:  task.GlobalID,
+					Details: fmt.Sprintf("task %s has dangling dependency on %s (task does not exist)", task.GlobalID, dep),
+				})
+			}
+		}
+	}
+
+	// Second pass: build adjacency list (dep -> dependents) and in-degree map,
+	// skipping all invalid edges identified above.
+	inDegree := make(map[string]int, len(tasks))
+	// dependents[x] lists tasks that directly depend on x.
+	dependents := make(map[string][]string, len(tasks))
+
+	for _, t := range tasks {
+		if _, ok := inDegree[t.GlobalID]; !ok {
+			inDegree[t.GlobalID] = 0
+		}
+		for _, dep := range t.Dependencies {
+			if invalidEdges[edgeKey{t.GlobalID, dep}] {
+				continue
+			}
+			inDegree[t.GlobalID]++
+			dependents[dep] = append(dependents[dep], t.GlobalID)
+		}
+	}
+
+	// Kahn's algorithm: process tasks with in-degree 0 in sorted order for determinism.
+	var queue []string
+	for id, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, id)
+		}
+	}
+	sort.Strings(queue)
+
+	topoOrder := make([]string, 0, len(tasks))
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		topoOrder = append(topoOrder, current)
+
+		var newZero []string
+		for _, dep := range dependents[current] {
+			inDegree[dep]--
+			if inDegree[dep] == 0 {
+				newZero = append(newZero, dep)
+			}
+		}
+		sort.Strings(newZero)
+		queue = append(queue, newZero...)
+		sort.Strings(queue)
+	}
+
+	// Any tasks remaining with in-degree > 0 participate in cycles.
+	if len(topoOrder) < len(tasks) {
+		// Collect all tasks still in cycles.
+		inCycle := make(map[string]bool, len(tasks)-len(topoOrder))
+		for id, deg := range inDegree {
+			if deg > 0 {
+				inCycle[id] = true
+			}
+		}
+
+		// Build a dependency adjacency list restricted to cycle nodes, for DFS.
+		// dep edges: task -> its deps (forward direction for DFS).
+		cycleDeps := make(map[string][]string, len(inCycle))
+		for _, t := range tasks {
+			if !inCycle[t.GlobalID] {
+				continue
+			}
+			for _, dep := range t.Dependencies {
+				if inCycle[dep] && !invalidEdges[edgeKey{t.GlobalID, dep}] {
+					cycleDeps[t.GlobalID] = append(cycleDeps[t.GlobalID], dep)
+				}
+			}
+		}
+
+		// DFS to extract individual cycles from the cycle subgraph.
+		reported := make(map[string]bool) // tracks nodes whose cycles have been reported
+		cycleNodes := make([]string, 0, len(inCycle))
+		for id := range inCycle {
+			cycleNodes = append(cycleNodes, id)
+		}
+		sort.Strings(cycleNodes)
+
+		for _, start := range cycleNodes {
+			if reported[start] {
+				continue
+			}
+
+			// DFS from start; path tracks current traversal.
+			path := []string{}
+			visited := make(map[string]int) // node -> index in path (-1 = done)
+
+			var dfs func(node string) []string
+			dfs = func(node string) []string {
+				if idx, seen := visited[node]; seen {
+					// Found a back edge; extract the cycle from idx onwards.
+					return path[idx:]
+				}
+
+				visited[node] = len(path)
+				path = append(path, node)
+
+				// Explore neighbours in sorted order for determinism.
+				neighbours := cycleDeps[node]
+				sorted := make([]string, len(neighbours))
+				copy(sorted, neighbours)
+				sort.Strings(sorted)
+
+				for _, next := range sorted {
+					if reported[next] {
+						continue
+					}
+					if cycle := dfs(next); cycle != nil {
+						return cycle
+					}
+				}
+
+				// Backtrack.
+				path = path[:len(path)-1]
+				delete(visited, node)
+				return nil
+			}
+
+			cycle := dfs(start)
+			if cycle == nil {
+				// start is reachable from another cycle but has no outgoing cycle
+				// edges left; mark as reported to avoid an infinite outer loop.
+				reported[start] = true
+				continue
+			}
+
+			// Sort cycle IDs for a deterministic, human-friendly display.
+			sortedCycle := make([]string, len(cycle))
+			copy(sortedCycle, cycle)
+			sort.Strings(sortedCycle)
+
+			errs = append(errs, DAGError{
+				Type:    CycleDetected,
+				TaskID:  sortedCycle[0],
+				Details: fmt.Sprintf("cycle detected involving tasks: %v", sortedCycle),
+				Cycle:   sortedCycle,
+			})
+
+			// Mark all nodes in the cycle as reported.
+			for _, id := range cycle {
+				reported[id] = true
+			}
+		}
+	}
+
+	v := &DAGValidation{
+		Valid:  len(errs) == 0,
+		Errors: errs,
+	}
+
+	if !v.Valid {
+		return v
+	}
+
+	// Compute depths along the topological order (longest path from root).
+	depths := make(map[string]int, len(tasks))
+	// Build a quick lookup: task GlobalID -> Dependencies (valid edges only).
+	depsOf := make(map[string][]string, len(tasks))
+	for _, t := range tasks {
+		for _, dep := range t.Dependencies {
+			if !invalidEdges[edgeKey{t.GlobalID, dep}] {
+				depsOf[t.GlobalID] = append(depsOf[t.GlobalID], dep)
+			}
+		}
+	}
+
+	maxDepth := 0
+	for _, id := range topoOrder {
+		d := 0
+		for _, dep := range depsOf[id] {
+			if depths[dep]+1 > d {
+				d = depths[dep] + 1
+			}
+		}
+		depths[id] = d
+		if d > maxDepth {
+			maxDepth = d
+		}
+	}
+
+	v.TopologicalOrder = topoOrder
+	v.Depths = depths
+	v.MaxDepth = maxDepth
+
+	return v
+}
+
+// TopologicalDepths computes the depth of each task in the DAG.
+// Depth 0 = no dependencies; depth N = the longest dependency path from a root node.
+// Requires a valid DAG (no cycles). Call after ValidateDAG confirms validity.
+// Returns nil if the graph is invalid or empty.
+func TopologicalDepths(tasks []MergedTask) map[string]int {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	v := ValidateDAG(tasks)
+	if !v.Valid {
+		return nil
+	}
+
+	return v.Depths
+}
+
 // DeduplicateTasks removes duplicate tasks that share a normalized title. The task with
 // the lowest GlobalID in each duplicate group is kept; all others are removed. Unique
 // acceptance criteria from removed tasks are appended to the keeper's criteria list.

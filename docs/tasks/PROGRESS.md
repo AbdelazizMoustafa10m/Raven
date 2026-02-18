@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 65 |
+| Completed | 66 |
 | In Progress | 0 |
-| Not Started | 24 |
+| Not Started | 23 |
 
 ---
 
@@ -526,6 +526,33 @@
 
 ---
 
+### T-063: Merge -- DAG Validation
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `DAGErrorType int` with three constants: `DanglingReference` (0), `SelfReference` (1), `CycleDetected` (2)
+  - `DAGError` struct — `Type DAGErrorType`, `TaskID string`, `Details string`, `Cycle []string`
+  - `DAGValidation` struct — `Valid bool`, `TopologicalOrder []string`, `Depths map[string]int`, `MaxDepth int`, `Errors []DAGError`
+  - `ValidateDAG(tasks []MergedTask) *DAGValidation` — three-phase validation: (1) first pass collects all self-references and dangling references, marking invalid edges; (2) Kahn's algorithm over valid edges with deterministic sorted queue for topological ordering; (3) DFS cycle tracing on remaining unprocessed nodes, reporting each independent cycle separately
+  - `TopologicalDepths(tasks []MergedTask) map[string]int` — convenience wrapper delegating to `ValidateDAG`; returns nil if invalid
+  - Depth computation: iterates tasks in topological order, computing `depth[t] = max(depth[dep]+1 for dep in deps)` — yields longest path from root, not shortest
+  - Security guard: graphs with more than 10 000 tasks (`maxDAGTasks` constant) are rejected immediately
+  - Error message format: `"task T-NNN has dangling dependency on T-MMM (task does not exist)"`, `"task T-NNN depends on itself"`, `"cycle detected involving tasks: [T-001 T-002 T-003]"` (sorted IDs)
+  - Multiple independent errors are all reported together in one `DAGValidation`
+- **Files created/modified:**
+  - `internal/prd/merger.go` — `maxDAGTasks` constant, `DAGErrorType`, `DAGError`, `DAGValidation` types, `ValidateDAG`, `TopologicalDepths` functions (appended before `DeduplicateTasks`)
+  - `internal/prd/merger_test.go` — 20 new test functions: empty graph, single task, linear chain topological order, diamond longest-path depth, deterministic ordering, dangling ref, self-ref, self-ref + cycle non-interaction, two-node cycle, three-node cycle, partial cycle, multiple dangling refs, mixed errors (self+dangling+cycle), too-large graph, dangling ref not counted as cycle, longest path vs shortest path, nil/empty topoOrder for invalid graph, two independent cycles; plus `TopologicalDepths` tests (nil input, linear chain, invalid DAG returns nil, all-zero depths)
+- **Key Decisions:**
+  - Invalid edges (self-ref, dangling) are tracked per `edgeKey{from, to}` struct and excluded from Kahn's algorithm — prevents invalid edges from contributing false positive cycle detection
+  - DFS for cycle tracing uses path backtracking with a `visited` index map; when a back-edge is found, the cycle is the path slice from the revisited node onwards
+  - Cycle node IDs are sorted before inclusion in `DAGError.Cycle` for deterministic output; independently detected cycles each get their own `DAGError` entry
+  - `reported` set in cycle DFS prevents double-reporting nodes that appear in multiple cycle paths
+  - When `Valid = false`, `TopologicalOrder` and `Depths` are nil (not populated)
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./internal/prd/...` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -536,7 +563,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061, T-062 completed)
+- **Status:** In Progress (T-056, T-057, T-058, T-059, T-060, T-061, T-062, T-063 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -552,7 +579,7 @@ _None currently_
 | T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Completed |
 | T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Completed |
 | T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Completed |
-| T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Not Started |
+| T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Completed |
 | T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Not Started |
 | T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Not Started |
 

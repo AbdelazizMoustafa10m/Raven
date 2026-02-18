@@ -2319,3 +2319,1189 @@ func buildTasks(t *testing.T, epicPrefix string, n int) []TaskDef {
 	}
 	return tasks
 }
+
+// --- ValidateDAG tests ---
+
+// makeTask is a test helper that returns a MergedTask with the given GlobalID and deps.
+func makeTask(id string, deps ...string) MergedTask {
+	return MergedTask{
+		GlobalID:     id,
+		TempID:       id,
+		Title:        "Task " + id,
+		Description:  "D",
+		Dependencies: deps,
+	}
+}
+
+func TestValidateDAG_EmptyTasks(t *testing.T) {
+	t.Parallel()
+
+	v := ValidateDAG(nil)
+	assert.True(t, v.Valid)
+	assert.Empty(t, v.Errors)
+	assert.Empty(t, v.TopologicalOrder)
+}
+
+func TestValidateDAG_SingleTask_NoDeps(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{makeTask("T-001")}
+	v := ValidateDAG(tasks)
+
+	assert.True(t, v.Valid)
+	assert.Empty(t, v.Errors)
+	assert.Equal(t, []string{"T-001"}, v.TopologicalOrder)
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 0, v.MaxDepth)
+}
+
+func TestValidateDAG_LinearChain_TopologicalOrder(t *testing.T) {
+	t.Parallel()
+
+	// T-001 <- T-002 <- T-003
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-002"),
+	}
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, []string{"T-001", "T-002", "T-003"}, v.TopologicalOrder)
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 1, v.Depths["T-002"])
+	assert.Equal(t, 2, v.Depths["T-003"])
+	assert.Equal(t, 2, v.MaxDepth)
+}
+
+func TestValidateDAG_Diamond_DepthIsLongestPath(t *testing.T) {
+	t.Parallel()
+
+	//   T-001
+	//  /     \
+	// T-002  T-003
+	//  \     /
+	//   T-004
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-001"),
+		makeTask("T-004", "T-002", "T-003"),
+	}
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 1, v.Depths["T-002"])
+	assert.Equal(t, 1, v.Depths["T-003"])
+	// T-004 has longest path 2 (via T-001 -> T-002 -> T-004 or T-001 -> T-003 -> T-004)
+	assert.Equal(t, 2, v.Depths["T-004"])
+	assert.Equal(t, 2, v.MaxDepth)
+}
+
+func TestValidateDAG_Deterministic_TopologicalOrder(t *testing.T) {
+	t.Parallel()
+
+	// All tasks are independent roots; they should be returned in sorted ID order.
+	tasks := []MergedTask{
+		makeTask("T-003"),
+		makeTask("T-001"),
+		makeTask("T-002"),
+	}
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, []string{"T-001", "T-002", "T-003"}, v.TopologicalOrder)
+}
+
+func TestValidateDAG_DanglingReference(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-999"), // T-999 does not exist
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, DanglingReference, v.Errors[0].Type)
+	assert.Equal(t, "T-001", v.Errors[0].TaskID)
+	assert.Contains(t, v.Errors[0].Details, "T-001")
+	assert.Contains(t, v.Errors[0].Details, "T-999")
+	assert.Contains(t, v.Errors[0].Details, "does not exist")
+}
+
+func TestValidateDAG_SelfReference(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-001"), // depends on itself
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, SelfReference, v.Errors[0].Type)
+	assert.Equal(t, "T-001", v.Errors[0].TaskID)
+	assert.Contains(t, v.Errors[0].Details, "depends on itself")
+}
+
+func TestValidateDAG_SelfReferenceDoesNotCauseCycle(t *testing.T) {
+	t.Parallel()
+
+	// T-001 has a self-ref and T-002 depends on T-001. The self-ref is an error but
+	// the rest of the graph (T-001 -> T-002) should not be considered a cycle.
+	tasks := []MergedTask{
+		makeTask("T-001", "T-001"),
+		makeTask("T-002", "T-001"),
+	}
+	v := ValidateDAG(tasks)
+
+	// Only the self-reference error should be reported (no cycle).
+	assert.False(t, v.Valid)
+	assert.Len(t, v.Errors, 1)
+	assert.Equal(t, SelfReference, v.Errors[0].Type)
+}
+
+func TestValidateDAG_SimpleCycle_TwoNodes(t *testing.T) {
+	t.Parallel()
+
+	// T-001 depends on T-002, T-002 depends on T-001.
+	tasks := []MergedTask{
+		makeTask("T-001", "T-002"),
+		makeTask("T-002", "T-001"),
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, CycleDetected, v.Errors[0].Type)
+	assert.Contains(t, v.Errors[0].Details, "T-001")
+	assert.Contains(t, v.Errors[0].Details, "T-002")
+	assert.Len(t, v.Errors[0].Cycle, 2)
+}
+
+func TestValidateDAG_SimpleCycle_ThreeNodes(t *testing.T) {
+	t.Parallel()
+
+	// T-001 -> T-002 -> T-003 -> T-001
+	tasks := []MergedTask{
+		makeTask("T-001", "T-003"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-002"),
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, CycleDetected, v.Errors[0].Type)
+	assert.Len(t, v.Errors[0].Cycle, 3)
+	assert.Contains(t, v.Errors[0].Details, "cycle detected involving tasks")
+}
+
+func TestValidateDAG_PartialCycle_RootTasksOrdered(t *testing.T) {
+	t.Parallel()
+
+	// T-001 is a valid root; T-002 and T-003 form a cycle.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-003"),
+		makeTask("T-003", "T-002"),
+	}
+	v := ValidateDAG(tasks)
+
+	// Graph is invalid because of the cycle.
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, CycleDetected, v.Errors[0].Type)
+	assert.ElementsMatch(t, []string{"T-002", "T-003"}, v.Errors[0].Cycle)
+}
+
+func TestValidateDAG_MultipleDanglingRefs_AllReported(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-888", "T-999"),
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	assert.Len(t, v.Errors, 2)
+	for _, e := range v.Errors {
+		assert.Equal(t, DanglingReference, e.Type)
+	}
+}
+
+func TestValidateDAG_MixedErrors_AllReported(t *testing.T) {
+	t.Parallel()
+
+	// T-001 has a self-ref, T-002 has a dangling ref, T-003 and T-004 form a cycle.
+	tasks := []MergedTask{
+		makeTask("T-001", "T-001"),          // self-reference
+		makeTask("T-002", "T-999"),          // dangling reference
+		makeTask("T-003", "T-004"),          // part of cycle
+		makeTask("T-004", "T-003"),          // part of cycle
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+
+	typeSet := make(map[DAGErrorType]int)
+	for _, e := range v.Errors {
+		typeSet[e.Type]++
+	}
+	assert.Equal(t, 1, typeSet[SelfReference])
+	assert.Equal(t, 1, typeSet[DanglingReference])
+	assert.Equal(t, 1, typeSet[CycleDetected])
+}
+
+func TestValidateDAG_GraphTooLarge(t *testing.T) {
+	t.Parallel()
+
+	// Build a slice just over the limit.
+	tasks := make([]MergedTask, maxDAGTasks+1)
+	for i := range tasks {
+		tasks[i] = makeTask(fmt.Sprintf("T-%04d", i+1))
+	}
+
+	v := ValidateDAG(tasks)
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Contains(t, v.Errors[0].Details, "graph too large")
+}
+
+func TestValidateDAG_DanglingRefDoesNotInfluenceCycleDetection(t *testing.T) {
+	t.Parallel()
+
+	// T-001 has a dangling dep AND T-002/T-003 form a valid chain.
+	// Neither T-002 nor T-003 should be reported as a cycle.
+	tasks := []MergedTask{
+		makeTask("T-001", "T-888"),
+		makeTask("T-002"),
+		makeTask("T-003", "T-002"),
+	}
+	v := ValidateDAG(tasks)
+
+	// Only 1 error: dangling reference on T-001.
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, DanglingReference, v.Errors[0].Type)
+}
+
+func TestValidateDAG_LongestPathDepth_NotShortestPath(t *testing.T) {
+	t.Parallel()
+
+	// Graph:
+	//   T-001 (depth 0)
+	//   T-002 (depth 0)
+	//   T-003 -> T-001 (depth 1)
+	//   T-004 -> T-001, T-002, T-003 (depth = max(0,0,1)+1 = 2)
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002"),
+		makeTask("T-003", "T-001"),
+		makeTask("T-004", "T-001", "T-002", "T-003"),
+	}
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 0, v.Depths["T-002"])
+	assert.Equal(t, 1, v.Depths["T-003"])
+	assert.Equal(t, 2, v.Depths["T-004"]) // longest path: T-001 -> T-003 -> T-004
+	assert.Equal(t, 2, v.MaxDepth)
+}
+
+func TestValidateDAG_AllErrors_NilTopologicalOrder(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-002"),
+		makeTask("T-002", "T-001"),
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	assert.Nil(t, v.TopologicalOrder)
+	assert.Nil(t, v.Depths)
+}
+
+func TestValidateDAG_MultipleIndependentCycles(t *testing.T) {
+	t.Parallel()
+
+	// Two independent two-node cycles: (T-001, T-002) and (T-003, T-004).
+	tasks := []MergedTask{
+		makeTask("T-001", "T-002"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-004"),
+		makeTask("T-004", "T-003"),
+	}
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+	cycleErrors := 0
+	for _, e := range v.Errors {
+		if e.Type == CycleDetected {
+			cycleErrors++
+		}
+	}
+	// Both cycles must be reported.
+	assert.Equal(t, 2, cycleErrors)
+}
+
+// --- TopologicalDepths tests ---
+
+func TestTopologicalDepths_NilInput(t *testing.T) {
+	t.Parallel()
+
+	result := TopologicalDepths(nil)
+	assert.Nil(t, result)
+}
+
+func TestTopologicalDepths_LinearChain(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-002"),
+	}
+	depths := TopologicalDepths(tasks)
+
+	require.NotNil(t, depths)
+	assert.Equal(t, 0, depths["T-001"])
+	assert.Equal(t, 1, depths["T-002"])
+	assert.Equal(t, 2, depths["T-003"])
+}
+
+func TestTopologicalDepths_InvalidDAG_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	// Cycle makes the DAG invalid; TopologicalDepths must return nil.
+	tasks := []MergedTask{
+		makeTask("T-001", "T-002"),
+		makeTask("T-002", "T-001"),
+	}
+	depths := TopologicalDepths(tasks)
+
+	assert.Nil(t, depths)
+}
+
+func TestTopologicalDepths_IndependentTasks_AllDepthZero(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002"),
+		makeTask("T-003"),
+	}
+	depths := TopologicalDepths(tasks)
+
+	require.NotNil(t, depths)
+	assert.Equal(t, 0, depths["T-001"])
+	assert.Equal(t, 0, depths["T-002"])
+	assert.Equal(t, 0, depths["T-003"])
+}
+
+// makeMergedTask is a test helper that returns a MergedTask with the given GlobalID,
+// EpicID "E-001", and the provided dependency IDs. It mirrors the makeTask helper but
+// includes a consistent EpicID and TempID prefix to match the task spec requirements.
+func makeMergedTask(id string, deps ...string) MergedTask {
+	return MergedTask{
+		GlobalID:     id,
+		TempID:       "temp-" + id,
+		EpicID:       "E-001",
+		Title:        "Task " + id,
+		Dependencies: deps,
+	}
+}
+
+// --- Additional ValidateDAG tests for T-063 ---
+
+// TestValidateDAG_TableDriven exercises the primary ValidateDAG acceptance criteria
+// in a single table-driven test, covering valid and invalid graphs.
+func TestValidateDAG_TableDriven(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		tasks         []MergedTask
+		wantValid     bool
+		wantErrTypes  []DAGErrorType
+		wantDepths    map[string]int
+		wantMaxDepth  int
+		wantTopoFirst string // first element in topological order (optional check)
+		wantTopoLast  string // last element in topological order (optional check)
+	}{
+		{
+			name: "linear chain A->B->C valid depth",
+			tasks: []MergedTask{
+				makeTask("T-001"),
+				makeTask("T-002", "T-001"),
+				makeTask("T-003", "T-002"),
+			},
+			wantValid:     true,
+			wantDepths:    map[string]int{"T-001": 0, "T-002": 1, "T-003": 2},
+			wantMaxDepth:  2,
+			wantTopoFirst: "T-001",
+			wantTopoLast:  "T-003",
+		},
+		{
+			name: "diamond depth is longest path not shortest",
+			tasks: []MergedTask{
+				makeTask("T-001"),
+				makeTask("T-002", "T-001"),
+				makeTask("T-003", "T-001"),
+				makeTask("T-004", "T-002", "T-003"),
+			},
+			wantValid:    true,
+			wantDepths:   map[string]int{"T-001": 0, "T-002": 1, "T-003": 1, "T-004": 2},
+			wantMaxDepth: 2,
+			wantTopoLast: "T-004",
+		},
+		{
+			name: "all tasks independent depth zero",
+			tasks: []MergedTask{
+				makeTask("T-001"),
+				makeTask("T-002"),
+				makeTask("T-003"),
+			},
+			wantValid:    true,
+			wantDepths:   map[string]int{"T-001": 0, "T-002": 0, "T-003": 0},
+			wantMaxDepth: 0,
+		},
+		{
+			name: "self-reference is SelfReference not CycleDetected",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-001"),
+			},
+			wantValid:    false,
+			wantErrTypes: []DAGErrorType{SelfReference},
+		},
+		{
+			name: "dangling reference reports both IDs",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-999"),
+			},
+			wantValid:    false,
+			wantErrTypes: []DAGErrorType{DanglingReference},
+		},
+		{
+			name: "two-node cycle is CycleDetected",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-002"),
+				makeTask("T-002", "T-001"),
+			},
+			wantValid:    false,
+			wantErrTypes: []DAGErrorType{CycleDetected},
+		},
+		{
+			name: "three-node cycle is CycleDetected",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-003"),
+				makeTask("T-002", "T-001"),
+				makeTask("T-003", "T-002"),
+			},
+			wantValid:    false,
+			wantErrTypes: []DAGErrorType{CycleDetected},
+		},
+		{
+			name: "self-ref plus dangling ref both reported",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-001"),
+				makeTask("T-002", "T-888"),
+			},
+			wantValid:    false,
+			wantErrTypes: []DAGErrorType{SelfReference, DanglingReference},
+		},
+		{
+			name:      "empty task list is valid",
+			tasks:     []MergedTask{},
+			wantValid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			v := ValidateDAG(tt.tasks)
+
+			assert.Equal(t, tt.wantValid, v.Valid, "Valid mismatch")
+
+			if !tt.wantValid {
+				assert.NotEmpty(t, v.Errors, "expected errors but got none")
+				if len(tt.wantErrTypes) > 0 {
+					gotTypes := make(map[DAGErrorType]bool, len(v.Errors))
+					for _, e := range v.Errors {
+						gotTypes[e.Type] = true
+					}
+					for _, wantType := range tt.wantErrTypes {
+						assert.True(t, gotTypes[wantType], "expected error type %d not found in %v", wantType, v.Errors)
+					}
+				}
+				return
+			}
+
+			// Valid graph checks.
+			if tt.wantDepths != nil {
+				require.NotNil(t, v.Depths)
+				for id, wantDepth := range tt.wantDepths {
+					assert.Equal(t, wantDepth, v.Depths[id], "depth mismatch for %s", id)
+				}
+			}
+			assert.Equal(t, tt.wantMaxDepth, v.MaxDepth)
+
+			if tt.wantTopoFirst != "" {
+				require.NotEmpty(t, v.TopologicalOrder)
+				assert.Equal(t, tt.wantTopoFirst, v.TopologicalOrder[0], "expected topological first")
+			}
+			if tt.wantTopoLast != "" {
+				require.NotEmpty(t, v.TopologicalOrder)
+				assert.Equal(t, tt.wantTopoLast, v.TopologicalOrder[len(v.TopologicalOrder)-1], "expected topological last")
+			}
+		})
+	}
+}
+
+// TestValidateDAG_LargeValidDAG verifies that a large DAG (50+ tasks in a linear chain)
+// validates correctly and computes depths without errors.
+func TestValidateDAG_LargeValidDAG(t *testing.T) {
+	t.Parallel()
+
+	const n = 60
+	tasks := make([]MergedTask, n)
+	tasks[0] = makeTask("T-001")
+	for i := 1; i < n; i++ {
+		id := fmt.Sprintf("T-%03d", i+1)
+		prevID := fmt.Sprintf("T-%03d", i)
+		tasks[i] = makeTask(id, prevID)
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Empty(t, v.Errors)
+	assert.Len(t, v.TopologicalOrder, n)
+	assert.Equal(t, n-1, v.MaxDepth)
+
+	// Verify every task has the correct depth (linear chain: depth == position).
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("T-%03d", i+1)
+		assert.Equal(t, i, v.Depths[id], "depth mismatch for task %s", id)
+	}
+}
+
+// TestValidateDAG_LargeDAG_50Tasks verifies the explicit 50-task requirement from the spec.
+func TestValidateDAG_LargeDAG_50Tasks(t *testing.T) {
+	t.Parallel()
+
+	const n = 50
+	tasks := make([]MergedTask, n)
+	tasks[0] = makeTask("T-001")
+	for i := 1; i < n; i++ {
+		id := fmt.Sprintf("T-%03d", i+1)
+		prevID := fmt.Sprintf("T-%03d", i)
+		tasks[i] = makeTask(id, prevID)
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Len(t, v.TopologicalOrder, n)
+	assert.Equal(t, n-1, v.MaxDepth)
+
+	// Root has depth 0, last task has depth n-1.
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, n-1, v.Depths[fmt.Sprintf("T-%03d", n)])
+}
+
+// TestValidateDAG_DisconnectedComponents verifies that two separate chains are both
+// validated correctly with depths computed independently.
+func TestValidateDAG_DisconnectedComponents(t *testing.T) {
+	t.Parallel()
+
+	// Chain 1: T-001 -> T-002 -> T-003
+	// Chain 2: T-004 -> T-005
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-002"),
+		makeTask("T-004"),
+		makeTask("T-005", "T-004"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Empty(t, v.Errors)
+	assert.Len(t, v.TopologicalOrder, 5)
+
+	// Chain 1 depths.
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 1, v.Depths["T-002"])
+	assert.Equal(t, 2, v.Depths["T-003"])
+
+	// Chain 2 depths (independent; start from 0 again).
+	assert.Equal(t, 0, v.Depths["T-004"])
+	assert.Equal(t, 1, v.Depths["T-005"])
+
+	// MaxDepth comes from the longer chain.
+	assert.Equal(t, 2, v.MaxDepth)
+}
+
+// TestValidateDAG_DisconnectedComponents_EqualChains verifies two chains of equal
+// length are both processed and max depth reflects the shared longest path.
+func TestValidateDAG_DisconnectedComponents_EqualChains(t *testing.T) {
+	t.Parallel()
+
+	// Two independent chains each of length 3.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-002"),
+		makeTask("T-004"),
+		makeTask("T-005", "T-004"),
+		makeTask("T-006", "T-005"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Len(t, v.TopologicalOrder, 6)
+	assert.Equal(t, 2, v.MaxDepth)
+	assert.Equal(t, 2, v.Depths["T-003"])
+	assert.Equal(t, 2, v.Depths["T-006"])
+}
+
+// TestValidateDAG_EmptyDependencyString verifies that a task with an empty string in its
+// Dependencies slice is treated as a dangling reference (the empty-string task ID does not exist).
+func TestValidateDAG_EmptyDependencyString(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", ""), // "" is not a valid task ID
+	}
+
+	v := ValidateDAG(tasks)
+
+	// The empty string is not in the task set, so it is a dangling reference.
+	assert.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+	assert.Equal(t, DanglingReference, v.Errors[0].Type)
+	assert.Equal(t, "T-001", v.Errors[0].TaskID)
+}
+
+// TestValidateDAG_VeryDeepGraph verifies that a graph with depth > 100 does not panic
+// or overflow (the implementation uses BFS/Kahn, not recursive DFS for cycle detection).
+func TestValidateDAG_VeryDeepGraph(t *testing.T) {
+	t.Parallel()
+
+	const depth = 150
+	tasks := make([]MergedTask, depth)
+	// Build a linear chain: T-0001 -> T-0002 -> ... -> T-0150
+	for i := 0; i < depth; i++ {
+		id := fmt.Sprintf("T-%04d", i+1)
+		if i == 0 {
+			tasks[i] = makeTask(id)
+		} else {
+			prevID := fmt.Sprintf("T-%04d", i)
+			tasks[i] = makeTask(id, prevID)
+		}
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid, "expected valid DAG, got errors: %v", v.Errors)
+	assert.Equal(t, depth-1, v.MaxDepth)
+	assert.Len(t, v.TopologicalOrder, depth)
+	// Root has depth 0, leaf has depth depth-1.
+	assert.Equal(t, 0, v.Depths["T-0001"])
+	assert.Equal(t, depth-1, v.Depths[fmt.Sprintf("T-%04d", depth)])
+}
+
+// TestValidateDAG_MultipleRoots verifies that a graph with many independent root tasks
+// (no dependencies) is valid and all roots have depth 0.
+func TestValidateDAG_MultipleRoots(t *testing.T) {
+	t.Parallel()
+
+	const numRoots = 10
+	tasks := make([]MergedTask, numRoots+1)
+	rootIDs := make([]string, numRoots)
+	for i := 0; i < numRoots; i++ {
+		id := fmt.Sprintf("T-%03d", i+1)
+		tasks[i] = makeTask(id)
+		rootIDs[i] = id
+	}
+	// A single sink task that depends on all roots.
+	sinkID := fmt.Sprintf("T-%03d", numRoots+1)
+	tasks[numRoots] = makeTask(sinkID, rootIDs...)
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Len(t, v.TopologicalOrder, numRoots+1)
+
+	for _, rootID := range rootIDs {
+		assert.Equal(t, 0, v.Depths[rootID], "root %s should have depth 0", rootID)
+	}
+	assert.Equal(t, 1, v.Depths[sinkID], "sink depth should be 1 (max of all roots + 1)")
+	assert.Equal(t, 1, v.MaxDepth)
+}
+
+// TestValidateDAG_SingleSink verifies that a graph where all paths converge to one final
+// task is valid and the sink has the correct depth.
+func TestValidateDAG_SingleSink(t *testing.T) {
+	t.Parallel()
+
+	// T-001 -> T-004 (depth 1)
+	// T-002 -> T-003 -> T-004 (depth 2)
+	// T-004 is the single sink.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002"),
+		makeTask("T-003", "T-002"),
+		makeTask("T-004", "T-001", "T-003"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 0, v.Depths["T-002"])
+	assert.Equal(t, 1, v.Depths["T-003"])
+	// T-004 longest path: T-002->T-003->T-004 = depth 2
+	assert.Equal(t, 2, v.Depths["T-004"])
+	assert.Equal(t, 2, v.MaxDepth)
+}
+
+// TestValidateDAG_MultipleRootsNoSink verifies a fan-out graph (one root, many leaves)
+// is valid and all leaves have depth 1.
+func TestValidateDAG_MultipleRootsNoSink(t *testing.T) {
+	t.Parallel()
+
+	// T-001 is the single root; T-002 through T-006 are all leaves depending on T-001.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-001"),
+		makeTask("T-004", "T-001"),
+		makeTask("T-005", "T-001"),
+		makeTask("T-006", "T-001"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, "T-001", v.TopologicalOrder[0])
+	assert.Equal(t, 0, v.Depths["T-001"])
+	for _, id := range []string{"T-002", "T-003", "T-004", "T-005", "T-006"} {
+		assert.Equal(t, 1, v.Depths[id], "leaf %s should have depth 1", id)
+	}
+	assert.Equal(t, 1, v.MaxDepth)
+}
+
+// TestValidateDAG_DeterministicAcrossMultipleRuns verifies that calling ValidateDAG
+// many times on the same input always produces the exact same topological order.
+// This guards against map-iteration non-determinism leaking into the output.
+func TestValidateDAG_DeterministicAcrossMultipleRuns(t *testing.T) {
+	t.Parallel()
+
+	// Mix of roots and dependent tasks.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002"),
+		makeTask("T-003"),
+		makeTask("T-004", "T-001"),
+		makeTask("T-005", "T-002"),
+		makeTask("T-006", "T-003"),
+		makeTask("T-007", "T-004", "T-005"),
+		makeTask("T-008", "T-006"),
+	}
+
+	const iterations = 20
+	first := ValidateDAG(tasks)
+	require.True(t, first.Valid)
+
+	for i := 1; i < iterations; i++ {
+		got := ValidateDAG(tasks)
+		require.True(t, got.Valid, "iteration %d: expected valid", i)
+		assert.Equal(t, first.TopologicalOrder, got.TopologicalOrder,
+			"iteration %d produced different topological order", i)
+		assert.Equal(t, first.Depths, got.Depths,
+			"iteration %d produced different depths", i)
+	}
+}
+
+// TestValidateDAG_SelfRefAndDanglingBothReported verifies the "multiple independent errors"
+// requirement: a task with a self-reference AND a task with a dangling reference each produce
+// their own distinct errors in a single ValidateDAG call.
+func TestValidateDAG_SelfRefAndDanglingBothReported(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-001"),  // self-reference
+		makeTask("T-002", "T-999"), // dangling reference
+		makeTask("T-003"),          // valid
+	}
+
+	v := ValidateDAG(tasks)
+
+	assert.False(t, v.Valid)
+
+	// Count error types.
+	selfRefCount := 0
+	danglingCount := 0
+	for _, e := range v.Errors {
+		switch e.Type {
+		case SelfReference:
+			selfRefCount++
+			assert.Equal(t, "T-001", e.TaskID)
+			assert.Contains(t, e.Details, "T-001")
+		case DanglingReference:
+			danglingCount++
+			assert.Equal(t, "T-002", e.TaskID)
+			assert.Contains(t, e.Details, "T-002")
+			assert.Contains(t, e.Details, "T-999")
+			assert.Contains(t, e.Details, "does not exist")
+		}
+	}
+	assert.Equal(t, 1, selfRefCount, "expected exactly one SelfReference error")
+	assert.Equal(t, 1, danglingCount, "expected exactly one DanglingReference error")
+}
+
+// TestValidateDAG_DanglingReferenceErrorMessage verifies the exact error-message format
+// of a dangling reference: it must mention both the referencing task and the missing ID.
+func TestValidateDAG_DanglingReferenceErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-ZZZ"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+
+	e := v.Errors[0]
+	assert.Equal(t, DanglingReference, e.Type)
+	assert.Equal(t, "T-001", e.TaskID)
+	assert.Contains(t, e.Details, "T-001", "details must mention the referencing task")
+	assert.Contains(t, e.Details, "T-ZZZ", "details must mention the missing dependency")
+	assert.Contains(t, e.Details, "does not exist")
+}
+
+// TestValidateDAG_SelfReferenceErrorMessage verifies the exact error-message format
+// of a self-reference error.
+func TestValidateDAG_SelfReferenceErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-042", "T-042"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.False(t, v.Valid)
+	require.Len(t, v.Errors, 1)
+
+	e := v.Errors[0]
+	assert.Equal(t, SelfReference, e.Type)
+	assert.Equal(t, "T-042", e.TaskID)
+	assert.Contains(t, e.Details, "T-042")
+	assert.Contains(t, e.Details, "depends on itself")
+}
+
+// TestValidateDAG_CycleErrorContainsAllCycleNodes verifies that when a cycle is detected,
+// the Cycle field in the DAGError contains all node IDs forming the cycle.
+func TestValidateDAG_CycleErrorContainsAllCycleNodes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		tasks         []MergedTask
+		expectedCycle []string // IDs that must all appear in Cycle
+	}{
+		{
+			name: "two-node cycle",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-002"),
+				makeTask("T-002", "T-001"),
+			},
+			expectedCycle: []string{"T-001", "T-002"},
+		},
+		{
+			name: "three-node cycle",
+			tasks: []MergedTask{
+				makeTask("T-001", "T-003"),
+				makeTask("T-002", "T-001"),
+				makeTask("T-003", "T-002"),
+			},
+			expectedCycle: []string{"T-001", "T-002", "T-003"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			v := ValidateDAG(tt.tasks)
+
+			assert.False(t, v.Valid)
+			require.NotEmpty(t, v.Errors)
+
+			// Find the CycleDetected error.
+			var cycleErr *DAGError
+			for i := range v.Errors {
+				if v.Errors[i].Type == CycleDetected {
+					cycleErr = &v.Errors[i]
+					break
+				}
+			}
+			require.NotNil(t, cycleErr, "expected a CycleDetected error")
+
+			// All expected nodes must appear in the cycle.
+			for _, id := range tt.expectedCycle {
+				assert.Contains(t, cycleErr.Cycle, id, "cycle must contain %s", id)
+			}
+			assert.Contains(t, cycleErr.Details, "cycle detected involving tasks")
+		})
+	}
+}
+
+// TestValidateDAG_NilTasksVsEmptyTasksEquivalent verifies that nil and empty slices
+// produce the same result: a valid empty DAG.
+func TestValidateDAG_NilTasksVsEmptyTasksEquivalent(t *testing.T) {
+	t.Parallel()
+
+	vNil := ValidateDAG(nil)
+	vEmpty := ValidateDAG([]MergedTask{})
+
+	assert.Equal(t, vNil.Valid, vEmpty.Valid)
+	assert.Equal(t, len(vNil.Errors), len(vEmpty.Errors))
+	assert.Empty(t, vNil.TopologicalOrder)
+	assert.Empty(t, vEmpty.TopologicalOrder)
+}
+
+// TestValidateDAG_MaxDepthReflectsDeepestTask verifies that MaxDepth always matches
+// the highest depth value in the Depths map.
+func TestValidateDAG_MaxDepthReflectsDeepestTask(t *testing.T) {
+	t.Parallel()
+
+	// T-005 is the deepest: T-001->T-002->T-003->T-004->T-005 (depth 4).
+	// T-006 branches from T-001 (depth 1), so it does not change MaxDepth.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-002"),
+		makeTask("T-004", "T-003"),
+		makeTask("T-005", "T-004"),
+		makeTask("T-006", "T-001"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+
+	// Find maximum in Depths map.
+	maxFromMap := 0
+	for _, d := range v.Depths {
+		if d > maxFromMap {
+			maxFromMap = d
+		}
+	}
+	assert.Equal(t, maxFromMap, v.MaxDepth, "MaxDepth must equal the highest value in Depths")
+	assert.Equal(t, 4, v.MaxDepth)
+}
+
+// TestValidateDAG_ValidGraphHasNoNilFields verifies that a valid DAG always has
+// non-nil TopologicalOrder and Depths (even for edge cases like a single task).
+func TestValidateDAG_ValidGraphHasNoNilFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		tasks []MergedTask
+	}{
+		{name: "single task", tasks: []MergedTask{makeTask("T-001")}},
+		{name: "two tasks no dep", tasks: []MergedTask{makeTask("T-001"), makeTask("T-002")}},
+		{name: "two tasks with dep", tasks: []MergedTask{makeTask("T-001"), makeTask("T-002", "T-001")}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			v := ValidateDAG(tt.tasks)
+
+			require.True(t, v.Valid)
+			assert.NotNil(t, v.TopologicalOrder)
+			assert.NotNil(t, v.Depths)
+		})
+	}
+}
+
+// TestValidateDAG_TopoOrderLength verifies the topological order has exactly
+// the same number of tasks as the input.
+func TestValidateDAG_TopoOrderLength(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003"),
+		makeTask("T-004", "T-003"),
+		makeTask("T-005", "T-002", "T-004"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Len(t, v.TopologicalOrder, len(tasks))
+	// T-005 must be last (depends on T-002 and T-004).
+	assert.Equal(t, "T-005", v.TopologicalOrder[len(v.TopologicalOrder)-1])
+}
+
+// TestValidateDAG_DepthZeroForAllRoots verifies that every task with no dependencies
+// receives depth 0, regardless of graph structure.
+func TestValidateDAG_DepthZeroForAllRoots(t *testing.T) {
+	t.Parallel()
+
+	// Multiple independent roots plus one convergence task.
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002"),
+		makeTask("T-003"),
+		makeTask("T-004"),
+		makeTask("T-005", "T-001", "T-002", "T-003", "T-004"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	for _, id := range []string{"T-001", "T-002", "T-003", "T-004"} {
+		assert.Equal(t, 0, v.Depths[id], "root %s should have depth 0", id)
+	}
+	assert.Equal(t, 1, v.Depths["T-005"])
+}
+
+// TestValidateDAG_MakeMergedTaskHelper verifies that makeMergedTask produces correctly
+// structured tasks that are accepted by ValidateDAG.
+func TestValidateDAG_MakeMergedTaskHelper(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeMergedTask("T-001"),
+		makeMergedTask("T-002", "T-001"),
+	}
+
+	v := ValidateDAG(tasks)
+
+	require.True(t, v.Valid)
+	assert.Equal(t, []string{"T-001", "T-002"}, v.TopologicalOrder)
+	assert.Equal(t, 0, v.Depths["T-001"])
+	assert.Equal(t, 1, v.Depths["T-002"])
+
+	// Verify helper fields.
+	assert.Equal(t, "temp-T-001", tasks[0].TempID)
+	assert.Equal(t, "E-001", tasks[0].EpicID)
+	assert.Equal(t, "Task T-001", tasks[0].Title)
+}
+
+// --- Additional TopologicalDepths tests ---
+
+// TestTopologicalDepths_EmptySlice verifies that an empty (non-nil) slice returns nil.
+func TestTopologicalDepths_EmptySlice(t *testing.T) {
+	t.Parallel()
+
+	result := TopologicalDepths([]MergedTask{})
+	assert.Nil(t, result)
+}
+
+// TestTopologicalDepths_ValidDAG_AllDepths verifies that TopologicalDepths returns
+// the same depths as ValidateDAG.Depths for a non-trivial graph.
+func TestTopologicalDepths_ValidDAG_AllDepths(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-001"),
+		makeTask("T-004", "T-002", "T-003"),
+	}
+
+	depths := TopologicalDepths(tasks)
+	v := ValidateDAG(tasks)
+
+	require.NotNil(t, depths)
+	assert.Equal(t, v.Depths, depths)
+}
+
+// TestTopologicalDepths_DanglingRef_ReturnsNil verifies that TopologicalDepths returns nil
+// when the graph has a dangling reference (which makes it invalid).
+func TestTopologicalDepths_DanglingRef_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-999"),
+	}
+
+	result := TopologicalDepths(tasks)
+	assert.Nil(t, result)
+}
+
+// TestTopologicalDepths_SelfRef_ReturnsNil verifies that TopologicalDepths returns nil
+// when the graph has a self-reference.
+func TestTopologicalDepths_SelfRef_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001", "T-001"),
+	}
+
+	result := TopologicalDepths(tasks)
+	assert.Nil(t, result)
+}
+
+// TestTopologicalDepths_DiamondGraph verifies correct longest-path depths
+// for a diamond-shaped graph.
+func TestTopologicalDepths_DiamondGraph(t *testing.T) {
+	t.Parallel()
+
+	tasks := []MergedTask{
+		makeTask("T-001"),
+		makeTask("T-002", "T-001"),
+		makeTask("T-003", "T-001"),
+		makeTask("T-004", "T-002", "T-003"),
+	}
+
+	depths := TopologicalDepths(tasks)
+
+	require.NotNil(t, depths)
+	assert.Equal(t, 0, depths["T-001"])
+	assert.Equal(t, 1, depths["T-002"])
+	assert.Equal(t, 1, depths["T-003"])
+	assert.Equal(t, 2, depths["T-004"])
+}
+
+// TestTopologicalDepths_LargeGraph verifies that TopologicalDepths handles a larger
+// graph (50 tasks) without error.
+func TestTopologicalDepths_LargeGraph(t *testing.T) {
+	t.Parallel()
+
+	const n = 50
+	tasks := make([]MergedTask, n)
+	tasks[0] = makeTask("T-001")
+	for i := 1; i < n; i++ {
+		id := fmt.Sprintf("T-%03d", i+1)
+		prevID := fmt.Sprintf("T-%03d", i)
+		tasks[i] = makeTask(id, prevID)
+	}
+
+	depths := TopologicalDepths(tasks)
+
+	require.NotNil(t, depths)
+	assert.Equal(t, 0, depths["T-001"])
+	assert.Equal(t, n-1, depths[fmt.Sprintf("T-%03d", n)])
+}
