@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 47 |
+| Completed | 48 |
 | In Progress | 0 |
-| Not Started | 42 |
+| Not Started | 41 |
 
 ---
 
@@ -311,6 +311,26 @@
 
 ---
 
+### T-045: Workflow Engine Core -- State Machine Runner
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `Engine` struct with functional options (`WithDryRun`, `WithSingleStep`, `WithEventChannel`, `WithLogger`, `WithMaxIterations`)
+  - `Run()` method: full state machine loop with context cancellation, step resolution, event emission, StepRecord tracking, terminal step detection, and max-iterations guard (default 1000)
+  - `RunStep()` method: single-step isolation via sub-Engine with `WithSingleStep`
+  - `Validate()` method: checks handler registration, transition target validity, and initial step existence
+  - `safeExecute()`: `recover()`-wrapped Execute() converting panics to descriptive errors
+  - `emit()`: nil-safe, non-blocking event channel send
+  - Workflow events emitted: `WEWorkflowStarted`/`WEWorkflowResumed`, `WEStepStarted`, `WEStepCompleted`/`WEStepFailed`/`WEStepSkipped`, `WEWorkflowCompleted`/`WEWorkflowFailed`
+  - 48 unit tests + 3 benchmarks achieving 98.6% statement coverage
+- **Files created/modified:**
+  - `internal/workflow/engine.go` -- full Engine implementation with godoc
+  - `internal/workflow/engine_test.go` -- comprehensive test suite (48 tests + 3 benchmarks)
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -332,7 +352,7 @@ _None currently_
 |------|------|----------|--------|--------|
 | T-043 | Workflow Event Types and Constants | Must Have | Small (2-4hrs) | Completed |
 | T-044 | Step Handler Registry | Must Have | Small (2-4hrs) | Completed |
-| T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Not Started |
+| T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Completed |
 | T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Not Started |
 | T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Not Started |
 | T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Not Started |
