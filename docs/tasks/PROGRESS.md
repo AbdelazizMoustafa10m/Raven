@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 35 |
+| Completed | 34 |
 | In Progress | 0 |
-| Not Started | 51 |
+| Not Started | 55 |
 
 ---
 
@@ -340,17 +340,18 @@ _None currently_
 
 ---
 
-### Phase 6: TUI Command Center (T-066 to T-078)
+### Phase 6: TUI Command Center (T-066 to T-078, T-089)
 
 - **Status:** Not Started
-- **Tasks:** 13 (12 Must Have, 1 Should Have)
-- **Estimated Effort:** 88-136 hours
+- **Tasks:** 14 (13 Must Have, 1 Should Have)
+- **Estimated Effort:** 96-148 hours
 - **PRD Roadmap:** Weeks 11-13
 
 #### Task List
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
+| T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Not Started |
 | T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Not Started |
 | T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Not Started |
 | T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Not Started |

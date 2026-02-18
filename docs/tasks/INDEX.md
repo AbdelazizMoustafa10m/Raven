@@ -1,8 +1,8 @@
 # Raven Task Index
 
-> **Total Tasks:** 88 across 8 phases | **Must Have:** 79 | **Should Have:** 9
+> **Total Tasks:** 89 across 8 phases | **Must Have:** 80 | **Should Have:** 9
 >
-> **Estimated Total Effort:** ~574-897 hours (~14 weeks at full pace)
+> **Estimated Total Effort:** ~582-909 hours (~14 weeks at full pace)
 
 This index organizes all implementation tasks for Raven -- a Go CLI tool that orchestrates AI-assisted software development workflows from PRD decomposition to implementation, review, fix, and PR creation.
 
@@ -130,20 +130,21 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 
 ---
 
-## Phase 6: TUI Command Center (T-066 -- T-078)
+## Phase 6: TUI Command Center (T-066 -- T-078, T-089)
 
 > Bubble Tea dashboard, split-pane layout, agent monitoring, keyboard navigation
 
 | Task | Name | Priority | Effort | Dependencies |
 |------|------|----------|--------|--------------|
+| [T-089](T-089-stream-integration.md) | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | T-022, T-027, T-088 |
 | [T-066](T-066-bubbletea-app-scaffold.md) | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | T-004 |
-| [T-067](T-067-tui-message-types.md) | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | T-004, T-066 |
+| [T-067](T-067-tui-message-types.md) | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | T-004, T-066, T-089 |
 | [T-068](T-068-lipgloss-styles-theme.md) | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | T-066 |
 | [T-069](T-069-split-pane-layout.md) | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | T-066, T-068 |
 | [T-070](T-070-sidebar-workflow-list.md) | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | T-067, T-068, T-069 |
 | [T-071](T-071-sidebar-task-progress.md) | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | T-067, T-068, T-069, T-070 |
 | [T-072](T-072-sidebar-rate-limit-status.md) | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | T-067, T-068, T-069, T-070 |
-| [T-073](T-073-agent-output-panel.md) | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | T-066, T-067, T-068, T-069 |
+| [T-073](T-073-agent-output-panel.md) | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | T-066, T-067, T-068, T-069, T-089 |
 | [T-074](T-074-event-log-panel.md) | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | T-066, T-067, T-068, T-069 |
 | [T-075](T-075-status-bar.md) | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | T-066, T-067, T-068, T-069 |
 | [T-076](T-076-keyboard-navigation-help.md) | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | T-066, T-067, T-069, T-070, T-073, T-074 |
@@ -185,9 +186,9 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 | Effort Level | Count | Hours Range |
 |-------------|-------|-------------|
 | Small (1-6hrs) | 15 | 30-64 hrs |
-| Medium (4-12hrs) | 59 | 366-582 hrs |
+| Medium (4-12hrs) | 60 | 374-594 hrs |
 | Large (14-30hrs) | 14 | 186-262 hrs |
-| **Total** | **88** | **~582-908 hrs** |
+| **Total** | **89** | **~590-920 hrs** |
 
 ---
 
@@ -195,7 +196,7 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 
 | Priority | Count |
 |----------|-------|
-| Must Have | 79 |
+| Must Have | 80 |
 | Should Have | 9 |
 
 ---
@@ -205,7 +206,7 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 | PRD Section | Tasks |
 |-------------|-------|
 | 5.1 Generic Workflow Engine | T-043, T-044, T-045, T-046, T-047, T-048, T-049 |
-| 5.2 Agent Adapter System | T-021, T-022, T-023, T-024, T-025, T-088 |
+| 5.2 Agent Adapter System | T-021, T-022, T-023, T-024, T-025, T-088, T-089 |
 | 5.3 Task Management System | T-016, T-017, T-018, T-019, T-020, T-030 |
 | 5.4 Implementation Loop Engine | T-026, T-027, T-028, T-029 |
 | 5.5 Multi-Agent Review Pipeline | T-031, T-032, T-033, T-034, T-035, T-036, T-041 |
@@ -215,7 +216,7 @@ This index organizes all implementation tasks for Raven -- a Go CLI tool that or
 | 5.9 Phase Pipeline Orchestrator | T-050, T-051, T-052, T-053, T-054, T-055 |
 | 5.10 Configuration System | T-009, T-010, T-011, T-012 |
 | 5.11 CLI Interface | T-006, T-007, T-008, T-014, T-020, T-029, T-041, T-042, T-047, T-055, T-065 |
-| 5.12 Interactive TUI Dashboard | T-066, T-067, T-068, T-069, T-070, T-071, T-072, T-073, T-074, T-075, T-076, T-077, T-078 |
+| 5.12 Interactive TUI Dashboard | T-066, T-067, T-068, T-069, T-070, T-071, T-072, T-073, T-074, T-075, T-076, T-077, T-078, T-089 |
 | 5.13 Git Integration | T-015 |
 | 6.x Architecture | T-001, T-002, T-003, T-004, T-005, T-013 |
 | 7.x Development Roadmap | All phases |
@@ -262,7 +263,9 @@ Phase 5: PRD Decomposition (Weeks 9-10)
   T-059 + T-063 -> T-064 -> T-065
 
 Phase 6: TUI Command Center (Weeks 11-13)
+  T-089 (first -- blocks T-067, T-073; depends on T-088 from Phase 8)
   T-066 -> T-067, T-068
+  T-089 -> T-067, T-073
   T-068 -> T-069
   T-069 -> T-070, T-073, T-074, T-075
   T-070 -> T-071, T-072, T-076
@@ -272,6 +275,9 @@ Phase 7: Polish & Distribution (Week 14)
   T-079 -> T-080 -> T-087
   T-084, T-085 -> T-087
   T-081, T-082, T-083, T-086 (parallel)
+
+Phase 8: Headless Observability (T-088 only -- completed)
+  T-088 (decoder/types, consumed by T-089 in Phase 6)
 ```
 
 ---
