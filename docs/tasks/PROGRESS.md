@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 77 |
+| Completed | 78 |
 | In Progress | 0 |
-| Not Started | 12 |
+| Not Started | 11 |
 
 ---
 
@@ -626,6 +626,26 @@
   - `internal/tui/event_log_test.go` -- 40+ tests covering all acceptance criteria, edge cases, and integration scenarios
 - **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
 
+### T-075: Status Bar with Current State, Iteration, and Timer
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `StatusBarModel` sub-model tracking phase, task, iteration, elapsed time, paused state, workflow name, and mode
+  - `NewStatusBarModel(theme Theme) StatusBarModel` initializes with mode="idle" and zero dynamic state
+  - `Update(msg tea.Msg) StatusBarModel` handles `LoopEventMsg`, `WorkflowEventMsg`, and `TickMsg`
+  - `View() string` renders single-line status bar with left-aligned segments and right-aligned "? help" hint
+  - Two-pass segment layout: mandatory (mode, task) always shown; optional (phase, iter, timer) dropped when too narrow
+  - `formatElapsed(d time.Duration) string` returns "HH:MM:SS" format
+  - Prominent "PAUSED" badge (amber background) when `LoopWaitingForRateLimit` fires; cleared on `LoopResumedAfterWait`
+  - Elapsed timer uses `tickMsg.Time.Sub(startTime)` for deterministic test behavior
+  - Fixed lipgloss border-box Width behavior: uses `Width(sb.width)` (total) not `Width(innerWidth)` (content)
+  - 45 unit/integration tests + 2 benchmarks covering all acceptance criteria and edge cases
+- **Files created/modified:**
+  - `internal/tui/status_bar.go` -- `StatusBarModel` with full Elm architecture, segment helpers, `formatElapsed`
+  - `internal/tui/status_bar_test.go` -- 45+ tests for all acceptance criteria, edge cases, and integration lifecycle
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
 ---
 
 ## In Progress Tasks
@@ -657,7 +677,7 @@ _None currently_
 | T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Completed |
 | T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Completed |
 | T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Completed |
-| T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Not Started |
+| T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Completed |
 | T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Not Started |
 | T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Not Started |
 | T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Not Started |
