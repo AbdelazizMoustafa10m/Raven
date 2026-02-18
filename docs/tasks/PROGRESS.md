@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 50 |
+| Completed | 51 |
 | In Progress | 0 |
-| Not Started | 39 |
+| Not Started | 38 |
 
 ---
 
@@ -383,6 +383,33 @@
 
 ---
 
+### T-048: Workflow Definition Validation
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - Nine `Issue*` string constants (`IssueNoSteps`, `IssueMissingInitial`, `IssueMissingHandler`, `IssueInvalidTarget`, `IssueUnreachableStep`, `IssueCycleDetected`, `IssueNoTransitions`, `IssueDuplicateStep`, `IssueEmptyStepName`) -- stable string values for switch-based caller handling
+  - `ValidationIssue` struct: `Code`, `Step` (empty for definition-level issues), `Message`
+  - `ValidationResult` struct with `Errors` (fatal) and `Warnings` (non-fatal) slices, `IsValid() bool`, `String() string` methods
+  - `ValidateDefinition(def, registry) *ValidationResult` -- 6-phase validation: (1) empty steps / empty names / duplicates / missing initial step; (2) invalid transition targets; (3) handler checks against registry (nil registry skips this phase); (4) BFS reachability from `InitialStep`; (5) three-color DFS cycle detection with cycle-path capture in warning messages; (6) no-transitions warning for non-terminal steps
+  - `ValidateDefinitions(defs map[string]*WorkflowDefinition, registry) map[string]*ValidationResult` -- batch validation over a map
+  - Cycles are warnings (not errors): intentional review-fix loops are valid by design
+  - Terminal pseudo-steps (`StepDone`/`StepFailed`) are always valid transition targets; they are excluded from adjacency graph to avoid false positives
+  - Diamond-shaped (convergent) graphs correctly identified as non-cyclic by the three-color DFS
+  - 40+ unit tests covering all issue codes, graph analysis edge cases (diamond, linear chain, cycle, orphan), nil definition, empty registry, batch validation
+- **Files created/modified:**
+  - `internal/workflow/validate.go` -- full implementation with godoc
+  - `internal/workflow/validate_test.go` -- comprehensive test suite (40+ tests)
+- **Key Decisions:**
+  1. **Cycles as warnings** -- `review → fix → review` loops are intentional; callers decide whether to reject a workflow with cycles; `IsValid()` is true when there are zero errors
+  2. **Six-phase sequential validation** -- Each phase builds on the previous; graph analysis (phases 4-6) is gated on a valid `InitialStep` so BFS/DFS do not panic on empty inputs
+  3. **Terminal pseudo-steps excluded from adjacency** -- `StepDone` and `StepFailed` have no outgoing transitions; including them in adjacency would incorrectly suppress cross-branch reachability warnings
+  4. **`cyclesReported` deduplication map** -- Prevents duplicate `CYCLE_DETECTED` warnings when the DFS discovers the same back-edge through different entry points in disconnected sub-graphs
+  5. **`String()` omits `step ""` for definition-level issues** -- Issues without a `Step` field render as `[CODE] message` to avoid confusing empty-string quotes in CLI output
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -393,7 +420,7 @@ _None currently_
 
 ### Phase 4: Workflow Engine & Pipeline (T-043 to T-055)
 
-- **Status:** In Progress (5/13 complete)
+- **Status:** In Progress (6/13 complete)
 - **Tasks:** 13 (12 Must Have, 1 Should Have)
 - **Estimated Effort:** 96-144 hours
 - **PRD Roadmap:** Weeks 7-8
@@ -407,7 +434,7 @@ _None currently_
 | T-045 | Workflow Engine Core -- State Machine Runner | Must Have | Large (14-20hrs) | Completed |
 | T-046 | Workflow State Checkpointing and Persistence | Must Have | Medium (6-10hrs) | Completed |
 | T-047 | Resume Command -- List and Resume Interrupted Workflows | Must Have | Medium (6-10hrs) | Completed |
-| T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Not Started |
+| T-048 | Workflow Definition Validation | Must Have | Medium (6-10hrs) | Completed |
 | T-049 | Built-in Workflow Definitions and Step Handlers | Must Have | Large (14-20hrs) | Not Started |
 | T-050 | Pipeline Orchestrator Core -- Multi-Phase Lifecycle | Must Have | Large (14-20hrs) | Not Started |
 | T-051 | Pipeline Branch Management | Must Have | Medium (6-10hrs) | Not Started |
