@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 58 |
+| Completed | 59 |
 | In Progress | 0 |
-| Not Started | 31 |
+| Not Started | 30 |
 
 ---
 
@@ -334,6 +334,32 @@
 
 ---
 
+### T-056: Epic JSON Schema and Types
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **What was built:**
+  - `EpicBreakdown` and `Epic` structs for Phase 1 (shred) output with full JSON tags
+  - `EpicTaskResult` and `TaskDef` structs for Phase 2 (scatter) output with full JSON tags
+  - `ValidationError` structured error type for retry prompt augmentation
+  - `(*EpicBreakdown).Validate()` — enforces ID format, required fields, duplicate IDs, cross-epic dep integrity
+  - `(*EpicTaskResult).Validate(knownEpicIDs)` — enforces temp_id format, effort/priority enums, local/cross-epic dep refs
+  - `FormatValidationErrors` — numbered list format suitable for LLM retry prompts
+  - `ParseEpicBreakdown` / `ParseEpicTaskResult` — 10 MB size cap + unmarshal + validate helpers
+  - Comprehensive test suite with 100% statement coverage; golden tests, fuzz tests, benchmarks
+- **Files created/modified:**
+  - `internal/prd/schema.go` — all types, validation methods, and parse helpers
+  - `internal/prd/schema_test.go` — 80+ tests: table-driven, golden, fuzz, benchmarks
+  - `internal/prd/testdata/valid_epic_breakdown.json` — 3-epic valid fixture
+  - `internal/prd/testdata/valid_epic_task_result.json` — 3-task valid fixture for E-001
+  - `internal/prd/testdata/invalid_epic_breakdown.json` — invalid fixture with multiple failure modes
+  - `internal/prd/testdata/invalid_epic_task_result.json` — invalid task result fixture
+  - `internal/prd/testdata/expected-output/epic_breakdown_golden.json` — golden snapshot
+  - `internal/prd/testdata/expected-output/epic_task_result_golden.json` — golden snapshot
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓  coverage: 100%
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -344,7 +370,7 @@ _None currently_
 
 ### Phase 5: PRD Decomposition (T-056 to T-065)
 
-- **Status:** Not Started
+- **Status:** In Progress (T-056 completed)
 - **Tasks:** 10 (10 Must Have)
 - **Estimated Effort:** 70-110 hours
 - **PRD Roadmap:** Weeks 9-10
@@ -353,7 +379,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Not Started |
+| T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Completed |
 | T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Not Started |
 | T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Not Started |
 | T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Not Started |

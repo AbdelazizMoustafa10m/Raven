@@ -1,0 +1,39 @@
+{
+  "epics": [
+    {
+      "id": "E-001",
+      "title": "Authentication System",
+      "description": "Handles user authentication and authorization including JWT tokens, session management, and role-based access control.",
+      "prd_sections": [
+        "Section 3.1",
+        "Section 3.2"
+      ],
+      "estimated_task_count": 8,
+      "dependencies_on_epics": []
+    },
+    {
+      "id": "E-002",
+      "title": "User Profile Management",
+      "description": "Provides functionality for users to view and update their profile information, avatar, and preferences.",
+      "prd_sections": [
+        "Section 4.1"
+      ],
+      "estimated_task_count": 5,
+      "dependencies_on_epics": [
+        "E-001"
+      ]
+    },
+    {
+      "id": "E-003",
+      "title": "Database Schema",
+      "description": "Defines the core relational schema, migrations, and seed data for the application.",
+      "prd_sections": [
+        "Section 2.1",
+        "Section 2.2",
+        "Section 2.3"
+      ],
+      "estimated_task_count": 6,
+      "dependencies_on_epics": []
+    }
+  ]
+}
