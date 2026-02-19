@@ -248,21 +248,21 @@ func (el EventLogModel) Update(msg tea.Msg) (EventLogModel, tea.Cmd) {
 func (el EventLogModel) handleKey(msg tea.KeyMsg) (EventLogModel, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyUp:
-		el.viewport.LineUp(1)
+		el.viewport.ScrollUp(1)
 		el.autoScroll = false
 
 	case tea.KeyDown:
-		el.viewport.LineDown(1)
+		el.viewport.ScrollDown(1)
 		if el.viewport.AtBottom() {
 			el.autoScroll = true
 		}
 
 	case tea.KeyPgUp:
-		el.viewport.ViewUp()
+		el.viewport.PageUp()
 		el.autoScroll = false
 
 	case tea.KeyPgDown:
-		el.viewport.ViewDown()
+		el.viewport.PageDown()
 		if el.viewport.AtBottom() {
 			el.autoScroll = true
 		}
@@ -274,10 +274,10 @@ func (el EventLogModel) handleKey(msg tea.KeyMsg) (EventLogModel, tea.Cmd) {
 	case tea.KeyRunes:
 		switch string(msg.Runes) {
 		case "k":
-			el.viewport.LineUp(1)
+			el.viewport.ScrollUp(1)
 			el.autoScroll = false
 		case "j":
-			el.viewport.LineDown(1)
+			el.viewport.ScrollDown(1)
 			if el.viewport.AtBottom() {
 				el.autoScroll = true
 			}
@@ -288,6 +288,8 @@ func (el EventLogModel) handleKey(msg tea.KeyMsg) (EventLogModel, tea.Cmd) {
 			el.viewport.GotoBottom()
 			el.autoScroll = true
 		}
+
+	default:
 	}
 
 	return el, nil

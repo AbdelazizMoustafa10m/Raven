@@ -344,8 +344,8 @@ func (sm *StateManager) writeAtomic(states []TaskState) error {
 	w := bufio.NewWriter(f)
 	for _, s := range states {
 		if _, err := fmt.Fprintln(w, formatLine(s)); err != nil {
-			f.Close()        //nolint:errcheck
-			os.Remove(tmp)   //nolint:errcheck
+			f.Close()      //nolint:errcheck
+			os.Remove(tmp) //nolint:errcheck
 			return fmt.Errorf("writing state line for task %q: %w", s.TaskID, err)
 		}
 	}

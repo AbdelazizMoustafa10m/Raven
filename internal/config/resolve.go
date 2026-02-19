@@ -291,7 +291,7 @@ func resolveFromCLI(rc *ResolvedConfig, overrides *CLIOverrides) {
 // --- Helpers ---
 
 // setString unconditionally sets the target to the given value and records the source.
-func setString(target *string, value string, path string, source ConfigSource, sources map[string]ConfigSource) {
+func setString(target *string, value string, path string, source ConfigSource, sources map[string]ConfigSource) { //nolint:unparam // consistent API with mergeString
 	*target = value
 	sources[path] = source
 }
@@ -299,7 +299,7 @@ func setString(target *string, value string, path string, source ConfigSource, s
 // mergeString overwrites the target only if value is non-empty (non-zero string).
 // For file-layer merging, an empty string in the file means "not set in file",
 // so it does not override the default.
-func mergeString(target *string, value string, path string, source ConfigSource, sources map[string]ConfigSource) {
+func mergeString(target *string, value string, path string, source ConfigSource, sources map[string]ConfigSource) { //nolint:unparam // consistent API with setString
 	if value != "" {
 		*target = value
 		sources[path] = source

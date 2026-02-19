@@ -662,9 +662,9 @@ func TestAgentErrorRecovery_ShouldAbort_WithMaxThreeErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		errorCount     int
-		maxErrors      int
+		name            string
+		errorCount      int
+		maxErrors       int
 		wantShouldAbort bool
 	}{
 		{
@@ -828,9 +828,9 @@ func TestRecoveryEventTypes_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		wantType       RecoveryEventType
-		wantNonEmpty   bool // Remaining should be non-zero for rate-limit events
+		name         string
+		wantType     RecoveryEventType
+		wantNonEmpty bool // Remaining should be non-zero for rate-limit events
 	}{
 		{
 			name:         "rate limit countdown event has remaining duration",
@@ -867,8 +867,8 @@ func TestRecoveryEventTypes_TableDriven(t *testing.T) {
 
 			ch := make(chan RecoveryEvent, 1)
 			evt := RecoveryEvent{
-				Type:      tt.wantType,
-				Message:   "test message",
+				Type:    tt.wantType,
+				Message: "test message",
 				Remaining: func() time.Duration {
 					if tt.wantNonEmpty {
 						return 30 * time.Second

@@ -87,9 +87,9 @@ func TestRenderTemplate_createsRavenToml(t *testing.T) {
 // correctly substituted into .tmpl files.
 func TestRenderTemplate_substitutesVars(t *testing.T) {
 	tests := []struct {
-		name        string
-		vars        TemplateVars
-		wantInToml  []string
+		name       string
+		vars       TemplateVars
+		wantInToml []string
 	}{
 		{
 			name: "project name and language appear in raven.toml",
@@ -285,8 +285,8 @@ func TestRenderTemplate_filePermissions(t *testing.T) {
 	// Check file permission.
 	tomlInfo, err := os.Stat(filepath.Join(dir, "raven.toml"))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o644), tomlInfo.Mode().Perm(),
-		"raven.toml must have 0644 permissions")
+	assert.Equal(t, os.FileMode(0o600), tomlInfo.Mode().Perm(),
+		"raven.toml must have 0600 permissions")
 
 	// Check directory permission.
 	promptsInfo, err := os.Stat(filepath.Join(dir, "prompts"))

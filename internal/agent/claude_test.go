@@ -1351,7 +1351,7 @@ exit 0
 
 	// Collect events from the channel (it is not closed by the agent per spec).
 	var events []StreamEvent
-	drainCh:
+drainCh:
 	for {
 		select {
 		case ev := <-ch:

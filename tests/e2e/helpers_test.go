@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -101,7 +102,7 @@ func (tp *testProject) run(args ...string) *exec.Cmd {
 	mockPath := filepath.Join(tp.Dir, "mock-agents")
 	cmd.Env = append(os.Environ(),
 		"PATH="+mockPath+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"NO_COLOR=1",           // disable ANSI color in output
+		"NO_COLOR=1",            // disable ANSI color in output
 		"RAVEN_LOG_FORMAT=json", // structured logs for easier parsing
 	)
 	return cmd
@@ -124,8 +125,8 @@ func (tp *testProject) runExpectFailure(args ...string) (string, int) {
 	cmd := tp.run(args...)
 	out, err := cmd.CombinedOutput()
 	require.Error(tp.t, err, "raven %v expected to fail but succeeded:\n%s", args, string(out))
-	exitErr, ok := err.(*exec.ExitError)
-	require.True(tp.t, ok, "expected *exec.ExitError, got %T: %v", err, err)
+	var exitErr *exec.ExitError
+	require.True(tp.t, errors.As(err, &exitErr), "expected *exec.ExitError, got %T: %v", err, err)
 	return string(out), exitErr.ExitCode()
 }
 

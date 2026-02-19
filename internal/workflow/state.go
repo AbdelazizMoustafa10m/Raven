@@ -126,7 +126,7 @@ func (s *StateStore) Save(state *WorkflowState) error {
 	tmpPath := filepath.Join(s.dir, safe+".json.tmp")
 	finalPath := filepath.Join(s.dir, safe+".json")
 
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return fmt.Errorf("state: write temp checkpoint: %w", err)
 	}
 

@@ -89,11 +89,11 @@ type TaskProgressData struct {
 
 // ProgressGenerator creates PROGRESS.md content from task state and phase data.
 type ProgressGenerator struct {
-	specs    []*ParsedTaskSpec
-	specMap  map[string]*ParsedTaskSpec
-	state    *StateManager
-	phases   []Phase
-	tmpl     *template.Template
+	specs   []*ParsedTaskSpec
+	specMap map[string]*ParsedTaskSpec
+	state   *StateManager
+	phases  []Phase
+	tmpl    *template.Template
 }
 
 // NewProgressGenerator creates a ProgressGenerator from task system components.
@@ -158,7 +158,7 @@ func (pg *ProgressGenerator) WriteFile(path string, projectName string) error {
 	}
 
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(tmpPath, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("writing temp progress file %q: %w", tmpPath, err)
 	}
 
@@ -200,7 +200,7 @@ func (pg *ProgressGenerator) buildProgressData(projectName string) (ProgressData
 }
 
 // buildPhaseProgressData builds the per-phase progress data for a single phase.
-func (pg *ProgressGenerator) buildPhaseProgressData(phase Phase, stateMap map[string]*TaskState) (PhaseProgressData, error) {
+func (pg *ProgressGenerator) buildPhaseProgressData(phase Phase, stateMap map[string]*TaskState) (PhaseProgressData, error) { //nolint:unparam // error return reserved for future phases
 	ids := TasksInPhase(phase)
 
 	phaseData := PhaseProgressData{

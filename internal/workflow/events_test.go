@@ -250,8 +250,8 @@ func TestWorkflowEvent_ErrorOmitEmpty(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		errField  string
+		name       string
+		errField   string
 		wantInJSON bool
 	}{
 		{

@@ -326,7 +326,7 @@ func (rlc *RateLimitCoordinator) computeWaitDuration(info *RateLimitInfo) time.D
 
 	// Apply jitter: base + rand[0, jitterFactor * base).
 	if rlc.config.JitterFactor > 0 {
-		jitter := time.Duration(rand.Float64() * rlc.config.JitterFactor * float64(base))
+		jitter := time.Duration(rand.Float64() * rlc.config.JitterFactor * float64(base)) //nolint:gosec // G404: jitter doesn't need cryptographic randomness
 		base += jitter
 	}
 

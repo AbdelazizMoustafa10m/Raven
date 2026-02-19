@@ -139,8 +139,8 @@ func TestGenerate_VerdictIndicators(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		verdict      Verdict
+		name          string
+		verdict       Verdict
 		wantIndicator string
 	}{
 		{"approved", VerdictApproved, "[PASS]"},
@@ -396,10 +396,10 @@ func TestGenerate_ConsolidationStats_AllFields(t *testing.T) {
 	report, err := rg.Generate(cr, stats, makeDiffResult(0, 0, 0))
 	require.NoError(t, err)
 
-	assert.Contains(t, report, "10") // TotalInputFindings
-	assert.Contains(t, report, "7")  // UniqueFindings
-	assert.Contains(t, report, "3")  // DuplicatesRemoved
-	assert.Contains(t, report, "2")  // SeverityEscalations
+	assert.Contains(t, report, "10")   // TotalInputFindings
+	assert.Contains(t, report, "7")    // UniqueFindings
+	assert.Contains(t, report, "3")    // DuplicatesRemoved
+	assert.Contains(t, report, "2")    // SeverityEscalations
 	assert.Contains(t, report, "42.9") // OverlapRate formatted to 1 decimal
 	assert.Contains(t, report, "claude")
 	assert.Contains(t, report, "codex")
@@ -595,7 +595,7 @@ func TestWriteToFile_FilePermissions(t *testing.T) {
 	require.NoError(t, err)
 	// Mask to just permission bits and check for owner read+write.
 	perm := info.Mode().Perm()
-	assert.Equal(t, os.FileMode(0644), perm)
+	assert.Equal(t, os.FileMode(0o600), perm)
 }
 
 func TestWriteToFile_NilConsolidated_ReturnsError(t *testing.T) {

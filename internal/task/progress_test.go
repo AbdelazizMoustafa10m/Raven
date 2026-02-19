@@ -882,7 +882,7 @@ func TestTextProgressBar_OneWidth(t *testing.T) {
 		wantEmpty int
 	}{
 		{0, 0, 1},
-		{50, 0, 1},  // floor(50*1/100) = 0 filled
+		{50, 0, 1}, // floor(50*1/100) = 0 filled
 		{100, 1, 0},
 	}
 	for _, tt := range tests {
@@ -1105,7 +1105,7 @@ func TestGenerate_TwoPhases_MixedStatuses(t *testing.T) {
 	assert.Greater(t, posPhase2, posPhase1, "Phase 2 must appear after Phase 1")
 
 	// Agent visible for completed and in_progress; not for blocked/not_started
-	assert.Contains(t, out, "claude",  "completed task agent must appear")
+	assert.Contains(t, out, "claude", "completed task agent must appear")
 	assert.Contains(t, out, "codex", "in_progress task agent must appear")
 }
 

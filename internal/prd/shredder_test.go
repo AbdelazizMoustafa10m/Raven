@@ -1142,9 +1142,9 @@ func TestShredder_Shred_TableDriven_StdoutFormats(t *testing.T) {
 	validJSON := string(validBreakdownJSON())
 
 	tests := []struct {
-		name       string
-		stdout     string
-		wantEpics  int
+		name      string
+		stdout    string
+		wantEpics int
 	}{
 		{
 			name:      "bare JSON",

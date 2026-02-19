@@ -246,10 +246,10 @@ func (pg *PRBodyGenerator) GenerateTitle(data PRBodyData) string {
 // buildTemplateData converts PRBodyData to the internal template data struct.
 func (pg *PRBodyGenerator) buildTemplateData(data PRBodyData) prBodyTemplateData {
 	td := prBodyTemplateData{
-		PRBodyData:       data,
-		VerdictIndicator: verdictIndicator(data.ReviewVerdict),
-		HasReviewReport:  data.ReviewReport != "",
-		HasFixReport:     data.FixReport != nil,
+		PRBodyData:            data,
+		VerdictIndicator:      verdictIndicator(data.ReviewVerdict),
+		HasReviewReport:       data.ReviewReport != "",
+		HasFixReport:          data.FixReport != nil,
 		HasVerificationReport: data.VerificationReport != nil,
 	}
 

@@ -999,10 +999,10 @@ func TestAssignGlobalIDs_LargeCount_IDFormat(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		taskCount     int
-		wantFirstID   string
-		wantLastID    string
+		name        string
+		taskCount   int
+		wantFirstID string
+		wantLastID  string
 	}{
 		{name: "boundary_999_three_digits", taskCount: 999, wantFirstID: "T-001", wantLastID: "T-999"},
 		{name: "boundary_1000_four_digits", taskCount: 1000, wantFirstID: "T-0001", wantLastID: "T-1000"},
@@ -1537,7 +1537,7 @@ func TestRemapDependencies_Deduplication(t *testing.T) {
 			TempID:            "E001-T01",
 			EpicID:            "E-001",
 			Title:             "Consumer",
-			LocalDependencies: []string{"E002-T01"}, // resolves to T-010
+			LocalDependencies: []string{"E002-T01"},             // resolves to T-010
 			CrossEpicDeps:     []string{"E-002:shared service"}, // also resolves to T-010
 		},
 	}
@@ -2247,9 +2247,9 @@ func TestDeduplicateTasks_MultipleGroups(t *testing.T) {
 
 	tasks := []MergedTask{
 		{GlobalID: "T-001", Title: "Implement auth", AcceptanceCriteria: []string{"ac1"}},
-		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}},     // dup of T-001
+		{GlobalID: "T-002", Title: "Create auth", AcceptanceCriteria: []string{"ac2"}}, // dup of T-001
 		{GlobalID: "T-003", Title: "Build schema", AcceptanceCriteria: []string{"ac3"}},
-		{GlobalID: "T-004", Title: "Design schema", AcceptanceCriteria: []string{"ac4"}},   // dup of T-003
+		{GlobalID: "T-004", Title: "Design schema", AcceptanceCriteria: []string{"ac4"}}, // dup of T-003
 		{GlobalID: "T-005", Title: "Write tests", AcceptanceCriteria: []string{"ac5"}},
 	}
 
@@ -2537,10 +2537,10 @@ func TestValidateDAG_MixedErrors_AllReported(t *testing.T) {
 
 	// T-001 has a self-ref, T-002 has a dangling ref, T-003 and T-004 form a cycle.
 	tasks := []MergedTask{
-		makeTask("T-001", "T-001"),          // self-reference
-		makeTask("T-002", "T-999"),          // dangling reference
-		makeTask("T-003", "T-004"),          // part of cycle
-		makeTask("T-004", "T-003"),          // part of cycle
+		makeTask("T-001", "T-001"), // self-reference
+		makeTask("T-002", "T-999"), // dangling reference
+		makeTask("T-003", "T-004"), // part of cycle
+		makeTask("T-004", "T-003"), // part of cycle
 	}
 	v := ValidateDAG(tasks)
 
@@ -3140,7 +3140,7 @@ func TestValidateDAG_SelfRefAndDanglingBothReported(t *testing.T) {
 	t.Parallel()
 
 	tasks := []MergedTask{
-		makeTask("T-001", "T-001"),  // self-reference
+		makeTask("T-001", "T-001"), // self-reference
 		makeTask("T-002", "T-999"), // dangling reference
 		makeTask("T-003"),          // valid
 	}
@@ -3164,6 +3164,7 @@ func TestValidateDAG_SelfRefAndDanglingBothReported(t *testing.T) {
 			assert.Contains(t, e.Details, "T-002")
 			assert.Contains(t, e.Details, "T-999")
 			assert.Contains(t, e.Details, "does not exist")
+		default:
 		}
 	}
 	assert.Equal(t, 1, selfRefCount, "expected exactly one SelfReference error")

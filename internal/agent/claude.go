@@ -348,4 +348,3 @@ func parseResetDuration(amount string, unit string) time.Duration {
 		return 0
 	}
 }
-

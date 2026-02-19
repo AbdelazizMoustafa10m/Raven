@@ -315,7 +315,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 	case tea.KeyDown:
 		av := ap.activeAgentView()
 		if av != nil {
-			av.viewport.LineDown(1)
+			av.viewport.ScrollDown(1)
 			if av.viewport.AtBottom() {
 				av.autoScroll = true
 			} else {
@@ -327,7 +327,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 	case tea.KeyUp:
 		av := ap.activeAgentView()
 		if av != nil {
-			av.viewport.LineUp(1)
+			av.viewport.ScrollUp(1)
 			if av.viewport.AtBottom() {
 				av.autoScroll = true
 			} else {
@@ -339,7 +339,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 	case tea.KeyPgDown:
 		av := ap.activeAgentView()
 		if av != nil {
-			av.viewport.ViewDown()
+			av.viewport.PageDown()
 			if av.viewport.AtBottom() {
 				av.autoScroll = true
 			} else {
@@ -351,7 +351,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 	case tea.KeyPgUp:
 		av := ap.activeAgentView()
 		if av != nil {
-			av.viewport.ViewUp()
+			av.viewport.PageUp()
 			if av.viewport.AtBottom() {
 				av.autoScroll = true
 			} else {
@@ -381,7 +381,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 		case "j":
 			av := ap.activeAgentView()
 			if av != nil {
-				av.viewport.LineDown(1)
+				av.viewport.ScrollDown(1)
 				if av.viewport.AtBottom() {
 					av.autoScroll = true
 				} else {
@@ -391,7 +391,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 		case "k":
 			av := ap.activeAgentView()
 			if av != nil {
-				av.viewport.LineUp(1)
+				av.viewport.ScrollUp(1)
 				if av.viewport.AtBottom() {
 					av.autoScroll = true
 				} else {
@@ -413,7 +413,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 		case "b":
 			av := ap.activeAgentView()
 			if av != nil {
-				av.viewport.ViewUp()
+				av.viewport.PageUp()
 				if av.viewport.AtBottom() {
 					av.autoScroll = true
 				} else {
@@ -427,7 +427,7 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 		// Space = page down.
 		av := ap.activeAgentView()
 		if av != nil {
-			av.viewport.ViewDown()
+			av.viewport.PageDown()
 			if av.viewport.AtBottom() {
 				av.autoScroll = true
 			} else {
@@ -435,6 +435,8 @@ func (ap AgentPanelModel) handleKey(msg tea.KeyMsg) (AgentPanelModel, tea.Cmd) {
 			}
 		}
 		return ap, nil
+
+	default:
 	}
 
 	return ap, nil

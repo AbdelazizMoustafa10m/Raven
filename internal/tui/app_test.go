@@ -25,17 +25,6 @@ func applyMsg(a App, msg tea.Msg) (App, tea.Cmd) {
 	return updated, cmd
 }
 
-// applyMsgs applies a sequence of messages in order and returns the final App.
-func applyMsgs(t *testing.T, a App, msgs ...tea.Msg) App {
-	t.Helper()
-	var cmd tea.Cmd
-	for _, msg := range msgs {
-		a, cmd = applyMsg(a, msg)
-		_ = cmd
-	}
-	return a
-}
-
 // makeReadyApp returns an App that has received a WindowSizeMsg with the given
 // dimensions, placing it in the "ready" state.
 func makeReadyApp(t *testing.T, cfg AppConfig, width, height int) App {
@@ -169,45 +158,45 @@ func TestApp_Update_WindowSizeMsg_SetsReadyAndDimensions(t *testing.T) {
 func TestApp_Update_WindowSizeMsg_TableDriven(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		width       int
-		height      int
-		wantReady   bool
-		wantWidth   int
-		wantHeight  int
+		name       string
+		width      int
+		height     int
+		wantReady  bool
+		wantWidth  int
+		wantHeight int
 	}{
 		{
-			name: "standard terminal 80x24",
+			name:  "standard terminal 80x24",
 			width: 80, height: 24,
 			wantReady: true, wantWidth: 80, wantHeight: 24,
 		},
 		{
-			name: "large terminal 200x60",
+			name:  "large terminal 200x60",
 			width: 200, height: 60,
 			wantReady: true, wantWidth: 200, wantHeight: 60,
 		},
 		{
-			name: "very small terminal 10x5",
+			name:  "very small terminal 10x5",
 			width: 10, height: 5,
 			wantReady: true, wantWidth: 10, wantHeight: 5,
 		},
 		{
-			name: "zero dimensions",
+			name:  "zero dimensions",
 			width: 0, height: 0,
 			wantReady: true, wantWidth: 0, wantHeight: 0,
 		},
 		{
-			name: "just below minimum width",
+			name:  "just below minimum width",
 			width: 79, height: 30,
 			wantReady: true, wantWidth: 79, wantHeight: 30,
 		},
 		{
-			name: "just below minimum height",
+			name:  "just below minimum height",
 			width: 120, height: 23,
 			wantReady: true, wantWidth: 120, wantHeight: 23,
 		},
 		{
-			name: "ultra wide terminal",
+			name:  "ultra wide terminal",
 			width: 500, height: 200,
 			wantReady: true, wantWidth: 500, wantHeight: 200,
 		},
@@ -274,8 +263,8 @@ func TestApp_Update_WindowSizeMsg_DoesNotAffectFocus(t *testing.T) {
 func TestApp_Update_QuitKeys_TableDriven(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		msg     tea.KeyMsg
+		name     string
+		msg      tea.KeyMsg
 		wantQuit bool
 	}{
 		{

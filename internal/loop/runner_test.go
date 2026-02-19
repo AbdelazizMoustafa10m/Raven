@@ -1312,6 +1312,7 @@ func TestConsumeStreamEvents_AssistantMixedContentEmitsBothThinkingAndToolStarte
 		case EventAgentThinking:
 			foundAgentThinking = true
 			assert.Equal(t, "I will read the file now", e.Message)
+		default:
 		}
 	}
 	assert.True(t, foundToolStarted, "EventToolStarted must be emitted for tool_use block")

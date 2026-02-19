@@ -320,10 +320,10 @@ func TestCheckReviewHandler_Execute(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		verdict     string
-		wantEvent   string
-		wantErr     bool
+		name      string
+		verdict   string
+		wantEvent string
+		wantErr   bool
 	}{
 		{
 			name:      "approved verdict returns success",
@@ -443,19 +443,19 @@ func TestInitPhaseHandler_Execute(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		currentPhase  any // stored in metadata
-		wantPhaseID   int
+		name         string
+		currentPhase any // stored in metadata
+		wantPhaseID  int
 	}{
 		{
-			name:        "sets phase_id from current_phase",
+			name:         "sets phase_id from current_phase",
 			currentPhase: 3,
-			wantPhaseID: 3,
+			wantPhaseID:  3,
 		},
 		{
-			name:        "defaults to 1 when current_phase absent",
+			name:         "defaults to 1 when current_phase absent",
 			currentPhase: nil,
-			wantPhaseID: 1,
+			wantPhaseID:  1,
 		},
 	}
 
@@ -520,10 +520,10 @@ func TestAdvancePhaseHandler_Execute(t *testing.T) {
 		wantNextPhase int // only checked when EventPartial
 	}{
 		{
-			name:          "last phase returns success",
-			currentPhase:  3,
-			totalPhases:   3,
-			wantEvent:     EventSuccess,
+			name:         "last phase returns success",
+			currentPhase: 3,
+			totalPhases:  3,
+			wantEvent:    EventSuccess,
 		},
 		{
 			name:          "more phases returns partial",
@@ -533,10 +533,10 @@ func TestAdvancePhaseHandler_Execute(t *testing.T) {
 			wantNextPhase: 2,
 		},
 		{
-			name:          "single phase defaults returns success when advanced",
-			currentPhase:  1,
-			totalPhases:   1,
-			wantEvent:     EventSuccess,
+			name:         "single phase defaults returns success when advanced",
+			currentPhase: 1,
+			totalPhases:  1,
+			wantEvent:    EventSuccess,
 		},
 	}
 

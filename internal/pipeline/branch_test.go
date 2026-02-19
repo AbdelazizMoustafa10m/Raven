@@ -881,11 +881,11 @@ func TestBranchManager_Real_CreatePhaseBranch_DuplicateErrors(t *testing.T) {
 
 func TestBranchManager_Real_SwitchToPhaseBranch(t *testing.T) {
 	tests := []struct {
-		name        string
-		setup       func(t *testing.T, ctx context.Context, client *git.GitClient)
-		branchName  string
-		wantErr     bool
-		wantErrMsg  string
+		name       string
+		setup      func(t *testing.T, ctx context.Context, client *git.GitClient)
+		branchName string
+		wantErr    bool
+		wantErrMsg string
 	}{
 		{
 			name: "switches to existing branch",
@@ -1430,5 +1430,3 @@ func FuzzSlugify(f *testing.F) {
 		}
 	})
 }
-
-

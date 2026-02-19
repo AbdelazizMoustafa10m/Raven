@@ -84,7 +84,7 @@ type ReportData struct {
 func NewReportGenerator(logger *log.Logger) *ReportGenerator {
 	funcMap := template.FuncMap{
 		"escapeCell": escapeCellContent,
-		"toUpper": func(s Severity) string { return strings.ToUpper(string(s)) },
+		"toUpper":    func(s Severity) string { return strings.ToUpper(string(s)) },
 		"agentVerdict": func(ar AgentReviewResult) string {
 			if ar.Err != nil {
 				return "ERROR"
@@ -178,7 +178,7 @@ func (rg *ReportGenerator) WriteToFile(
 		return fmt.Errorf("review: report: creating directory %q: %w", dir, err)
 	}
 
-	if err := os.WriteFile(path, []byte(report), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(report), 0o600); err != nil {
 		return fmt.Errorf("review: report: writing report to %q: %w", path, err)
 	}
 

@@ -139,7 +139,7 @@ func RenderTemplate(name string, destDir string, vars TemplateVars, force bool) 
 		}
 
 		// Write the file.
-		if writeErr := os.WriteFile(destFile, output, 0o644); writeErr != nil {
+		if writeErr := os.WriteFile(destFile, output, 0o600); writeErr != nil {
 			return fmt.Errorf("writing file %s: %w", destFile, writeErr)
 		}
 

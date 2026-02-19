@@ -1109,4 +1109,3 @@ func BenchmarkFormatElapsed(b *testing.B) {
 		_ = formatElapsed(d)
 	}
 }
-

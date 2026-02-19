@@ -69,10 +69,10 @@ type LoopEvent struct {
 	WaitTime  time.Duration
 
 	// Stream-level observability fields (populated for tool/thinking/stats events).
-	ToolName string  // Name of the tool called (EventToolStarted) or tool_use_id (EventToolCompleted).
-	CostUSD  float64 // Session cost in USD (EventSessionStats).
-	TokensIn int     // Input token count (EventSessionStats).
-	TokensOut int    // Output token count (EventSessionStats).
+	ToolName  string  // Name of the tool called (EventToolStarted) or tool_use_id (EventToolCompleted).
+	CostUSD   float64 // Session cost in USD (EventSessionStats).
+	TokensIn  int     // Input token count (EventSessionStats).
+	TokensOut int     // Output token count (EventSessionStats).
 }
 
 // CompletionSignal represents a signal detected in agent output.
@@ -633,7 +633,7 @@ func (r *Runner) generatePrompt(spec *task.ParsedTaskSpec, runCfg RunConfig) (st
 // opts.StreamEvents, and the consumer goroutine exits cleanly when the channel
 // is closed after Run returns.
 func (r *Runner) invokeAgent(ctx context.Context, prompt string, runCfg RunConfig, iteration int, taskID string) (*agent.RunResult, error) {
-	agentCfg, _ := r.config.Agents[runCfg.AgentName]
+	agentCfg := r.config.Agents[runCfg.AgentName]
 
 	// Buffered channel owned by the caller (this method). It is closed after
 	// Run returns so the consumer goroutine can drain and exit.
@@ -734,6 +734,7 @@ func (r *Runner) consumeStreamEvents(ctx context.Context, streamCh <-chan agent.
 					Message:   fmt.Sprintf("session cost: $%.4f", event.CostUSD),
 					Timestamp: time.Now(),
 				})
+			default:
 			}
 		}
 	}
@@ -910,7 +911,7 @@ func (r *Runner) handleDryRun(_ context.Context, spec *task.ParsedTaskSpec, runC
 	}
 
 	// Print the command that would be executed.
-	agentCfg, _ := r.config.Agents[runCfg.AgentName]
+	agentCfg := r.config.Agents[runCfg.AgentName]
 	opts := agent.RunOpts{
 		Prompt:       prompt,
 		Model:        agentCfg.Model,

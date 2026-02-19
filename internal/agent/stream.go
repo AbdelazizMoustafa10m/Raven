@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -134,7 +135,7 @@ func (d *StreamDecoder) Decode(ctx context.Context, events chan<- StreamEvent) e
 		}
 
 		event, err := d.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {

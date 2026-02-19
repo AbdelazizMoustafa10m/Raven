@@ -127,12 +127,12 @@ func TestBuildOpts_NumericOptions(t *testing.T) {
 func TestBuildOpts_SkipFlags(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name          string
-		skipFlags     []string
-		wantSkipImpl  bool
-		wantSkipRev   bool
-		wantSkipFix   bool
-		wantSkipPR    bool
+		name         string
+		skipFlags    []string
+		wantSkipImpl bool
+		wantSkipRev  bool
+		wantSkipFix  bool
+		wantSkipPR   bool
 	}{
 		{
 			name:      "no skips",
@@ -144,8 +144,8 @@ func TestBuildOpts_SkipFlags(t *testing.T) {
 			wantSkipImpl: true,
 		},
 		{
-			name:       "skip review and fix",
-			skipFlags:  []string{skipFlagReview, skipFlagFix},
+			name:        "skip review and fix",
+			skipFlags:   []string{skipFlagReview, skipFlagFix},
 			wantSkipRev: true,
 			wantSkipFix: true,
 		},
@@ -650,12 +650,12 @@ func TestMapWizardErr_WrapsOriginal(t *testing.T) {
 func TestBuildOpts_SkipFlagsIndividual(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name          string
-		flag          string
-		wantSkipImpl  bool
-		wantSkipRev   bool
-		wantSkipFix   bool
-		wantSkipPR    bool
+		name         string
+		flag         string
+		wantSkipImpl bool
+		wantSkipRev  bool
+		wantSkipFix  bool
+		wantSkipPR   bool
 	}{
 		{
 			name:         "skip implement alone",
@@ -703,8 +703,8 @@ func TestBuildSummary_PhaseNameLookupInSinglePhase(t *testing.T) {
 		{ID: 3, Name: "Polish"},
 	}
 	tests := []struct {
-		phaseID   string
-		wantName  string
+		phaseID  string
+		wantName string
 	}{
 		{phaseID: "1", wantName: "Foundation"},
 		{phaseID: "2", wantName: "Core"},

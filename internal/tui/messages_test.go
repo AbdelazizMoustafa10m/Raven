@@ -533,8 +533,8 @@ func TestTypeSwitch_AllMessageTypes(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name    string
-		msg     tea.Msg
+		name       string
+		msg        tea.Msg
 		wantBranch string
 	}{
 		{

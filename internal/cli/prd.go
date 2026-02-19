@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -140,7 +141,7 @@ func init() {
 
 // runPRD is the RunE implementation for the prd command. It wires configuration,
 // agent selection, and pipeline execution.
-func runPRD(cmd *cobra.Command, flags prdFlags) error {
+func runPRD(cmd *cobra.Command, flags prdFlags) error { //nolint:unparam // cmd required by cobra handler signature
 	logger := logging.New("prd")
 
 	// Step 1: Validate --file exists and is readable.
@@ -322,7 +323,8 @@ func validatePRDFile(path string) error {
 
 // isErrPartialSuccess checks if err is an *errPartialSuccess and assigns it to target.
 func isErrPartialSuccess(err error, target **errPartialSuccess) bool {
-	if ps, ok := err.(*errPartialSuccess); ok {
+	var ps *errPartialSuccess
+	if errors.As(err, &ps) {
 		if target != nil {
 			*target = ps
 		}
@@ -553,7 +555,7 @@ func (p *prdPipeline) runSinglePass(ctx context.Context) error {
 }
 
 // printDryRun shows the planned pipeline steps without executing them.
-func (p *prdPipeline) printDryRun() error {
+func (p *prdPipeline) printDryRun() error { //nolint:unparam // error return reserved for future use
 	stderr := os.Stderr
 
 	fmt.Fprintln(stderr, "")

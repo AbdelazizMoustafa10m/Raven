@@ -1014,13 +1014,13 @@ func TestComputeWaitDuration(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		cfg          BackoffConfig
-		info         *RateLimitInfo
-		wantExact    time.Duration // expected when jitter is 0
-		wantMin      time.Duration // for jitter tests
-		wantMax      time.Duration // for jitter tests; exclusive upper bound
-		jitterTest   bool
+		name       string
+		cfg        BackoffConfig
+		info       *RateLimitInfo
+		wantExact  time.Duration // expected when jitter is 0
+		wantMin    time.Duration // for jitter tests
+		wantMax    time.Duration // for jitter tests; exclusive upper bound
+		jitterTest bool
 	}{
 		{
 			name:      "positive ResetAfter uses it as base",
@@ -1047,12 +1047,12 @@ func TestComputeWaitDuration(t *testing.T) {
 			wantExact: 30 * time.Second,
 		},
 		{
-			name:        "jitter stays within expected range",
-			cfg:         BackoffConfig{DefaultWait: 60 * time.Second, MaxWaits: 5, JitterFactor: 0.2},
-			info:        &RateLimitInfo{ResetAfter: 60 * time.Second},
-			wantMin:     60 * time.Second,
-			wantMax:     73 * time.Second, // 60s + 20% = 72s; allow 1s margin
-			jitterTest:  true,
+			name:       "jitter stays within expected range",
+			cfg:        BackoffConfig{DefaultWait: 60 * time.Second, MaxWaits: 5, JitterFactor: 0.2},
+			info:       &RateLimitInfo{ResetAfter: 60 * time.Second},
+			wantMin:    60 * time.Second,
+			wantMax:    73 * time.Second, // 60s + 20% = 72s; allow 1s margin
+			jitterTest: true,
 		},
 		{
 			name:      "zero jitter factor produces exact base",

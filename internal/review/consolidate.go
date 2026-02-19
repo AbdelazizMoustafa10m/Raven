@@ -209,6 +209,7 @@ func AggregateVerdicts(verdicts []Verdict) Verdict {
 			return VerdictBlocking
 		case VerdictChangesNeeded:
 			result = VerdictChangesNeeded
+		default:
 		}
 	}
 	return result

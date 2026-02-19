@@ -403,16 +403,16 @@ func TestDefaultTheme_StylesDistinctFromZero(t *testing.T) {
 		name  string
 		style lipgloss.Style
 	}{
-		{"TitleBar", theme.TitleBar},           // Padding(0,1)
+		{"TitleBar", theme.TitleBar},                 // Padding(0,1)
 		{"SidebarContainer", theme.SidebarContainer}, // PaddingLeft(1)
-		{"SidebarItem", theme.SidebarItem},     // PaddingLeft(1)
-		{"SidebarActive", theme.SidebarActive}, // PaddingLeft(1)
-		{"SidebarInactive", theme.SidebarInactive}, // PaddingLeft(1)
-		{"AgentContainer", theme.AgentContainer}, // Padding(0,1)
-		{"AgentTab", theme.AgentTab},           // Padding(0,1)
-		{"AgentTabActive", theme.AgentTabActive}, // Padding(0,1)
-		{"EventContainer", theme.EventContainer}, // Padding(0,1)
-		{"StatusBar", theme.StatusBar},         // Padding(0,1)
+		{"SidebarItem", theme.SidebarItem},           // PaddingLeft(1)
+		{"SidebarActive", theme.SidebarActive},       // PaddingLeft(1)
+		{"SidebarInactive", theme.SidebarInactive},   // PaddingLeft(1)
+		{"AgentContainer", theme.AgentContainer},     // Padding(0,1)
+		{"AgentTab", theme.AgentTab},                 // Padding(0,1)
+		{"AgentTabActive", theme.AgentTabActive},     // Padding(0,1)
+		{"EventContainer", theme.EventContainer},     // Padding(0,1)
+		{"StatusBar", theme.StatusBar},               // Padding(0,1)
 	}
 
 	for _, c := range paddedStyles {

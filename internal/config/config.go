@@ -2,10 +2,10 @@ package config
 
 // Config is the top-level configuration structure mapping to raven.toml.
 type Config struct {
-	Project   ProjectConfig              `toml:"project"`
-	Agents    map[string]AgentConfig     `toml:"agents"`
-	Review    ReviewConfig               `toml:"review"`
-	Workflows map[string]WorkflowConfig  `toml:"workflows"`
+	Project   ProjectConfig             `toml:"project"`
+	Agents    map[string]AgentConfig    `toml:"agents"`
+	Review    ReviewConfig              `toml:"review"`
+	Workflows map[string]WorkflowConfig `toml:"workflows"`
 }
 
 // ProjectConfig maps to the [project] section in raven.toml.

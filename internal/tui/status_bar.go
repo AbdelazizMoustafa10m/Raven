@@ -142,6 +142,8 @@ func (sb StatusBarModel) handleLoopEvent(msg LoopEventMsg) StatusBarModel {
 
 	case LoopPhaseComplete:
 		sb.mode = "idle"
+
+	default:
 	}
 
 	return sb

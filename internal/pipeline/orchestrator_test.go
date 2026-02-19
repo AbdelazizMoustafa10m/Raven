@@ -1285,4 +1285,3 @@ func findStep(def *workflow.WorkflowDefinition, name string) *workflow.StepDefin
 	}
 	return nil
 }
-

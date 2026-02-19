@@ -1188,16 +1188,16 @@ func TestDefaultEmbeddedTemplate_ProducesCompletePrompt(t *testing.T) {
 	// complete: it must contain all major sections expected by a reviewing agent.
 	pb := NewPromptBuilder(ReviewConfig{}, nil)
 	data := PromptData{
-		AgentName:    "claude",
-		ReviewMode:   ReviewModeAll,
-		ProjectBrief: "A CLI tool written in Go.",
-		Rules:        []string{"No global state.", "Always wrap errors with context."},
-		Diff:         "diff --git a/main.go b/main.go\n+func main() {}",
-		FileList:     "            main.go (added, +1)",
+		AgentName:     "claude",
+		ReviewMode:    ReviewModeAll,
+		ProjectBrief:  "A CLI tool written in Go.",
+		Rules:         []string{"No global state.", "Always wrap errors with context."},
+		Diff:          "diff --git a/main.go b/main.go\n+func main() {}",
+		FileList:      "            main.go (added, +1)",
 		HighRiskFiles: []string{},
 		Stats: DiffStats{
-			TotalFiles:    1,
-			FilesAdded:    1,
+			TotalFiles:      1,
+			FilesAdded:      1,
 			TotalLinesAdded: 1,
 		},
 		JSONSchema: jsonSchemaExample,
