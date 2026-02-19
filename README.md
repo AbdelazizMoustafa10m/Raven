@@ -52,10 +52,32 @@ tar -xzf raven.tar.gz
 sudo install -m 755 raven /usr/local/bin/raven
 ```
 
+**Windows (x86-64):**
+
+```powershell
+# Download and extract
+Invoke-WebRequest -Uri "https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_windows_amd64.zip" -OutFile raven.zip
+Expand-Archive -Path raven.zip -DestinationPath .
+
+# Add to PATH (current user)
+Move-Item -Path .\raven.exe -Destination "$env:LOCALAPPDATA\Programs\raven\raven.exe" -Force
+New-Item -ItemType Directory -Path "$env:LOCALAPPDATA\Programs\raven" -Force | Out-Null
+[Environment]::SetEnvironmentVariable("Path", "$env:Path;$env:LOCALAPPDATA\Programs\raven", "User")
+```
+
+> **Note:** Windows support is provided on a best-effort basis. Raven shells out to `claude`, `codex`, `git`, and `gh` CLIs which are Unix-first tools. For the best experience on Windows, consider running Raven under [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
+
 Verify the checksum against `checksums.txt` included in the release:
 
 ```bash
 sha256sum -c checksums.txt --ignore-missing
+```
+
+On Windows (PowerShell):
+
+```powershell
+(Get-FileHash .\raven.exe -Algorithm SHA256).Hash
+# Compare with the corresponding entry in checksums.txt
 ```
 
 ### From Source
