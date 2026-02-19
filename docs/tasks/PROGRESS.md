@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 82 |
+| Completed | 83 |
 | In Progress | 0 |
-| Not Started | 7 |
+| Not Started | 6 |
 
 ---
 
@@ -498,6 +498,27 @@ _None currently_
 
 ---
 
+### T-079: GoReleaser Configuration for Cross-Platform Builds
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `.goreleaser.yaml` (GoReleaser v2) at project root with `version: 2` schema
+  - Cross-platform build matrix: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64 (windows/arm64 excluded)
+  - `CGO_ENABLED=0` for pure-Go cross-compilation with `-s -w` symbol stripping
+  - ldflags version injection for `internal/buildinfo.Version`, `.Commit`, `.Date` using full module path
+  - Archives: `.tar.gz` for macOS/Linux, `.zip` for Windows with version-stamped names
+  - SHA256 `checksums.txt` generation
+  - Changelog filter excluding docs/test/ci/chore commits
+  - GitHub release block with `GITHUB_OWNER` env variable and `prerelease: auto`
+  - `release-snapshot` Makefile target invoking `goreleaser build --snapshot --clean`
+- **Files created/modified:**
+  - `.goreleaser.yaml` -- GoReleaser v2 configuration for cross-platform builds and release packaging
+  - `Makefile` -- added `release-snapshot` target and updated `.PHONY` list
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## Not Started Tasks
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
@@ -511,7 +532,7 @@ _None currently_
 
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
-| T-079 | GoReleaser Configuration for Cross-Platform Builds | Must Have | Medium (6-10hrs) | Not Started |
+| T-079 | GoReleaser Configuration for Cross-Platform Builds | Must Have | Medium (6-10hrs) | Completed |
 | T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Not Started |
 | T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Not Started |
 | T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Not Started |

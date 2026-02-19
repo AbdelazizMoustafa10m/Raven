@@ -25,7 +25,7 @@ LDFLAGS_DEBUG := \
 
 GOFLAGS  := CGO_ENABLED=0
 
-.PHONY: all build test vet lint tidy clean install fmt bench run-version build-debug
+.PHONY: all build test vet lint tidy clean install fmt bench run-version build-debug release-snapshot
 
 all: tidy vet test build
 
@@ -60,6 +60,10 @@ bench:
 # Development helper: build then run version subcommand
 run-version: build
 	./$(BUILD_DIR)/$(BINARY) version
+
+# Release snapshot: build for all platforms without publishing (requires goreleaser)
+release-snapshot:
+	goreleaser build --snapshot --clean
 
 # Debug build (with symbols, for dlv debugger)
 build-debug:
