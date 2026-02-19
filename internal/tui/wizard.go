@@ -53,6 +53,12 @@ type PipelineWizardConfig struct {
 	SkipFix bool
 	// SkipPR omits the pull-request creation step when true.
 	SkipPR bool
+
+	// TotalPhases is the total number of available phases loaded from
+	// phases.conf. It is set by the wizard on form completion so that
+	// startPipeline can correctly configure the workflow state for "all"
+	// and "range" modes when ToPhase is 0 (meaning "to the last phase").
+	TotalPhases int
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +493,18 @@ func (w *WizardModel) parseFormValues() {
 	}
 	if n, err := strconv.Atoi(w.rawMaxIterations); err == nil && n > 0 {
 		w.config.MaxIterations = n
+	}
+
+	// Derive TotalPhases from the wizard's available phases list so that
+	// callers (e.g. startPipeline) can set workflow metadata correctly.
+	if len(w.availablePhases) > 0 {
+		maxPhase := w.availablePhases[0]
+		for _, p := range w.availablePhases[1:] {
+			if p > maxPhase {
+				maxPhase = p
+			}
+		}
+		w.config.TotalPhases = maxPhase
 	}
 }
 

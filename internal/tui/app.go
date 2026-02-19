@@ -441,6 +441,10 @@ func (a App) startPipeline(wizCfg PipelineWizardConfig) tea.Cmd {
 		state.Metadata["from_phase"] = wizCfg.FromPhase
 		state.Metadata["review_concurrency"] = wizCfg.ReviewConcurrency
 		state.Metadata["max_review_cycles"] = wizCfg.MaxReviewCycles
+		state.Metadata["skip_implement"] = wizCfg.SkipImplement
+		state.Metadata["skip_review"] = wizCfg.SkipReview
+		state.Metadata["skip_fix"] = wizCfg.SkipFix
+		state.Metadata["skip_pr"] = wizCfg.SkipPR
 
 		// Set current_phase and total_phases based on the phase mode so
 		// the pipeline's init_phase / advance_phase handlers iterate
@@ -451,14 +455,14 @@ func (a App) startPipeline(wizCfg PipelineWizardConfig) tea.Cmd {
 			state.Metadata["total_phases"] = wizCfg.PhaseID
 		case "range":
 			state.Metadata["current_phase"] = wizCfg.FromPhase
-			state.Metadata["total_phases"] = wizCfg.ToPhase
+			toPhase := wizCfg.ToPhase
+			if toPhase <= 0 {
+				toPhase = wizCfg.TotalPhases
+			}
+			state.Metadata["total_phases"] = toPhase
 		default: // "all"
 			state.Metadata["current_phase"] = 1
-			if wizCfg.ToPhase > 0 {
-				state.Metadata["total_phases"] = wizCfg.ToPhase
-			} else {
-				state.Metadata["total_phases"] = 1
-			}
+			state.Metadata["total_phases"] = wizCfg.TotalPhases
 		}
 
 		_, err := engine.Run(ctx, def, state)
