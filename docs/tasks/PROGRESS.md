@@ -498,272 +498,92 @@ _None currently_
 
 ---
 
-### T-079: GoReleaser Configuration for Cross-Platform Builds
+### Phase 7: Polish & Distribution (T-079 to T-087)
 
 - **Status:** Completed
 - **Date:** 2026-02-19
-- **What was built:**
-  - `.goreleaser.yaml` (GoReleaser v2) at project root with `version: 2` schema
-  - Cross-platform build matrix: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64 (windows/arm64 excluded)
-  - `CGO_ENABLED=0` for pure-Go cross-compilation with `-s -w` symbol stripping
-  - ldflags version injection for `internal/buildinfo.Version`, `.Commit`, `.Date` using full module path
-  - Archives: `.tar.gz` for macOS/Linux, `.zip` for Windows with version-stamped names
-  - SHA256 `checksums.txt` generation
-  - Changelog filter excluding docs/test/ci/chore commits
-  - GitHub release block with `GITHUB_OWNER` env variable and `prerelease: auto`
-  - `release-snapshot` Makefile target invoking `goreleaser build --snapshot --clean`
-- **Files created/modified:**
-  - `.goreleaser.yaml` -- GoReleaser v2 configuration for cross-platform builds and release packaging
-  - `Makefile` -- added `release-snapshot` target and updated `.PHONY` list
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+- **Tasks Completed:** 8 tasks
 
----
+#### Features Implemented
 
-### T-080: GitHub Actions Release Automation Workflow
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| GoReleaser cross-platform builds | T-079 | `.goreleaser.yaml` v2 schema with 5-platform matrix, `CGO_ENABLED=0`, ldflags version injection, SHA256 checksums, changelog filtering, and `release-snapshot` Makefile target |
+| GitHub Actions release workflow | T-080 | Tag-triggered workflow with Go version from `go.mod`, `go vet`/`go test` gate, 25MB binary size check, and `goreleaser-action@v6` publishing |
+| Shell completion packaging | T-081 | `gen-completions` generator for bash/zsh/fish/powershell, universal `install.sh` auto-detector, GoReleaser before-hook integration, and `NewRootCmd()` export |
+| Man page generation | T-082 | `gen-manpages` using `cobra/doc.GenManTree()`, `install-manpages.sh` with `mandb`/`makewhatis` update, GoReleaser integration, and `make manpages` target |
+| Performance benchmarking suite | T-083 | Benchmarks across 7 packages (binary startup, config, task, agent, workflow, TUI, review), `bench-report.sh` runner, and `-benchtime=3s` Makefile target |
+| End-to-end integration tests | T-084 | 4 mock agent scripts (claude, codex, rate-limited, failing), 7 E2E test files covering all major commands, `PATH`-override isolation, and `test-e2e` Makefile target |
+| CI/CD pipeline | T-085 | 4-job GitHub Actions CI (lint, test, build, mod-tidy), golangci-lint with 16 linters, Ubuntu+macOS matrix with race detection, 5-platform cross-compilation check |
+| Comprehensive documentation | T-086 | `README.md` (~500 lines), `CONTRIBUTING.md`, `LICENSE`, and three extended docs (`configuration.md`, `workflows.md`, `agents.md`) |
+| Release verification & checklist | T-087 | `release-verify.sh` with PASS/FAIL reporting and `--quick` flag, `docs/RELEASE_CHECKLIST.md` with sign-off table, `make release` tag-and-push target |
 
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `.github/workflows/release.yml` GitHub Actions workflow triggered on `v*` tag pushes
-  - `actions/checkout@v4` with `fetch-depth: 0` for full git history (required for changelog generation)
-  - `actions/setup-go@v5` reading Go version from `go.mod` (no hardcoded version)
-  - `go vet ./... && go test ./...` gate before any release artifact is built
-  - Binary size verification step enforcing 25MB limit on linux/amd64 build
-  - `goreleaser/goreleaser-action@v6` running `release --clean` with `GITHUB_TOKEN`
-  - `permissions: contents: write` for GitHub Release creation
-- **Files created/modified:**
-  - `.github/workflows/release.yml` -- GitHub Actions release workflow for automated cross-platform builds and publishing
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+#### Key Technical Decisions
 
----
+1. **GoReleaser v2 schema** -- `version: 2` field required; windows/arm64 excluded due to limited toolchain support
+2. **`NewRootCmd()` export** -- enables `gen-completions` and `gen-manpages` scripts to import the CLI without the singleton `rootCmd`; avoids circular init-time side effects
+3. **`cobra/doc` sub-package** -- already a transitive dep of `cobra` v1.10.2; no new module version needed; hidden commands (e.g. `__complete`) omitted automatically
+4. **External E2E test package** -- `package e2e_test` with no non-test `.go` files; `runtime.Caller(0)` for reliable repo-root detection regardless of working directory
+5. **PATH-override mock isolation** -- `mock-agents/` directory prepended to subprocess `PATH`; no real API calls made during tests; `NO_COLOR=1` and `RAVEN_LOG_FORMAT=json` for clean output
+6. **Portable `file_size()` shell function** -- tries GNU `stat -c%s` then BSD `stat -f%z`; handles macOS and Linux without OS detection
+7. **`((PASS++)) || true` guard** -- prevents `set -e` exit when arithmetic result is 0 in `release-verify.sh`
+8. **GoReleaser absence is a warning** -- `goreleaser check` skipped (not failed) when binary absent; allows developers without goreleaser to run `release-verify.sh` locally
+9. **16-linter golangci-lint config** -- errcheck, gosec, staticcheck, errorlint, and others enabled; test files and mock paths excluded to reduce noise
 
-### T-081: Shell Completion Installation Scripts and Packaging
+#### Key Files Reference
 
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `scripts/completions/install.sh` universal shell completion installer that auto-detects bash/zsh/fish from `$SHELL` and installs to the correct user or system directory
-  - `scripts/gen-completions/main.go` Go program that imports `cli.NewRootCmd()` and generates all four completion files (bash, zsh, fish, powershell) into a specified output directory
-  - `cli.NewRootCmd()` exported function in `internal/cli/root.go` for use by external tools without the global rootCmd singleton
-  - Updated `.goreleaser.yaml` to run `go run ./scripts/gen-completions completions` as a `before.hook` and include `completions/*` + `install.sh` in archives; added standalone `completions-archive` meta artifact
-  - `make completions` Makefile target for local completion generation
-  - Added `completions/` to `.gitignore` (generated artifact, not committed)
-- **Files created/modified:**
-  - `scripts/completions/install.sh` -- universal bash/zsh/fish completion installer with auto-detection and idempotent installs
-  - `scripts/gen-completions/main.go` -- Go program generating all four shell completion files for GoReleaser packaging
-  - `internal/cli/root.go` -- added `NewRootCmd()` exported function
-  - `.goreleaser.yaml` -- added before hook, extra files in archives, standalone completions archive
-  - `Makefile` -- added `completions` target
-  - `.gitignore` -- added `completions/` entry
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+| Purpose | Location |
+| ------- | -------- |
+| GoReleaser v2 build + release config | `.goreleaser.yaml` |
+| GitHub Actions release workflow | `.github/workflows/release.yml` |
+| GitHub Actions CI workflow | `.github/workflows/ci.yml` |
+| golangci-lint configuration | `.golangci.yml` |
+| Shell completion installer | `scripts/completions/install.sh` |
+| Completion file generator | `scripts/gen-completions/main.go` |
+| Man page generator | `scripts/gen-manpages/main.go` |
+| Man page installer | `scripts/install-manpages.sh` |
+| Release verification script | `scripts/release-verify.sh` |
+| Benchmark runner script | `scripts/bench-report.sh` |
+| E2E test helpers | `tests/e2e/helpers_test.go` |
+| E2E config/init tests | `tests/e2e/config_test.go` |
+| E2E implement tests | `tests/e2e/implement_test.go` |
+| E2E review tests | `tests/e2e/review_test.go` |
+| E2E pipeline tests | `tests/e2e/pipeline_test.go` |
+| E2E PRD tests | `tests/e2e/prd_test.go` |
+| E2E resume/status tests | `tests/e2e/resume_test.go` |
+| E2E error handling tests | `tests/e2e/error_test.go` |
+| Mock Claude CLI script | `testdata/mock-agents/claude` |
+| Mock Codex CLI script | `testdata/mock-agents/codex` |
+| Rate-limiting mock agent | `testdata/mock-agents/rate-limited-agent` |
+| Always-failing mock agent | `testdata/mock-agents/failing-agent` |
+| Binary startup benchmarks | `cmd/raven/bench_test.go` |
+| Config benchmarks | `internal/config/bench_test.go` |
+| Task parsing + selector benchmarks | `internal/task/bench_test.go` |
+| Agent concurrency benchmarks | `internal/agent/bench_test.go` |
+| Workflow checkpoint benchmarks | `internal/workflow/bench_test.go` |
+| TUI rendering benchmarks | `internal/tui/bench_test.go` |
+| Review consolidation benchmarks | `internal/review/bench_test.go` |
+| Exported root command constructor | `internal/cli/root.go` |
+| Main README | `README.md` |
+| Contribution guide | `CONTRIBUTING.md` |
+| MIT license | `LICENSE` |
+| raven.toml exhaustive reference | `docs/configuration.md` |
+| Workflow engine documentation | `docs/workflows.md` |
+| Agent adapter documentation | `docs/agents.md` |
+| Release checklist with sign-off | `docs/RELEASE_CHECKLIST.md` |
+| Build + dev Makefile targets | `Makefile` |
 
----
+#### Verification
 
-### T-082: Man Page Generation Using cobra/doc
-
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `scripts/gen-manpages/main.go` Go program that imports `cli.NewRootCmd()` and calls `doc.GenManTree()` to generate troff-formatted Section 1 man pages for every Raven command into a configurable output directory (default `man/man1`)
-  - `GenManHeader` configured with `Title:"RAVEN"`, `Section:"1"`, `Source:"Raven"`, `Manual:"Raven Manual"` so man pages display correctly under `man raven`, `man raven-implement`, etc.
-  - `scripts/install-manpages.sh` bash installer that copies `man/man1/*.1` to `${1:-/usr/local/share/man/man1}`, prints each installed path, and runs `mandb`/`makewhatis` when available to update the man database
-  - Updated `.goreleaser.yaml`: added `go run ./scripts/gen-manpages man/man1` as a `before.hook` (after completions hook); added `man/man1/*.1` and `scripts/install-manpages.sh` to the `raven-archive` extra files; added standalone `manpages-archive` meta archive
-  - `make manpages` Makefile target for local man page generation
-  - Added `/man/` to `.gitignore` (generated artifact, not committed)
-- **Files created/modified:**
-  - `scripts/gen-manpages/main.go` -- Go program generating troff man pages for all Raven commands
-  - `scripts/install-manpages.sh` -- bash installer copying man pages to system man directory with db update
-  - `.goreleaser.yaml` -- added before hook, man pages in archives, standalone manpages-archive meta
-  - `Makefile` -- added `manpages` target and updated `.PHONY`
-  - `.gitignore` -- added `/man/` entry
-- **Key decisions:**
-  - `github.com/spf13/cobra/doc` is a sub-package of the already-required `github.com/spf13/cobra` module (v1.10.2); no new module version needed. `go-md2man` (transitive dep) is added to go.mod/go.sum via `go mod tidy` when the new import is first resolved.
-  - `nullglob` in the installer prevents a bare `*.1` glob from being passed to `cp` when the source directory is empty.
-  - Man pages for hidden commands (e.g., `__complete`) are omitted automatically by cobra/doc because they are marked hidden.
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./...` ✓  `go run ./scripts/gen-manpages man/man1` generates man pages ✓
-
----
-
-### T-083: Performance Benchmarking Suite
-
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `cmd/raven/bench_test.go` -- binary startup time benchmarks (`BenchmarkBinaryStartup`, `BenchmarkBinaryHelp`) measuring wall-clock time from process launch; establishes <200ms baseline
-  - `internal/config/bench_test.go` -- config benchmarks: `LoadFromFile`, `Validate`, `NewDefaults`, `LoadAndValidate`, `DecodeAndValidate`, and stress variants with many agents/workflows
-  - `internal/task/bench_test.go` -- task parsing (`ParseTaskSpec`, `ParseTaskFile`, `DiscoverTasks`), StateManager I/O (`Load`, `LoadMap`, `Get`), and selector benchmarks (`SelectNext`, `SelectNextInRange`, `IsPhaseComplete`, `BlockedTasks`) at 10- and 100-task scale
-  - `internal/agent/bench_test.go` -- concurrent agent coordination overhead with 1, 3, 5, 10 agents via `errgroup`, plus `b.RunParallel` throughput benchmark
-  - `internal/workflow/bench_test.go` -- state checkpoint/restore I/O: `Save`, `Load`, `List` (n=5/10/20), and pure JSON marshal benchmarks
-  - `internal/tui/bench_test.go` -- view rendering at 120x40 (`BenchmarkAppView` ~218µs, well under <100ms target), message dispatch (`AgentOutputMsg`, `WorkflowEventMsg`), event log ring buffer, layout resize
-  - `internal/review/bench_test.go` -- JSON extraction (`json.Unmarshal` on ReviewResult), finding consolidation with 3 and 5 agents, deduplication key computation
-  - `scripts/bench-report.sh` -- shell script to run all benchmarks and format a header report with git ref, Go version, and configurable `-benchtime`/`-count`/`-bench` flags
-  - Updated `Makefile` `bench` target to use `-benchtime=3s` per task spec
-- **Files created/modified:**
-  - `cmd/raven/bench_test.go` -- binary startup benchmarks using `os/exec`
-  - `internal/config/bench_test.go` -- config load + validation benchmarks
-  - `internal/task/bench_test.go` -- task parsing, state manager, selector benchmarks
-  - `internal/agent/bench_test.go` -- concurrent agent coordination benchmarks
-  - `internal/workflow/bench_test.go` -- workflow state checkpoint I/O benchmarks
-  - `internal/tui/bench_test.go` -- TUI view rendering and message throughput benchmarks
-  - `internal/review/bench_test.go` -- JSON extraction and consolidation benchmarks
-  - `scripts/bench-report.sh` -- benchmark runner with formatted report output
-  - `Makefile` -- updated `bench` target to `-benchtime=3s`
-- **Verification:** `go build` ✓  `go vet` ✓  `go test ./...` ✓
-
----
-
-### T-084: End-to-End Integration Test Suite with Mock Agents
-
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `testdata/mock-agents/claude` -- Mock Claude CLI bash script; accepts all real claude flags, emits `PHASE_COMPLETE`, supports `MOCK_EXIT_CODE`, `MOCK_OUTPUT_FILE`, `MOCK_STDERR_FILE`, `MOCK_RATE_LIMIT`, `MOCK_DELAY`, `MOCK_SIGNAL_FILE` env vars
-  - `testdata/mock-agents/codex` -- Mock Codex CLI bash script with same protocol as claude mock
-  - `testdata/mock-agents/rate-limited-agent` -- Agent that rate-limits first N invocations (controlled by `MOCK_RATE_LIMIT_UNTIL`), succeeds on subsequent calls
-  - `testdata/mock-agents/failing-agent` -- Agent that always fails with configurable exit code (`MOCK_EXIT_CODE`)
-  - `tests/e2e/helpers_test.go` -- `testProject` helper struct, `newTestProject` (builds raven binary + copies mock agents), `initGitRepo`, `minimalConfig`, `sampleTaskSpec`, `run`/`runExpectSuccess`/`runExpectFailure` methods
-  - `tests/e2e/config_test.go` -- `raven version`, `raven version --json`, `raven init go-cli`, `raven config debug`, `raven config validate`, missing-config fallback, no-args help, config help
-  - `tests/e2e/implement_test.go` -- dry-run, single task with mock agent, no tasks error, dry-run no agent needed, required flags validation, dry-run does not invoke agent assertion
-  - `tests/e2e/review_test.go` -- dry-run, help, empty diff, staged change, no-agents-configured error, split mode, invalid mode
-  - `tests/e2e/pipeline_test.go` -- help, dry-run requires phase, dry-run with phases.conf, mutually exclusive flags, all stages skipped, invalid concurrency
-  - `tests/e2e/prd_test.go` -- help, required file flag, file must exist, dry-run, single-pass dry-run
-  - `tests/e2e/resume_test.go` -- help, no checkpoint error, list with no checkpoints, clean-all, invalid run ID, status command, status JSON output
-  - `tests/e2e/error_test.go` -- unknown subcommand, unknown agent, invalid config, global dry-run flag, global verbose flag, global no-color flag, phase/task mutual exclusivity, review concurrency validation
-  - `Makefile` -- added `test-e2e` target: `go test -v -count=1 -timeout 10m ./tests/e2e/`
-- **Key decisions:**
-  - External test package (`package e2e_test`) with no non-test `.go` files -- Go supports this for external test packages
-  - `runtime.Caller(0)` in `projectRoot()` yields the compile-time path of `helpers_test.go`; navigates two levels up to find the repo root reliably regardless of working directory
-  - All mock scripts use `set -euo pipefail` with `${VAR:-default}` pattern to be safe with `-u` (unset variable errors)
-  - PATH override in subprocess env (`mock-agents` prepended) shadows real claude/codex binaries; no real API calls are made
-  - `NO_COLOR=1` and `RAVEN_LOG_FORMAT=json` set in subprocess env for clean, parseable test output
-  - All tests guard with `if testing.Short() { t.Skip() }` for rapid unit-test cycles
-  - Git repo initialised with `test@example.com` identity to avoid global git config dependency
-- **Files created/modified:**
-  - `testdata/mock-agents/claude` -- Mock Claude CLI script (executable)
-  - `testdata/mock-agents/codex` -- Mock Codex CLI script (executable)
-  - `testdata/mock-agents/rate-limited-agent` -- Rate-limiting mock agent script (executable)
-  - `testdata/mock-agents/failing-agent` -- Always-failing mock agent script (executable)
-  - `tests/e2e/helpers_test.go` -- Test infrastructure helpers
-  - `tests/e2e/config_test.go` -- Config and init command E2E tests
-  - `tests/e2e/implement_test.go` -- Implementation loop E2E tests
-  - `tests/e2e/review_test.go` -- Review pipeline E2E tests
-  - `tests/e2e/pipeline_test.go` -- Pipeline orchestration E2E tests
-  - `tests/e2e/prd_test.go` -- PRD decomposition E2E tests
-  - `tests/e2e/resume_test.go` -- Checkpoint/resume and status E2E tests
-  - `tests/e2e/error_test.go` -- Error handling and CLI validation E2E tests
-  - `Makefile` -- added `test-e2e` target and updated `.PHONY`
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test -short ./tests/e2e/` ✓
-
-### T-086: Comprehensive README and User Documentation
-
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `README.md` -- main project documentation with all sections: what is Raven, features, binary download and source build installation with checksum verification, Quick Start tutorial (init → implement → review → PR), every CLI command with synopsis/flags table/examples, full `raven.toml` reference, architecture overview, shell completions (bash/zsh/fish/PowerShell), man pages, CI/CD integration with GitHub Actions example, exit codes, contributing and license links
-  - `CONTRIBUTING.md` -- development prerequisites, clone and build instructions, project layout, all Makefile targets, adding a new CLI command and agent adapter, unit/E2E/benchmark test instructions, code style rules (naming, error handling, logging, concurrency), conventional commit message guide, PR process checklist, code of conduct reference
-  - `LICENSE` -- MIT license with copyright year 2024 and holder "Raven Contributors"
-  - `docs/configuration.md` -- exhaustive `raven.toml` reference: file discovery, four-layer resolution order, complete annotated example, all `[project]` fields with types/defaults/descriptions, task-state.conf and phases.conf formats, `[agents.NAME]` fields with Claude-specific and Codex-specific notes, Gemini stub status, `[review]` fields, `[workflows.NAME]` fields and transitions format, environment variable overrides table, security notes
-  - `docs/workflows.md` -- workflow engine overview, StepHandler interface, transition events and terminal pseudo-steps, workflow lifecycle events, ASCII state machine diagram for implement-review-pr, all four built-in workflow descriptions and step tables, checkpointing and resume guide, custom workflow guide with two examples, validation notes, dry-run mode, engine options
-  - `docs/agents.md` -- Agent interface and RunOpts/RunResult types, Claude adapter prerequisites/configuration/internals/streaming/rate-limit detection/model values, Codex adapter prerequisites/configuration/internals/rate-limit detection, Gemini stub status, rate-limit coordinator design (provider mapping, ProviderState, BackoffConfig), agent registry with sentinel errors, custom agent guide with minimal stub example, security notes
-- **Files created/modified:**
-  - `README.md` -- main project documentation (~500 lines)
-  - `CONTRIBUTING.md` -- contribution and development guidelines
-  - `LICENSE` -- MIT license file
-  - `docs/configuration.md` -- exhaustive raven.toml reference
-  - `docs/workflows.md` -- workflow engine documentation
-  - `docs/agents.md` -- agent adapter documentation
-  - `docs/tasks/PROGRESS.md` -- updated T-086 status to Completed
-- **Key decisions:**
-  - README kept under ~500 lines with links to extended docs for detailed references
-  - CI badge URLs use placeholder GitHub owner (must be updated when repo is public)
-  - TUI screenshot/GIF has a `<!-- placeholder -->` comment as instructed
-  - No emojis, GitHub-flavored Markdown, code blocks with language tags throughout
-  - Security section explicitly notes that Raven does not store credentials
-  - Checksum verification included in binary download instructions
-  - Platform-specific completion instructions for macOS vs Linux (no tabs; separate code blocks)
-- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./...` ✓
-
----
-
-### T-085: CI/CD Pipeline with GitHub Actions
-
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `.github/workflows/ci.yml` — four-job CI workflow (lint, test, build, mod-tidy) triggering on PRs and pushes to `main`
-  - `.golangci.yml` — golangci-lint configuration enabling 16 linters (errcheck, gosec, staticcheck, errorlint, etc.) with test-file and mock-path exclusions
-  - Lint job uses `golangci/golangci-lint-action@v6` with pinned `v1.63` version and 5-minute timeout
-  - Test job runs on Ubuntu + macOS matrix with Go 1.24, race detection (`-race`), and coverage artifact upload
-  - Build job verifies cross-compilation for 5 platforms (darwin/linux/windows × amd64/arm64, excluding windows/arm64) with `CGO_ENABLED=0`
-  - Module hygiene job ensures `go mod tidy` produces no diff
-  - Workflow uses read-only `contents: read` permission (principle of least privilege)
-- **Files created/modified:**
-  - `.github/workflows/ci.yml` — Main CI workflow for PRs and main branch
-  - `.golangci.yml` — golangci-lint configuration at project root
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-087: Final Binary Verification and Release Checklist
-
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `scripts/release-verify.sh` -- automated release verification script that runs all pre-release checks and produces a structured PASS/FAIL report; accepts an optional version argument and a `--quick` flag to skip E2E and GoReleaser checks for faster developer runs
-  - `docs/RELEASE_CHECKLIST.md` -- manual release checklist with pre-release verification (automated, binary, functional, documentation, performance), step-by-step release process (8 steps), and post-release tasks including `go install` verification and announcement guidance; includes a sign-off table
-  - `Makefile` `release-verify` target -- invokes `./scripts/release-verify.sh $(VERSION)` for convenient script execution
-  - `Makefile` `release` target -- creates an annotated git tag for `$(VERSION)` with an interactive yes/no confirmation prompt, then pushes the tag to origin; GitHub Actions release workflow fires automatically
-- **Checks implemented in `release-verify.sh`:**
-  - Build: `go build ./cmd/raven/`, `go vet ./...`, `go mod tidy` with no git diff
-  - Tests: `go test -race ./...`, `go test -v ./tests/e2e/ -timeout 10m` (skipped with `--quick`)
-  - Binary size: cross-compile all 5 platforms (darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64) with `-s -w`, measure size, enforce < 25 MiB; cleanup temp binaries
-  - GoReleaser: `goreleaser check` and `goreleaser build --snapshot --clean`; skipped with warning if goreleaser not installed or with `--quick`
-  - Documentation: `README.md`, `LICENSE`, `CONTRIBUTING.md` existence; `go run ./scripts/gen-manpages` and `go run ./scripts/gen-completions` into temp dirs
-  - Version injection: build with `-X MODULE/internal/buildinfo.Version=VERSION` ldflags, run `raven version`, grep for version string
-  - CI: `.github/workflows/ci.yml` and `.github/workflows/release.yml` existence
-- **Files created/modified:**
-  - `scripts/release-verify.sh` -- automated release verification script (executable)
-  - `docs/RELEASE_CHECKLIST.md` -- manual release checklist with sign-off table
-  - `Makefile` -- added `release-verify` and `release` targets, updated `.PHONY`
-  - `docs/tasks/PROGRESS.md` -- updated T-087 status to Completed
-- **Key decisions:**
-  - Portable `file_size()` shell function tries GNU `stat -c%s` first, falls back to BSD `stat -f%z` -- handles both macOS and Linux without a separate OS detection block
-  - `((PASS++)) || true` and `((FAIL++)) || true` guard against bash `set -e` exiting when the pre-increment value is 0 (arithmetic returns non-zero for result=0)
-  - Used a plain bash indexed array for `PLATFORMS` instead of `declare -A` associative array to maintain compatibility with bash 3.x (default on macOS) even though the task spec says bash 4+ is required
-  - GoReleaser absence is a warning (skip), not a failure -- allows developers without goreleaser installed to run the script locally
-  - `SKIP:` entries accumulate in `RESULTS[]` but do not affect `PASS` or `FAIL` counters
-- **Verification:** `bash -n scripts/release-verify.sh` (syntax check) ✓  `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./...` ✓
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
 
 ---
 
 ## Not Started Tasks
 
 _None -- all tasks completed._
-
----
-
-### Phase 7: Polish & Distribution (T-079 to T-087)
-
-- **Status:** Completed
-- **Tasks:** 9 (8 Must Have, 1 Should Have)
-- **Estimated Effort:** 64-96 hours
-- **PRD Roadmap:** Week 14
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-079 | GoReleaser Configuration for Cross-Platform Builds | Must Have | Medium (6-10hrs) | Completed |
-| T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Completed |
-| T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Completed |
-| T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Completed |
-| T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Completed |
-| T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Completed |
-| T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Completed |
-| T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Completed |
-| T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Completed |
-
-**Deliverable:** Published v2.0.0 with signed binaries for all platforms.
 
 ---
 
