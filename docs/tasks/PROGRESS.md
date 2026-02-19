@@ -432,293 +432,63 @@
 
 ---
 
-### T-066: Bubble Tea Application Scaffold and Elm Architecture Model
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `FocusPanel` iota enum type with `FocusSidebar`, `FocusAgentPanel`, `FocusEventLog` constants
-  - `AppConfig` struct holding `Version` and `ProjectName` strings for the TUI title bar
-  - `App` top-level `tea.Model` implementing Elm architecture (`Init`, `Update`, `View`) with value receivers
-  - `NewApp` constructor with defaults: focus=Sidebar, ready=false, quitting=false
-  - `Update` dispatching `tea.WindowSizeMsg` (store dims, set ready=true) and quit `KeyMsg` (q/ctrl+c/ctrl+q → tea.Quit)
-  - `View` with four branches: quitting (empty), not-ready ("Initializing"), too-small warning, full lipgloss title bar layout
-  - `RunTUI` public entry point creating `tea.Program` with `WithAltScreen()` and `WithMouseCellMotion()`
-  - 44-test suite achieving ≥80% coverage (remaining % is `RunTUI` which requires a live terminal)
-- **Files created/modified:**
-  - `internal/tui/app.go` -- top-level Elm architecture model, FocusPanel, AppConfig, App, RunTUI
-  - `internal/tui/app_test.go` -- 44 tests covering all acceptance criteria and edge cases
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-067: TUI Message Types and Event System
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `AgentOutputMsg` — single line of agent stdout/stderr tagged with agent name, stream, and timestamp
-  - `AgentStatus` iota enum (Idle/Running/Completed/Failed/RateLimited/Waiting) with `String()` method
-  - `AgentStatusMsg` — agent lifecycle change signal with status, task ID, and detail
-  - `WorkflowEventMsg` — workflow step transition event with step/prevStep/event/detail fields
-  - `LoopEventType` iota enum (9 variants) with `String()` method covering all implementation loop events
-  - `LoopEventMsg` — loop iteration event with type, taskID, iteration counters, and detail
-  - `RateLimitMsg` — rate-limit event with provider, agent, ResetAfter duration, and ResetAt absolute time
-  - `TaskProgressMsg` — task state change for progress bar updates with phase/completed/total counters
-  - `TickMsg` — periodic timer tick for countdown displays and elapsed time
-  - `ErrorMsg` — non-fatal error for display in the event log
-  - `FocusChangedMsg` — keyboard focus panel change (uses `FocusPanel` from app.go)
-  - `TickCmd` and `TickEvery` helper functions using `tea.Tick` (safe Elm-architecture pattern)
-  - 47 unit tests + 4 benchmarks covering construction, String() enum values, type-switch dispatch, and edge cases
-- **Files created/modified:**
-  - `internal/tui/messages.go` — all TUI message types, enums, and tick helper functions
-  - `internal/tui/messages_test.go` — 47 tests + 4 benchmarks covering all acceptance criteria
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-068: Lipgloss Styles and Theme System
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - 11 `lipgloss.AdaptiveColor` package-level vars (`ColorPrimary`, `ColorSecondary`, `ColorAccent`, `ColorSuccess`, `ColorWarning`, `ColorError`, `ColorInfo`, `ColorMuted`, `ColorSubtle`, `ColorBorder`, `ColorHighlight`) with distinct Light/Dark hex values
-  - `Theme` struct with 37 `lipgloss.Style` fields organized by component: title bar (4), sidebar (5), agent panel (5), event log (3), status bar (4), progress bars (4), status indicators (5), general (4), dividers (2)
-  - `DefaultTheme()` constructor building all 37 styles using `lipgloss.AdaptiveColor` — no Width or Height set on any style
-  - `Theme.StatusIndicator(AgentStatus)` returning Unicode symbol strings: `●` (running), `○` (idle), `✓` (completed), `!` (failed), `×` (rate-limited), `◌` (waiting)
-  - `Theme.ProgressBar(filled float64, width int)` rendering U+2588/U+2591 block-character bars with per-segment styling, clamped fill, and width guard
-  - 9 test functions (47+ assertions) covering: all 11 color vars non-empty, all 37 theme fields render non-empty, idempotent DefaultTheme, all 6 StatusIndicator variants non-empty with correct symbols, distinct symbols across statuses, ProgressBar width guard/clamping/accuracy
-  - `stripANSI` test helper for inspecting raw symbol content independent of terminal color codes
-- **Files created/modified:**
-  - `internal/tui/styles.go` — color palette, Theme struct, DefaultTheme(), StatusIndicator(), ProgressBar()
-  - `internal/tui/styles_test.go` — comprehensive test suite covering all acceptance criteria
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-069: Split-Pane Layout Manager
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - 6 exported constants: `MinTerminalWidth=80`, `MinTerminalHeight=24`, `DefaultSidebarWidth=22`, `TitleBarHeight=1`, `StatusBarHeight=1`, `BorderWidth=1`
-  - `PanelDimensions` struct holding `Width` and `Height` in terminal cell units
-  - `Layout` struct with unexported `termWidth`, `termHeight`, `sidebarWidth`, `agentSplit` fields and 5 exported `PanelDimensions` fields (`TitleBar`, `Sidebar`, `AgentPanel`, `EventLog`, `StatusBar`)
-  - `NewLayout()` constructor initializing `sidebarWidth=22` and `agentSplit=0.65` with all panel dimensions zero-initialised
-  - `Resize(width, height int) bool` method recording terminal dimensions and recalculating all panel dimensions with clamping (`contentHeight`, `mainWidth`, `agentHeight`, `eventHeight` all min-1); returns false without updating panels when below minimum dimensions
-  - `IsTooSmall() bool` method checking recorded terminal dimensions against minimums
-  - `TerminalSize() (int, int)` returning last recorded terminal width and height
-  - `Render(theme Theme, titleBar, sidebar, agentPanel, eventLog, statusBar string) string` assembling the 5-panel frame using lipgloss styles for sizing, a `"|"` vertical divider with `ColorBorder` foreground, `JoinVertical`/`JoinHorizontal` composition
-  - `RenderTooSmall(theme Theme) string` rendering a centered resize message via `lipgloss.Place` when terminal size is known, or plain `theme.ErrorText` when not
-  - 25-test suite covering defaults, resize success/failure/clamping, IsTooSmall, TerminalSize, Render, RenderTooSmall
-- **Files created/modified:**
-  - `internal/tui/layout.go` -- Layout type, constants, PanelDimensions, all 6 exported methods
-  - `internal/tui/layout_test.go` -- 25 table-driven tests covering all acceptance criteria and edge cases
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-070: Sidebar -- Workflow List with Status Indicators
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `WorkflowStatus` iota enum (Idle/Running/Paused/Completed/Failed) with `String()` and `workflowStatusFromEvent()` helpers
-  - `WorkflowEntry` struct holding ID, Name, Status, StartedAt, and Detail fields
-  - `SidebarModel` Bubble Tea sub-model with workflow list, selectedIdx, scrollOffset, workflowIndex map for O(1) dedup
-  - `NewSidebarModel`, `SetDimensions`, `SetFocused`, `SelectedWorkflow` API methods
-  - `Update` handling `WorkflowEventMsg` (add/update workflows), `FocusChangedMsg` (focus tracking), `tea.KeyMsg` (j/k/up/down navigation when focused)
-  - `workflowListView` rendering "WORKFLOWS" header, status indicators (●○◌✓✗), truncated names with ellipsis
-  - Scrolling support: `adjustScroll` keeps selected row visible; `clampIdx` keeps selection in bounds
-  - `View` composing workflow list + AGENTS and PROGRESS placeholder sections, padding to full height, applying `SidebarContainer` style with border-aware width calculation
-  - Fixed border width accounting: `Width(m.width - 1)` so right border (`│`) doesn't push total beyond m.width
-  - 40+ unit and integration tests achieving 93.2% statement coverage
-- **Files created/modified:**
-  - `internal/tui/sidebar.go` -- SidebarModel, WorkflowStatus, WorkflowEntry, all rendering and navigation logic
-  - `internal/tui/sidebar_test.go` -- comprehensive test suite covering all acceptance criteria and edge cases
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-071: Sidebar -- Task Progress Bars and Phase Progress
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `TaskProgressSection` value-type struct tracking overall task completion (`totalTasks`, `completedTasks`) and per-phase progress (`currentPhase`, `totalPhases`, `phaseTasks`, `phaseCompleted`)
-  - `NewTaskProgressSection(theme Theme)` constructor with zero-initialised counters
-  - `SetTotals(totalTasks, totalPhases int)` pointer-receiver mutator with negative-value guards
-  - `SetPhase(phase, phaseTasks, phaseCompleted int)` pointer-receiver mutator with negative-value guards
-  - `Update(msg tea.Msg) TaskProgressSection` value-receiver returning updated copy; handles `TaskProgressMsg` (sets `completedTasks`/`totalTasks`, clamps completed to total, guards negatives) and `LoopEventMsg` (`LoopPhaseComplete` increments `currentPhase` + resets `phaseCompleted`; `LoopTaskCompleted` increments `phaseCompleted` and `completedTasks` when below total)
-  - `View(width int) string` rendering two sub-sections: "Tasks" (header + progress bar + percentage + "N/M done" label, or "No tasks" placeholder when total=0) and "Phase: N/M" (header + bar + percentage, or "No phases" placeholder when totalPhases=0); bar width calculated as `width - 2` with a floor of 1; uses `Theme.ProgressBar`, `Theme.ProgressPercent`, `Theme.ProgressLabel`, `Theme.SidebarTitle`, `Theme.SidebarItem`
-  - Division-by-zero guard: progress bar only rendered when total > 0
-  - Clamping: `completedTasks` and `phaseCompleted` clamped to their respective totals in `View`
-  - Integrated into `SidebarModel`: added `taskProgress TaskProgressSection` field, initialised in `NewSidebarModel`, `Update` delegates `TaskProgressMsg` and `LoopEventMsg` to `m.taskProgress.Update(msg)`, `View()` replaces the `"(task progress)"` placeholder with `m.taskProgress.View(m.width)`
-  - `SidebarModel.SetTotals` and `SidebarModel.SetPhase` public delegating methods
-  - 25 new unit and integration tests covering all edge cases: zero totals, negative values, clamping, LoopPhaseComplete sequences, LoopTaskCompleted bounded increment, View placeholders, View with real data, delegation from SidebarModel, SidebarModel View rendering
-- **Files created/modified:**
-  - `internal/tui/sidebar.go` -- `TaskProgressSection` type with all methods; `SidebarModel` integration (field, init, Update cases, View replacement, SetTotals/SetPhase delegates); added `"fmt"` import
-  - `internal/tui/sidebar_test.go` -- 25 new table-driven and unit tests for `TaskProgressSection` and `SidebarModel` integration
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
----
-
-### T-072: Sidebar -- Rate-Limit Status Display with Countdown
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `ProviderRateLimit` value struct tracking per-provider rate-limit state: `Provider`, `Agent`, `ResetAt`, `Remaining`, `Active`
-  - `RateLimitSection` value-type struct with `theme Theme`, `providers map[string]*ProviderRateLimit`, and `order []string` (stable insertion-order rendering)
-  - `NewRateLimitSection(theme Theme) RateLimitSection` constructor with empty provider map
-  - `Update(msg tea.Msg) (RateLimitSection, tea.Cmd)` value-receiver handling:
-    - `RateLimitMsg`: calls `applyRateLimitMsg` to register/update provider, always returns `TickCmd(time.Second)`
-    - `TickMsg`: calls `tick()` to recalculate `Remaining = time.Until(ResetAt)` for each active provider; deactivates expired ones; returns `TickCmd(time.Second)` if any still active, nil otherwise
-  - `applyRateLimitMsg`: copies providers map + order slice for value-receiver immutability; derives `ResetAt` from `msg.ResetAt` (if non-zero) or `msg.Timestamp + msg.ResetAfter`; uses `Provider` as key, falling back to `Agent`
-  - `tick()`: copies providers map; recalculates `Remaining` via `time.Until`; zeroes and deactivates expired providers
-  - `HasActiveLimit() bool`: returns true if any provider has `Active == true`
-  - `View(width int) string`: renders "Rate Limits" header + per-provider lines (`{name}: OK` in green for inactive, `{name}: WAIT M:SS` in yellow for active); "No limits" placeholder when no providers; name truncated to fit width with room for the suffix
-  - `formatCountdown(d time.Duration) string`: "0:00" for non-positive; "M:SS" for under 1 hour; "H:MM:SS" for 1 hour or more
-  - Integrated `rateLimits RateLimitSection` field into `SidebarModel`: initialised in `NewSidebarModel`, `Update` handles `RateLimitMsg` and `TickMsg` by delegating and propagating the returned `tea.Cmd`, `View()` renders the rate limits section between AGENTS placeholder and PROGRESS section
-  - 30+ unit and integration tests covering: formatCountdown edge cases, RateLimitSection constructor, RateLimitMsg handling (add/update/multi-provider/stable-order/ResetAfter fallback/agent-key fallback), TickMsg handling (nil cmd when no limits, TickCmd when active, deactivation on expiry, mixed provider states), View rendering (header, placeholder, OK/WAIT states, countdown format, stable order, zero-width no-panic), HasActiveLimit, SidebarModel integration (RateLimitMsg cmd propagation, TickMsg propagation, sidebar view showing rate limits)
-- **Files created/modified:**
-  - `internal/tui/sidebar.go` -- `ProviderRateLimit`, `RateLimitSection` types and all methods; `SidebarModel` integration (field, init, Update cases, View section); `formatCountdown` helper
-  - `internal/tui/sidebar_test.go` -- 30+ new table-driven and integration tests for T-072
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
-### T-073: Agent Output Panel with Viewport Scrolling and Tabbed Multi-Agent View
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `OutputBuffer` ring buffer capped at 1000 lines per agent with O(1) append and eviction
-  - `AgentView` per-agent display state with `viewport.Model` for scrollable output and `autoScroll` tracking
-  - `AgentPanelModel` top-level sub-model with tab management, focus handling, and Elm-style Update/View
-  - Tab bar rendered only when 2+ agents are active, with active tab visually distinguished
-  - Agent header showing status indicator (●/✓/!/×/◌/○), agent name, and current task ID
-  - Full keyboard navigation: j/k, up/down, PgUp/PgDn, Home/End for scrolling; Tab/Shift-Tab for agent tab switching
-  - Auto-scroll to bottom on new output; stops on manual scroll up; resumes when scrolling back to bottom
-  - Tab key passthrough to parent when only one agent is present (enables focus cycling)
-  - 31 unit and integration tests covering all acceptance criteria + edge cases (85%+ coverage)
-- **Files created/modified:**
-  - `internal/tui/agent_panel.go` -- `OutputBuffer`, `AgentView`, `AgentPanelModel` with full Elm architecture
-  - `internal/tui/agent_panel_test.go` -- 31 tests covering ring buffer, tab switching, auto-scroll, edge cases, integration
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
-### T-074: Event Log Panel for Workflow Milestones
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `EventCategory` enum (Info, Success, Warning, Error, Debug) for styled display
-  - `EventEntry` struct with timestamp, category, and message
-  - `EventLogModel` sub-model with bounded 500-entry buffer, viewport scrolling, and visibility toggle
-  - `classifyWorkflowEvent`, `classifyLoopEvent`, `classifyAgentStatus` helper functions mapping all message types to human-readable entries
-  - `RateLimitMsg` formatted as "Rate limit: {provider}, waiting M:SS" using shared `formatCountdown`
-  - `ErrorMsg` handling with fallback from Detail to Source field
-  - Auto-scroll to newest entry; disabled on k/up/pgup scroll; re-enabled on G/End
-  - `l` key toggles panel visibility; hidden panel returns `""` from `View()`
-  - Header "Event Log" always rendered when visible; "No events yet" placeholder for empty log
-  - Focused state highlighted with `ColorPrimary` border
-  - 40+ unit and integration tests achieving 90%+ coverage
-- **Files created/modified:**
-  - `internal/tui/event_log.go` -- `EventLogModel`, `EventEntry`, `EventCategory`, classifier functions
-  - `internal/tui/event_log_test.go` -- 40+ tests covering all acceptance criteria, edge cases, and integration scenarios
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
-### T-075: Status Bar with Current State, Iteration, and Timer
-
-- **Status:** Completed
-- **Date:** 2026-02-18
-- **What was built:**
-  - `StatusBarModel` sub-model tracking phase, task, iteration, elapsed time, paused state, workflow name, and mode
-  - `NewStatusBarModel(theme Theme) StatusBarModel` initializes with mode="idle" and zero dynamic state
-  - `Update(msg tea.Msg) StatusBarModel` handles `LoopEventMsg`, `WorkflowEventMsg`, and `TickMsg`
-  - `View() string` renders single-line status bar with left-aligned segments and right-aligned "? help" hint
-  - Two-pass segment layout: mandatory (mode, task) always shown; optional (phase, iter, timer) dropped when too narrow
-  - `formatElapsed(d time.Duration) string` returns "HH:MM:SS" format
-  - Prominent "PAUSED" badge (amber background) when `LoopWaitingForRateLimit` fires; cleared on `LoopResumedAfterWait`
-  - Elapsed timer uses `tickMsg.Time.Sub(startTime)` for deterministic test behavior
-  - Fixed lipgloss border-box Width behavior: uses `Width(sb.width)` (total) not `Width(innerWidth)` (content)
-  - 45 unit/integration tests + 2 benchmarks covering all acceptance criteria and edge cases
-- **Files created/modified:**
-  - `internal/tui/status_bar.go` -- `StatusBarModel` with full Elm architecture, segment helpers, `formatElapsed`
-  - `internal/tui/status_bar_test.go` -- 45+ tests for all acceptance criteria, edge cases, and integration lifecycle
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
-
-### T-076: Keyboard Navigation and Help Overlay
+### Phase 6: TUI Command Center (T-066 to T-078)
 
 - **Status:** Completed
 - **Date:** 2026-02-19
-- **What was built:**
-  - `KeyMap` struct with all 15 keybindings using `charmbracelet/bubbles/key` (Quit, Help, Pause, Skip, ToggleLog, FocusNext, FocusPrev, Up, Down, PageUp, PageDown, Home, End, NextAgent, PrevAgent)
-  - `DefaultKeyMap()` function populating all bindings with correct Bubble Tea key names ("tab", "shift+tab", "pgup", "pgdown", "ctrl+c", etc.)
-  - `NextFocus(FocusPanel) FocusPanel` and `PrevFocus(FocusPanel) FocusPanel` modular arithmetic focus cycling over 3 panels
-  - `PauseRequestMsg{}` and `SkipRequestMsg{}` control message types for workflow integration
-  - `HelpOverlay` struct with `NewHelpOverlay`, `SetDimensions`, `Toggle`, `IsVisible`, `Update`, `View` methods
-  - `HelpOverlay.View()` renders a centered, rounded-border box with three keybinding categories (Navigation, Actions, Scrolling) using `lipgloss.Place`
-  - `HelpOverlay.Update()` handles `?` and `Esc` to dismiss; all other keys are consumed without action
-  - `App` struct updated with `keyMap KeyMap` and `helpOverlay HelpOverlay` fields
-  - `App.Update()` fully overhauled: help overlay visible path delegates to overlay; `key.Matches` dispatch for all global keys; `FocusChangedMsg` sent on Tab/Shift+Tab; `PauseRequestMsg`/`SkipRequestMsg` returned as commands; scrolling keys consumed
-  - `App.View()` renders help overlay on top when visible via `helpOverlay.View()`
-  - `App.Init()` unchanged (returns nil)
-  - 40+ unit and integration tests covering all acceptance criteria
-- **Files created/modified:**
-  - `internal/tui/keybindings.go` -- `KeyMap`, `DefaultKeyMap`, `NextFocus`, `PrevFocus`, `PauseRequestMsg`, `SkipRequestMsg`, `HelpOverlay` (all methods)
-  - `internal/tui/keybindings_test.go` -- 40+ tests for keybindings, focus cycling, overlay behavior, and App integration
-  - `internal/tui/app.go` -- Added `keyMap`/`helpOverlay` fields, integrated in `NewApp`, `Update`, `View`
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+- **Tasks Completed:** 13 tasks
 
----
+#### Features Implemented
 
-### T-077: Pipeline Wizard TUI Integration
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Elm Architecture Scaffold | T-066 | `App` top-level `tea.Model` with `Init`/`Update`/`View`, `FocusPanel` enum, `AppConfig`, `RunTUI` entry point |
+| TUI Message Types and Event System | T-067 | `AgentOutputMsg`, `AgentStatusMsg`, `WorkflowEventMsg`, `LoopEventMsg`, `RateLimitMsg`, `TaskProgressMsg`, `TickMsg`, `ErrorMsg`, `FocusChangedMsg`; `AgentStatus`/`LoopEventType` enums; `TickCmd`/`TickEvery` helpers |
+| Lipgloss Styles and Theme System | T-068 | 11 `AdaptiveColor` palette vars, `Theme` struct with 37 `lipgloss.Style` fields, `DefaultTheme()`, `StatusIndicator(AgentStatus)`, `ProgressBar(filled, width)` |
+| Split-Pane Layout Manager | T-069 | `Layout` with `Resize`/`IsTooSmall`/`TerminalSize`/`Render`/`RenderTooSmall`; `PanelDimensions`; 6 exported dimension constants |
+| Sidebar: Workflow List | T-070 | `SidebarModel` with `WorkflowEntry`/`WorkflowStatus`, O(1) dedup via map, j/k navigation, scroll-tracking, status indicators |
+| Sidebar: Task Progress Bars | T-071 | `TaskProgressSection` with `SetTotals`/`SetPhase`/`Update`/`View`; handles `TaskProgressMsg` and `LoopEventMsg`; integrated into `SidebarModel` |
+| Sidebar: Rate-Limit Countdown | T-072 | `RateLimitSection` with `ProviderRateLimit`, per-provider WAIT M:SS countdown, `TickCmd` self-scheduling, `formatCountdown`; integrated into `SidebarModel` |
+| Agent Output Panel | T-073 | `AgentPanelModel` with `OutputBuffer` ring buffer (1000 lines), `AgentView` per-agent viewport, tab bar, auto-scroll, Tab passthrough |
+| Event Log Panel | T-074 | `EventLogModel` with 500-entry bounded buffer, `EventEntry`/`EventCategory`, classifier functions for all message types, visibility toggle (`l`), auto-scroll |
+| Status Bar | T-075 | `StatusBarModel` tracking phase/task/iteration/elapsed/paused/mode; two-pass segment layout; PAUSED badge; `formatElapsed` |
+| Keyboard Navigation and Help Overlay | T-076 | `KeyMap` with 15 bindings via `charmbracelet/bubbles/key`, `DefaultKeyMap`, `NextFocus`/`PrevFocus` cycling, `HelpOverlay` with centered rounded-border box, `PauseRequestMsg`/`SkipRequestMsg` |
+| Pipeline Wizard | T-077 | `WizardModel` wrapping 5-group `huh.Form`; `PipelineWizardConfig`; `WizardCompleteMsg`/`WizardCancelledMsg`; `buildHuhTheme`; `positiveIntValidator`; `parseFormValues` |
+| Dashboard Command and Integration | T-078 | `NewDashboardCmd` Cobra subcommand with `--dry-run` support; `EventBridge` with `WorkflowEventCmd`/`LoopEventCmd`/`AgentOutputCmd`/`TaskProgressCmd` and goroutine-safe push functions; `App` fully integrated with all sub-models |
 
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `PipelineWizardConfig` struct holding all pipeline parameters: PhaseMode (single/range/all), PhaseID, FromPhase, ToPhase, ImplAgent, ReviewAgents ([]string), FixAgent, ReviewConcurrency, MaxReviewCycles, MaxIterations, and four skip flags (SkipImplement, SkipReview, SkipFix, SkipPR)
-  - `WizardCompleteMsg` and `WizardCancelledMsg` Bubble Tea message types for lifecycle signalling
-  - `WizardModel` Bubble Tea sub-model with `theme`, `form *huh.Form`, `width/height`, `active`, `config`, `availableAgents`, `availablePhases`, and raw string fields for numeric huh.Input values
-  - `NewWizardModel(theme, agents, phases)` constructor with sensible defaults: PhaseMode="all", ReviewConcurrency=2, MaxReviewCycles=3, MaxIterations=10
-  - `SetDimensions(width, height)` pointer-receiver method updating form width on resize
-  - `IsActive() bool` value-receiver predicate
-  - `Start() tea.Cmd` building the form and returning `form.Init()`
-  - `Update(msg) (WizardModel, tea.Cmd)` forwarding to huh, handling Esc for cancellation, emitting WizardCompleteMsg/WizardCancelledMsg on state transitions
-  - `View() string` rendering the form wrapped in a rounded-border lipgloss container, centered with `lipgloss.Place` when dimensions are known
-  - 5-group huh form: (1) Phase selection with mode select + 3 Input fields for IDs; (2) Agent selection with impl/review(multi)/fix selects — fallback Note when no agents; (3) Settings with 3 validated Input fields; (4) Skip flags with 4 Confirm toggles; (5) Confirmation Note with live `DescriptionFunc` summary
-  - `buildHuhTheme(theme Theme) *huh.Theme` translating Raven color palette into a custom `huh.ThemeBase()` derivative
-  - `positiveIntValidator(fieldName)` and `capitalizeFirst(s)` helper functions
-  - `parseFormValues()` converting raw string inputs into typed config fields on completion
-  - Edge cases: empty agents/phases show informational Note fields; single agent pre-selected; form width capped at 100
-  - 25+ unit tests covering all acceptance criteria, defaults, validators, and edge cases
-- **Files created/modified:**
-  - `internal/tui/wizard.go` -- `PipelineWizardConfig`, `WizardCompleteMsg`, `WizardCancelledMsg`, `WizardModel` with all required methods and 5-group huh form construction
-  - `internal/tui/wizard_test.go` -- 25+ tests for constructor, IsActive, SetDimensions, buildHuhTheme, buildForm, config defaults, parseFormValues, validators, and messages
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+#### Key Technical Decisions
 
-### T-078: Raven Dashboard Command and TUI Integration Testing
+1. **Value-receiver sub-models** -- `TaskProgressSection`, `RateLimitSection`, and `StatusBarModel` use value receivers returning updated copies, matching Elm architecture immutability guarantees and avoiding TUI race conditions
+2. **Ring buffer capped at 1000 lines** -- `OutputBuffer` in `AgentPanelModel` uses O(1) append/eviction to bound memory regardless of agent verbosity
+3. **`TickCmd` self-scheduling** -- Rate-limit countdown returns `TickCmd(time.Second)` only while a limit is active, eliminating unnecessary timer ticks when all providers are clear
+4. **Two-pass status bar layout** -- Mandatory segments (mode, task) always rendered; optional segments (phase, iter, timer) dropped when width is insufficient, avoiding truncation artifacts
+5. **`buildHuhTheme`** -- Translates Raven's `lipgloss.AdaptiveColor` palette into a custom `huh.ThemeBase()` derivative so the wizard respects the TUI's light/dark color scheme
+6. **`mapLoopEventType`** -- `EventBridge` converts `loop.LoopEventType` string constants to TUI `LoopEventType` int iota values, decoupling backend and TUI event systems
+7. **Border-box width accounting** -- Sidebar and status bar use `Width(m.width - 1)` / `Width(sb.width)` (total terminal cells) rather than inner content width to prevent lipgloss border-box overflow
 
-- **Status:** Completed
-- **Date:** 2026-02-19
-- **What was built:**
-  - `NewDashboardCmd() *cobra.Command` Cobra subcommand for `raven dashboard` registered in the root command; respects the global `--dry-run` flag and prints a dry-run message without launching the TUI
-  - `dashboardRun` RunE function that constructs `tui.AppConfig` from `buildinfo.Version` and calls `tui.RunTUI`
-  - `EventBridge` struct in `internal/tui/bridge.go` with static Cmd-based helpers converting backend events to TUI messages: `WorkflowEventCmd`, `LoopEventCmd`, `AgentOutputCmd`, `TaskProgressCmd`; plus goroutine-safe `SendWorkflowEvent`, `SendLoopEvent`, `SendAgentOutput` push functions; `mapLoopEventType` converting `loop.LoopEventType` (string) to TUI `LoopEventType` (int iota); rate-limit events converted to `RateLimitMsg` directly
-  - `App` struct fully integrated with all sub-models: `sidebar SidebarModel`, `agentPanel AgentPanelModel`, `eventLog EventLogModel`, `statusBar StatusBarModel`, `wizard WizardModel`, `theme Theme`, `layout Layout`
-  - `NewApp` initialises all sub-models with `DefaultTheme()` and sets sidebar as initially focused
-  - `App.Update` routes every TUI message to appropriate sub-models, forwards keyboard events to the focused panel via `forwardKeyToFocused`, and batches all sub-model `tea.Cmd` returns with `tea.Batch()`
-  - `App.View` renders wizard when active, help overlay when visible, or the full layout using `layout` panel dimensions; `fullView` composes sidebar, agent panel, event log, and status bar views
-  - Dashboard command registered in root command's `init()` function
-  - 11 unit tests for `NewDashboardCmd` (metadata, flags, dry-run, help), 10+ tests for `EventBridge` (type conversions, loop event mapping, closed channels, cancelled context)
-- **Files created/modified:**
-  - `internal/cli/dashboard.go` -- `NewDashboardCmd`, `dashboardRun`
-  - `internal/cli/dashboard_test.go` -- unit tests for dashboard command
-  - `internal/tui/bridge.go` -- `EventBridge` with all bridge methods and `mapLoopEventType`
-  - `internal/tui/bridge_test.go` -- unit tests for EventBridge conversions
-  - `internal/tui/app.go` -- fully integrated App struct with all sub-models replacing commented-out placeholders
-  - `internal/tui/app_test.go` -- updated 3 tests to reflect real integrated view (title-bar-only checks)
-  - `internal/cli/root.go` -- registered `NewDashboardCmd()` in `init()`
-- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Top-level Elm model, `FocusPanel`, `AppConfig`, `RunTUI` | `internal/tui/app.go` |
+| All TUI message types, enums, `TickCmd`/`TickEvery` | `internal/tui/messages.go` |
+| Color palette, `Theme`, `DefaultTheme`, `StatusIndicator`, `ProgressBar` | `internal/tui/styles.go` |
+| `Layout`, `PanelDimensions`, dimension constants | `internal/tui/layout.go` |
+| `SidebarModel`, `WorkflowEntry`, `TaskProgressSection`, `RateLimitSection` | `internal/tui/sidebar.go` |
+| `AgentPanelModel`, `OutputBuffer`, `AgentView` | `internal/tui/agent_panel.go` |
+| `EventLogModel`, `EventEntry`, `EventCategory`, classifier functions | `internal/tui/event_log.go` |
+| `StatusBarModel`, `formatElapsed` | `internal/tui/status_bar.go` |
+| `KeyMap`, `DefaultKeyMap`, `NextFocus`/`PrevFocus`, `HelpOverlay`, `PauseRequestMsg`, `SkipRequestMsg` | `internal/tui/keybindings.go` |
+| `WizardModel`, `PipelineWizardConfig`, `WizardCompleteMsg`, `WizardCancelledMsg`, `buildHuhTheme` | `internal/tui/wizard.go` |
+| `EventBridge`, `mapLoopEventType`, Cmd-based and goroutine-safe bridge helpers | `internal/tui/bridge.go` |
+| `NewDashboardCmd`, `dashboardRun` | `internal/cli/dashboard.go` |
+| Root command with `NewDashboardCmd` registration | `internal/cli/root.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
 
 ---
 
@@ -729,36 +499,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 6: TUI Command Center (T-066 to T-078, T-089)
-
-- **Status:** In Progress
-- **Tasks:** 14 (13 Must Have, 1 Should Have)
-- **Estimated Effort:** 96-148 hours
-- **PRD Roadmap:** Weeks 11-13
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Completed |
-| T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Completed |
-| T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Completed |
-| T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Completed |
-| T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Completed |
-| T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Completed |
-| T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Completed |
-| T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Completed |
-| T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Completed |
-| T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Completed |
-| T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Completed |
-| T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Completed |
-| T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Completed |
-| T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Completed |
-
-**Deliverable:** `raven dashboard` launches a beautiful, responsive command center with live agent monitoring.
-
----
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
 
