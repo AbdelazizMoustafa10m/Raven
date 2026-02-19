@@ -80,8 +80,10 @@ func TestAppConfig_EmptyProjectName(t *testing.T) {
 
 	view := a.View()
 	assert.Contains(t, view, "Raven v1.0.0")
-	// The project separator should not appear when ProjectName is empty.
-	assert.NotContains(t, view, "|")
+	// The title bar project-name separator "  |  " should not appear in the
+	// title bar line when ProjectName is empty. Check only the first line.
+	titleBar := strings.SplitN(view, "\n", 2)[0]
+	assert.NotContains(t, titleBar, "  |  ")
 }
 
 func TestAppConfig_WithProjectName(t *testing.T) {
@@ -592,17 +594,20 @@ func TestApp_View_TitleBar_WithoutProjectName(t *testing.T) {
 
 	assert.Contains(t, view, "Raven v1.5.0")
 	assert.Contains(t, view, "Command Center")
-	// The separator only appears when a project name is present.
-	assert.NotContains(t, view, "|")
+	// The title bar separator "  |  " only appears in the title bar line when
+	// a project name is present. Check only the first line.
+	titleBar := strings.SplitN(view, "\n", 2)[0]
+	assert.NotContains(t, titleBar, "  |  ")
 }
 
-// The full view must contain the panel placeholder area.
+// The full view must contain the sidebar workflow list section header, which
+// is rendered by SidebarModel.View() as "WORKFLOWS".
 func TestApp_View_Ready_ContainsPanelArea(t *testing.T) {
 	t.Parallel()
 	a := makeReadyApp(t, AppConfig{Version: "1.0.0"}, 120, 40)
 	view := a.View()
 
-	assert.Contains(t, view, "panels", "full view must contain placeholder panel text")
+	assert.Contains(t, view, "WORKFLOWS", "full view must contain the sidebar WORKFLOWS section header")
 }
 
 func TestApp_View_Ready_LargeTerminal_NoPanic(t *testing.T) {

@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 81 |
+| Completed | 82 |
 | In Progress | 0 |
-| Not Started | 8 |
+| Not Started | 7 |
 
 ---
 
@@ -696,6 +696,30 @@
   - `internal/tui/wizard_test.go` -- 25+ tests for constructor, IsActive, SetDimensions, buildHuhTheme, buildForm, config defaults, parseFormValues, validators, and messages
 - **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
 
+### T-078: Raven Dashboard Command and TUI Integration Testing
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `NewDashboardCmd() *cobra.Command` Cobra subcommand for `raven dashboard` registered in the root command; respects the global `--dry-run` flag and prints a dry-run message without launching the TUI
+  - `dashboardRun` RunE function that constructs `tui.AppConfig` from `buildinfo.Version` and calls `tui.RunTUI`
+  - `EventBridge` struct in `internal/tui/bridge.go` with static Cmd-based helpers converting backend events to TUI messages: `WorkflowEventCmd`, `LoopEventCmd`, `AgentOutputCmd`, `TaskProgressCmd`; plus goroutine-safe `SendWorkflowEvent`, `SendLoopEvent`, `SendAgentOutput` push functions; `mapLoopEventType` converting `loop.LoopEventType` (string) to TUI `LoopEventType` (int iota); rate-limit events converted to `RateLimitMsg` directly
+  - `App` struct fully integrated with all sub-models: `sidebar SidebarModel`, `agentPanel AgentPanelModel`, `eventLog EventLogModel`, `statusBar StatusBarModel`, `wizard WizardModel`, `theme Theme`, `layout Layout`
+  - `NewApp` initialises all sub-models with `DefaultTheme()` and sets sidebar as initially focused
+  - `App.Update` routes every TUI message to appropriate sub-models, forwards keyboard events to the focused panel via `forwardKeyToFocused`, and batches all sub-model `tea.Cmd` returns with `tea.Batch()`
+  - `App.View` renders wizard when active, help overlay when visible, or the full layout using `layout` panel dimensions; `fullView` composes sidebar, agent panel, event log, and status bar views
+  - Dashboard command registered in root command's `init()` function
+  - 11 unit tests for `NewDashboardCmd` (metadata, flags, dry-run, help), 10+ tests for `EventBridge` (type conversions, loop event mapping, closed channels, cancelled context)
+- **Files created/modified:**
+  - `internal/cli/dashboard.go` -- `NewDashboardCmd`, `dashboardRun`
+  - `internal/cli/dashboard_test.go` -- unit tests for dashboard command
+  - `internal/tui/bridge.go` -- `EventBridge` with all bridge methods and `mapLoopEventType`
+  - `internal/tui/bridge_test.go` -- unit tests for EventBridge conversions
+  - `internal/tui/app.go` -- fully integrated App struct with all sub-models replacing commented-out placeholders
+  - `internal/tui/app_test.go` -- updated 3 tests to reflect real integrated view (title-bar-only checks)
+  - `internal/cli/root.go` -- registered `NewDashboardCmd()` in `init()`
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
 ---
 
 ## In Progress Tasks
@@ -730,7 +754,7 @@ _None currently_
 | T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Completed |
 | T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Completed |
 | T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Completed |
-| T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Not Started |
+| T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Completed |
 
 **Deliverable:** `raven dashboard` launches a beautiful, responsive command center with live agent monitoring.
 
