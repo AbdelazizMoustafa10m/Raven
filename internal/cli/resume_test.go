@@ -408,13 +408,12 @@ func TestRunResumeMode_WithMockDefinition_RunsWorkflow(t *testing.T) {
 		}, nil
 	}
 
-	// runResumeMode uses the package-level DefaultRegistry. We cannot easily inject
-	// a custom registry without modifying the implementation, so we verify that:
+	// runResumeMode creates a local registry with built-in handlers. Since
+	// "step-a" is not a built-in handler name, the engine will fail when it
+	// tries to resolve the handler. We verify that:
 	// 1. The resolver is called with the correct workflow name.
-	// 2. The engine execution reaches step-a (which fails because step-a is not
-	//    in DefaultRegistry), proving the definition was resolved successfully.
-	//
-	// A more thorough integration test would require T-049 or registry injection.
+	// 2. The engine execution reaches step-a (which fails because step-a is
+	//    not a built-in handler), proving the definition was resolved.
 	resolved := false
 	captureResolver := func(workflowName string) (*workflow.WorkflowDefinition, error) {
 		resolved = true
@@ -425,11 +424,11 @@ func TestRunResumeMode_WithMockDefinition_RunsWorkflow(t *testing.T) {
 	var errBuf bytes.Buffer
 	cmd.SetErr(&errBuf)
 
-	// The engine will fail because step-a is not in DefaultRegistry, but we can
-	// verify the resolver was invoked and the error references the step.
+	// The engine will fail because step-a is not a built-in handler, but we
+	// can verify the resolver was invoked and the error references the step.
 	err := runResumeMode(context.Background(), cmd, store, "wf-run", false, captureResolver)
 	assert.True(t, resolved, "resolver should have been called")
-	// The error will be from the engine (step not in DefaultRegistry), not from
+	// The error will be from the engine (step handler not found), not from
 	// the resolver -- this verifies the full path down to engine execution.
 	if err != nil {
 		assert.Contains(t, err.Error(), "step-a")
@@ -657,22 +656,6 @@ func TestRunSummary_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, original.CurrentStep, decoded.CurrentStep)
 	assert.Equal(t, original.Status, decoded.Status)
 	assert.Equal(t, original.StepCount, decoded.StepCount)
-}
-
-// ---- mockStepHandler for workflow engine tests --------------------------------
-
-// mockStepHandler satisfies workflow.StepHandler for tests.
-type mockStepHandler struct {
-	name  string
-	event string
-}
-
-func (m *mockStepHandler) Name() string { return m.name }
-func (m *mockStepHandler) Execute(_ context.Context, _ *workflow.WorkflowState) (string, error) {
-	return m.event, nil
-}
-func (m *mockStepHandler) DryRun(_ *workflow.WorkflowState) string {
-	return fmt.Sprintf("would execute step %q", m.name)
 }
 
 // ---- StateStore.LatestRun ordering (verifies runResumeMode picks newest) -----
@@ -1231,26 +1214,16 @@ func TestRunResumeMode_ResolverCalledWithCorrectWorkflowName(t *testing.T) {
 
 // ---- runResumeMode: engine integration with registered handler ---------------
 
-// TestRunResumeMode_WithRegisteredHandler_WorkflowCompletes creates a temporary
-// registry with a real handler, injects it via a definition resolver, and
-// verifies that the engine runs to completion. Because runResumeMode uses
-// workflow.DefaultRegistry internally we register the test handler there and
-// clean it up after the test.
-//
-// NOTE: This test mutates DefaultRegistry. It must not run in parallel.
+// TestRunResumeMode_WithRegisteredHandler_WorkflowCompletes verifies that
+// the engine runs to completion using a built-in handler that does not require
+// runtime dependencies (init_phase). runResumeMode creates its own local
+// registry and registers all built-in handlers, so built-in step names are
+// always available.
 func TestRunResumeMode_WithRegisteredHandler_EngineRunsToCompletion(t *testing.T) {
-	const handlerName = "test-integration-step"
+	// Use a built-in handler that succeeds without external deps.
+	const handlerName = "init_phase"
 	const workflowName = "integration-workflow"
 	const runID = "wf-integration-engine"
-
-	// Register a temporary handler in DefaultRegistry.
-	// We guard against double-registration from previous test runs by checking first.
-	if !workflow.HasHandler(handlerName) {
-		workflow.Register(&mockStepHandler{
-			name:  handlerName,
-			event: workflow.EventSuccess,
-		})
-	}
 
 	store, _ := makeStateStore(t)
 	saveRun(t, store, runID, workflowName, handlerName)

@@ -1,13 +1,18 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/AbdelazizMoustafa10m/Raven/internal/logging"
+	"github.com/AbdelazizMoustafa10m/Raven/internal/loop"
+	"github.com/AbdelazizMoustafa10m/Raven/internal/workflow"
 )
 
 // FocusPanel identifies which panel currently has keyboard focus.
@@ -28,6 +33,42 @@ type AppConfig struct {
 	Version string
 	// ProjectName is the name of the current project being managed.
 	ProjectName string
+
+	// Ctx is the cancellation context for backend operations. When nil,
+	// a background context is used.
+	Ctx context.Context
+	// Cancel cancels the Ctx context. Called on graceful shutdown.
+	Cancel context.CancelFunc
+
+	// WorkflowEvents is the channel on which the workflow engine broadcasts
+	// WorkflowEvent values. May be nil when no workflow is active.
+	WorkflowEvents <-chan workflow.WorkflowEvent
+	// LoopEvents is the channel on which the implementation loop broadcasts
+	// LoopEvent values. May be nil when no loop is active.
+	LoopEvents <-chan loop.LoopEvent
+	// AgentOutput is the channel on which agent output lines are sent.
+	// May be nil when no agents are running.
+	AgentOutput <-chan AgentOutputMsg
+	// TaskProgress is the channel on which task progress updates are sent.
+	// May be nil when no task tracking is active.
+	TaskProgress <-chan TaskProgressMsg
+
+	// Engine is the workflow engine reference. May be nil in idle mode.
+	Engine *workflow.Engine
+}
+
+// PipelineStartMsg is dispatched when the wizard completes to trigger
+// pipeline execution with the collected configuration.
+type PipelineStartMsg struct {
+	// Config is the pipeline configuration collected from the wizard.
+	Config PipelineWizardConfig
+}
+
+// PipelineCompleteMsg is sent when the background pipeline execution finishes.
+// It carries the error (if any) from the workflow engine run.
+type PipelineCompleteMsg struct {
+	// Err is nil on success or the error that caused pipeline failure.
+	Err error
 }
 
 // App is the top-level Bubble Tea model for the Raven Command Center.
@@ -56,12 +97,23 @@ type App struct {
 	statusBar  StatusBarModel
 	wizard     WizardModel
 	theme      Theme
+
+	// Backend integration
+	bridge         EventBridge
+	ctx            context.Context
+	cancel         context.CancelFunc
+	workflowEvents <-chan workflow.WorkflowEvent
+	loopEvents     <-chan loop.LoopEvent
+	agentOutput    <-chan AgentOutputMsg
+	taskProgress   <-chan TaskProgressMsg
 }
 
 // NewApp constructs an App with sensible defaults:
 // focus is on the sidebar, ready and quitting are false.
 // All sub-models are initialised with the default theme. The sidebar
 // receives initial focus to match the default FocusSidebar state.
+// If cfg carries event channels, the App wires them through an EventBridge
+// so that backend events are forwarded as TUI messages.
 func NewApp(cfg AppConfig) App {
 	km := DefaultKeyMap()
 	theme := DefaultTheme()
@@ -69,27 +121,58 @@ func NewApp(cfg AppConfig) App {
 	sidebar := NewSidebarModel(theme)
 	sidebar.SetFocused(true)
 
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	return App{
-		config:      cfg,
-		focus:       FocusSidebar,
-		ready:       false,
-		quitting:    false,
-		keyMap:      km,
-		helpOverlay: NewHelpOverlay(theme, km),
-		layout:      NewLayout(),
-		sidebar:     sidebar,
-		agentPanel:  NewAgentPanelModel(theme),
-		eventLog:    NewEventLogModel(theme),
-		statusBar:   NewStatusBarModel(theme),
-		wizard:      NewWizardModel(theme, nil, nil),
-		theme:       theme,
+		config:         cfg,
+		focus:          FocusSidebar,
+		ready:          false,
+		quitting:       false,
+		keyMap:         km,
+		helpOverlay:    NewHelpOverlay(theme, km),
+		layout:         NewLayout(),
+		sidebar:        sidebar,
+		agentPanel:     NewAgentPanelModel(theme),
+		eventLog:       NewEventLogModel(theme),
+		statusBar:      NewStatusBarModel(theme),
+		wizard:         NewWizardModel(theme, nil, nil),
+		theme:          theme,
+		bridge:         NewEventBridge(),
+		ctx:            ctx,
+		cancel:         cfg.Cancel,
+		workflowEvents: cfg.WorkflowEvents,
+		loopEvents:     cfg.LoopEvents,
+		agentOutput:    cfg.AgentOutput,
+		taskProgress:   cfg.TaskProgress,
 	}
 }
 
-// Init returns nil; bubbletea v1.x automatically sends a WindowSizeMsg on
-// startup, so no explicit command is required here.
+// Init returns a batch of commands that start draining backend event
+// channels via the EventBridge. Each bridge command reads a single event
+// from its channel and converts it into a TUI message; the Update handler
+// re-invokes the bridge command to keep draining. If no channels are
+// configured the returned batch is empty (nil commands are filtered out).
 func (a App) Init() tea.Cmd {
-	return nil
+	var cmds []tea.Cmd
+	if a.workflowEvents != nil {
+		cmds = append(cmds, a.bridge.WorkflowEventCmd(a.ctx, a.workflowEvents))
+	}
+	if a.loopEvents != nil {
+		cmds = append(cmds, a.bridge.LoopEventCmd(a.ctx, a.loopEvents))
+	}
+	if a.agentOutput != nil {
+		cmds = append(cmds, a.bridge.AgentOutputCmd(a.ctx, a.agentOutput))
+	}
+	if a.taskProgress != nil {
+		cmds = append(cmds, a.bridge.TaskProgressCmd(a.ctx, a.taskProgress))
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update dispatches incoming messages and returns the updated model plus any
@@ -104,8 +187,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleKey(m)
 
 	case WizardCompleteMsg:
-		// Wizard has completed; log the event and return to the normal view.
+		// Wizard has completed; log the event and trigger pipeline execution
+		// with the collected configuration.
 		a.eventLog.AddEntry(EventInfo, "Pipeline wizard completed")
+		cfg := m.Config
+		return a, func() tea.Msg { return PipelineStartMsg{Config: cfg} }
+
+	case PipelineStartMsg:
+		a.eventLog.AddEntry(EventInfo, fmt.Sprintf(
+			"Pipeline starting: mode=%s, impl=%s",
+			m.Config.PhaseMode, m.Config.ImplAgent,
+		))
+		return a, a.startPipeline(m.Config)
+
+	case PipelineCompleteMsg:
+		if m.Err != nil {
+			a.eventLog.AddEntry(EventError, fmt.Sprintf("Pipeline failed: %v", m.Err))
+		} else {
+			a.eventLog.AddEntry(EventInfo, "Pipeline completed successfully")
+		}
 		return a, nil
 
 	case WizardCancelledMsg:
@@ -125,7 +225,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AgentOutputMsg:
 		var cmd tea.Cmd
 		a.agentPanel, cmd = a.agentPanel.Update(m)
-		return a, cmd
+		// Re-invoke the bridge to keep draining the agent output channel.
+		var cmds []tea.Cmd
+		cmds = append(cmds, cmd)
+		if a.agentOutput != nil {
+			cmds = append(cmds, a.bridge.AgentOutputCmd(a.ctx, a.agentOutput))
+		}
+		return a, tea.Batch(cmds...)
 
 	case AgentStatusMsg:
 		var apCmd, elCmd tea.Cmd
@@ -138,25 +244,50 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sidebar, sCmd = a.sidebar.Update(m)
 		a.eventLog, elCmd = a.eventLog.Update(m)
 		a.statusBar = a.statusBar.Update(m)
-		return a, tea.Batch(sCmd, elCmd)
+		// Re-invoke the bridge to keep draining the workflow events channel.
+		var cmds []tea.Cmd
+		cmds = append(cmds, sCmd, elCmd)
+		if a.workflowEvents != nil {
+			cmds = append(cmds, a.bridge.WorkflowEventCmd(a.ctx, a.workflowEvents))
+		}
+		return a, tea.Batch(cmds...)
 
 	case LoopEventMsg:
 		var sCmd, elCmd tea.Cmd
 		a.sidebar, sCmd = a.sidebar.Update(m)
 		a.eventLog, elCmd = a.eventLog.Update(m)
 		a.statusBar = a.statusBar.Update(m)
-		return a, tea.Batch(sCmd, elCmd)
+		// Re-invoke the bridge to keep draining the loop events channel.
+		var cmds []tea.Cmd
+		cmds = append(cmds, sCmd, elCmd)
+		if a.loopEvents != nil {
+			cmds = append(cmds, a.bridge.LoopEventCmd(a.ctx, a.loopEvents))
+		}
+		return a, tea.Batch(cmds...)
 
 	case RateLimitMsg:
 		var sCmd, elCmd tea.Cmd
 		a.sidebar, sCmd = a.sidebar.Update(m)
 		a.eventLog, elCmd = a.eventLog.Update(m)
-		return a, tea.Batch(sCmd, elCmd)
+		// RateLimitMsg originates from the loop events bridge (convertLoopEvent).
+		// Re-invoke the bridge to keep draining the loop events channel.
+		var cmds []tea.Cmd
+		cmds = append(cmds, sCmd, elCmd)
+		if a.loopEvents != nil {
+			cmds = append(cmds, a.bridge.LoopEventCmd(a.ctx, a.loopEvents))
+		}
+		return a, tea.Batch(cmds...)
 
 	case TaskProgressMsg:
 		var sCmd tea.Cmd
 		a.sidebar, sCmd = a.sidebar.Update(m)
-		return a, sCmd
+		// Re-invoke the bridge to keep draining the task progress channel.
+		var cmds []tea.Cmd
+		cmds = append(cmds, sCmd)
+		if a.taskProgress != nil {
+			cmds = append(cmds, a.bridge.TaskProgressCmd(a.ctx, a.taskProgress))
+		}
+		return a, tea.Batch(cmds...)
 
 	case ErrorMsg:
 		var cmd tea.Cmd
@@ -217,6 +348,11 @@ func (a App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(m, a.keyMap.Quit):
 		a.quitting = true
+		// Cancel the backend context so bridge goroutines and any running
+		// agents/workflows receive a cancellation signal before the TUI exits.
+		if a.cancel != nil {
+			a.cancel()
+		}
 		return a, tea.Quit
 
 	case key.Matches(m, a.keyMap.FocusNext):
@@ -270,6 +406,68 @@ func (a App) forwardKeyToFocused(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.eventLog, cmd = a.eventLog.Update(m)
 	}
 	return a, cmd
+}
+
+// startPipeline returns a tea.Cmd that runs the pipeline workflow in the
+// background and sends a PipelineCompleteMsg when done. The command runs
+// in its own goroutine (managed by Bubble Tea) so it does not block the
+// TUI event loop. If the workflow engine is not configured, it returns
+// an immediate error message.
+func (a App) startPipeline(wizCfg PipelineWizardConfig) tea.Cmd {
+	engine := a.config.Engine
+	if engine == nil {
+		return func() tea.Msg {
+			return PipelineCompleteMsg{Err: fmt.Errorf("workflow engine not configured")}
+		}
+	}
+
+	ctx := a.ctx
+
+	return func() tea.Msg {
+		// Look up the built-in pipeline workflow definition.
+		def := workflow.GetDefinition(workflow.WorkflowPipeline)
+		if def == nil {
+			return PipelineCompleteMsg{Err: fmt.Errorf("pipeline workflow definition not found")}
+		}
+
+		// Build initial workflow state from wizard config.
+		runID := fmt.Sprintf("dashboard-%d", time.Now().UnixNano())
+		state := workflow.NewWorkflowState(runID, workflow.WorkflowPipeline, def.InitialStep)
+		state.Metadata["agent_name"] = wizCfg.ImplAgent
+		state.Metadata["review_agents"] = strings.Join(wizCfg.ReviewAgents, ",")
+		state.Metadata["fix_agent"] = wizCfg.FixAgent
+		state.Metadata["phase_mode"] = wizCfg.PhaseMode
+		state.Metadata["phase_id"] = wizCfg.PhaseID
+		state.Metadata["from_phase"] = wizCfg.FromPhase
+		state.Metadata["review_concurrency"] = wizCfg.ReviewConcurrency
+		state.Metadata["max_review_cycles"] = wizCfg.MaxReviewCycles
+		state.Metadata["skip_implement"] = wizCfg.SkipImplement
+		state.Metadata["skip_review"] = wizCfg.SkipReview
+		state.Metadata["skip_fix"] = wizCfg.SkipFix
+		state.Metadata["skip_pr"] = wizCfg.SkipPR
+
+		// Set current_phase and total_phases based on the phase mode so
+		// the pipeline's init_phase / advance_phase handlers iterate
+		// over the correct range.
+		switch wizCfg.PhaseMode {
+		case "single":
+			state.Metadata["current_phase"] = wizCfg.PhaseID
+			state.Metadata["total_phases"] = wizCfg.PhaseID
+		case "range":
+			state.Metadata["current_phase"] = wizCfg.FromPhase
+			toPhase := wizCfg.ToPhase
+			if toPhase <= 0 {
+				toPhase = wizCfg.TotalPhases
+			}
+			state.Metadata["total_phases"] = toPhase
+		default: // "all"
+			state.Metadata["current_phase"] = 1
+			state.Metadata["total_phases"] = wizCfg.TotalPhases
+		}
+
+		_, err := engine.Run(ctx, def, state)
+		return PipelineCompleteMsg{Err: err}
+	}
 }
 
 // View renders the complete UI as a string.

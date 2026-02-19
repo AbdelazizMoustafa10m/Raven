@@ -368,6 +368,7 @@ func TestNewImplementCmd_AgentFlagHasShellCompletion(t *testing.T) {
 type captureLogger struct {
 	infoCalls  []captureCall
 	debugCalls []captureCall
+	warnCalls  []captureCall
 }
 
 type captureCall struct {
@@ -384,6 +385,13 @@ func (c *captureLogger) Info(msg interface{}, kv ...interface{}) {
 
 func (c *captureLogger) Debug(msg interface{}, kv ...interface{}) {
 	c.debugCalls = append(c.debugCalls, captureCall{
+		msg: msg.(string),
+		kv:  kv,
+	})
+}
+
+func (c *captureLogger) Warn(msg interface{}, kv ...interface{}) {
+	c.warnCalls = append(c.warnCalls, captureCall{
 		msg: msg.(string),
 		kv:  kv,
 	})

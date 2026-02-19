@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/AbdelazizMoustafa10m/Raven/internal/logging"
+	"github.com/AbdelazizMoustafa10m/Raven/internal/pipeline"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/workflow"
 )
 
@@ -267,10 +268,22 @@ func runResumeMode(ctx context.Context, cmd *cobra.Command, store *workflow.Stat
 		return fmt.Errorf("resume: resolving workflow definition %q: %w", state.WorkflowName, err)
 	}
 
-	// Build the engine with checkpointing so each step is persisted.
+	// Build a registry with real handler dependencies so resumed workflows
+	// can execute steps. Fall back gracefully to nil deps when config loading
+	// or dependency construction fails; handlers will return a descriptive
+	// error if actually invoked.
 	logger := logging.New("resume")
+
+	registry := workflow.NewRegistry()
+	deps, depsErr := buildResumeHandlerDeps()
+	if depsErr != nil {
+		logger.Warn("building runtime handler deps for resume; handlers may fail at runtime", "error", depsErr)
+		// Fall back to nil deps so handlers return descriptive errors if called.
+	}
+	workflow.RegisterBuiltinHandlers(registry, deps)
+
 	engine := workflow.NewEngine(
-		workflow.DefaultRegistry,
+		registry,
 		workflow.WithLogger(logger),
 		workflow.WithCheckpointing(store),
 		workflow.WithDryRun(false),
@@ -300,14 +313,30 @@ func runResumeMode(ctx context.Context, cmd *cobra.Command, store *workflow.Stat
 	return nil
 }
 
-// resolveDefinition looks up a workflow definition by name.
-// Until T-049 (built-in workflow definitions) is implemented, this always
-// returns ErrWorkflowNotFound with a descriptive message.
+// resolveDefinition looks up a workflow definition by name. It first checks
+// the built-in workflow definitions shipped with Raven (implement,
+// implement-review-pr, pipeline, prd-decompose). If the name does not match
+// any built-in, ErrWorkflowNotFound is returned.
 func resolveDefinition(workflowName string) (*workflow.WorkflowDefinition, error) {
-	// T-049 will register built-in definitions into a lookup table here.
-	// For now, return an informative error so resume --run fails gracefully
-	// while --list and --clean modes work without requiring definition resolution.
+	def := workflow.GetDefinition(workflowName)
+	if def != nil {
+		return def, nil
+	}
 	return nil, fmt.Errorf("workflow %q: %w", workflowName, ErrWorkflowNotFound)
+}
+
+// buildResumeHandlerDeps loads the project config and constructs handler
+// dependencies for a resumed workflow. It returns (nil, err) when config
+// loading or construction fails; the caller should treat this as a non-fatal
+// warning and fall back to nil deps.
+func buildResumeHandlerDeps() (*workflow.HandlerDeps, error) {
+	resolved, _, err := loadAndResolveConfig()
+	if err != nil {
+		return nil, fmt.Errorf("loading config for resume: %w", err)
+	}
+	cfg := resolved.Config
+
+	return buildRuntimeHandlerDeps(cfg, pipeline.PipelineOpts{}, nil, nil)
 }
 
 // formatRunTable writes a tabwriter-aligned table of RunSummary records to w.

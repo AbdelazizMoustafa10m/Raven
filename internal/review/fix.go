@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strings"
 	"text/template"
 	"time"
 
@@ -110,6 +113,14 @@ type fixPromptData struct {
 	// PreviousFailures holds cycle results from prior failed attempts, used to
 	// provide context for iterative fixing.
 	PreviousFailures []FixCycleResult
+
+	// ReviewReport is the full markdown review report, included in the prompt
+	// for additional context about the review findings.
+	ReviewReport string
+
+	// BaseBranch is the Git ref the current branch was branched from, giving
+	// the agent context about what the changes are being compared against.
+	BaseBranch string
 }
 
 // FixPromptBuilder constructs fix prompts from review findings, diffs, and
@@ -150,13 +161,24 @@ func NewFixPromptBuilder(
 	}
 }
 
+// BuildOpts holds optional context for fix prompt construction.
+type BuildOpts struct {
+	// ReviewReport is the full markdown review report to include in the prompt.
+	ReviewReport string
+
+	// BaseBranch is the Git ref the current branch was branched from.
+	BaseBranch string
+}
+
 // Build constructs a fix prompt from the provided findings, diff content, and
 // the results of any prior failed fix cycles. The diff is truncated to
-// maxFixDiffBytes when it exceeds the limit.
+// maxFixDiffBytes when it exceeds the limit. Additional context (review report,
+// base branch) can be supplied via buildOpts; a nil value is safe.
 func (fpb *FixPromptBuilder) Build(
 	findings []*Finding,
 	diff string,
 	previousFailures []FixCycleResult,
+	buildOpts ...BuildOpts,
 ) (string, error) {
 	// Truncate large diffs.
 	if len(diff) > maxFixDiffBytes {
@@ -169,6 +191,12 @@ func (fpb *FixPromptBuilder) Build(
 		Conventions:      fpb.conventions,
 		VerifyCommands:   fpb.verifyCommands,
 		PreviousFailures: previousFailures,
+	}
+
+	// Apply optional context from BuildOpts.
+	if len(buildOpts) > 0 {
+		data.ReviewReport = buildOpts[0].ReviewReport
+		data.BaseBranch = buildOpts[0].BaseBranch
 	}
 
 	var buf bytes.Buffer
@@ -252,6 +280,22 @@ func (fe *FixEngine) Fix(ctx context.Context, opts FixOpts) (*FixReport, error) 
 		maxCycles = opts.MaxCycles
 	}
 
+	// When findings are empty but a review report is provided, attempt to
+	// extract findings from the report content so the fix engine actually
+	// has work to do (the FixHandler in workflow/handlers.go may pass empty
+	// findings with a review_report_path).
+	if len(opts.Findings) == 0 && opts.ReviewReport != "" {
+		extracted := extractFindingsFromReport(opts.ReviewReport)
+		if len(extracted) > 0 {
+			opts.Findings = extracted
+			if fe.logger != nil {
+				fe.logger.Info("extracted findings from review report",
+					"count", len(extracted),
+				)
+			}
+		}
+	}
+
 	// Fast paths: nothing to do.
 	if maxCycles <= 0 || len(opts.Findings) == 0 {
 		return &FixReport{
@@ -296,9 +340,12 @@ func (fe *FixEngine) Fix(ctx context.Context, opts FixOpts) (*FixReport, error) 
 			fe.logger.Info("fix cycle started", "cycle", cycle, "max_cycles", maxCycles)
 		}
 
-		// Build the fix prompt, including previous failures for context.
+		// Build the fix prompt, including previous failures and review context.
 		currentDiff := captureGitDiff()
-		prompt, err := fe.promptBuilder.Build(opts.Findings, currentDiff, cycles)
+		prompt, err := fe.promptBuilder.Build(opts.Findings, currentDiff, cycles, BuildOpts{
+			ReviewReport: opts.ReviewReport,
+			BaseBranch:   opts.BaseBranch,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("review: fix: building prompt for cycle %d: %w", cycle, err)
 		}
@@ -464,7 +511,10 @@ func (fe *FixEngine) DryRun(ctx context.Context, opts FixOpts) (string, error) {
 	}
 
 	diff := captureGitDiff()
-	prompt, err := fe.promptBuilder.Build(opts.Findings, diff, nil)
+	prompt, err := fe.promptBuilder.Build(opts.Findings, diff, nil, BuildOpts{
+		ReviewReport: opts.ReviewReport,
+		BaseBranch:   opts.BaseBranch,
+	})
 	if err != nil {
 		return "", fmt.Errorf("review: fix: dry run: building prompt: %w", err)
 	}
@@ -483,6 +533,127 @@ func (fe *FixEngine) emit(ev FixEvent) {
 	default:
 		// Drop the event rather than blocking.
 	}
+}
+
+// extractFindingsFromReport attempts to parse review findings from a markdown
+// report. It first looks for an embedded JSON block containing a "findings"
+// array, then falls back to parsing markdown finding headers of the form
+// "### Finding: file.go:42 (high)". Returns nil when no findings are found.
+func extractFindingsFromReport(report string) []*Finding {
+	// Strategy 1: Look for an embedded JSON block with findings.
+	if findings := extractFindingsFromJSON(report); len(findings) > 0 {
+		return findings
+	}
+
+	// Strategy 2: Parse markdown finding sections produced by the report template.
+	return extractFindingsFromMarkdown(report)
+}
+
+// extractFindingsFromJSON scans for JSON code blocks in the report that contain
+// a "findings" array and attempts to unmarshal them.
+func extractFindingsFromJSON(report string) []*Finding {
+	// Match fenced JSON code blocks.
+	jsonBlockRe := regexp.MustCompile("(?s)```json\\s*\\n(.*?)\\n```")
+	matches := jsonBlockRe.FindAllStringSubmatch(report, -1)
+
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		block := strings.TrimSpace(m[1])
+		if !strings.Contains(block, "findings") {
+			continue
+		}
+
+		// Try parsing as a ReviewResult (has findings + verdict).
+		var rr ReviewResult
+		if err := json.Unmarshal([]byte(block), &rr); err == nil && len(rr.Findings) > 0 {
+			findings := make([]*Finding, len(rr.Findings))
+			for i := range rr.Findings {
+				f := rr.Findings[i]
+				findings[i] = &f
+			}
+			return findings
+		}
+
+		// Try parsing as a bare findings array wrapper.
+		var wrapper struct {
+			Findings []Finding `json:"findings"`
+		}
+		if err := json.Unmarshal([]byte(block), &wrapper); err == nil && len(wrapper.Findings) > 0 {
+			findings := make([]*Finding, len(wrapper.Findings))
+			for i := range wrapper.Findings {
+				f := wrapper.Findings[i]
+				findings[i] = &f
+			}
+			return findings
+		}
+	}
+
+	return nil
+}
+
+// extractFindingsFromMarkdown parses structured finding sections from the
+// markdown report template output. It looks for table rows with severity,
+// category, file, line, and description columns, as well as structured
+// headers like "### file.go:42 (high)".
+func extractFindingsFromMarkdown(report string) []*Finding {
+	var findings []*Finding
+
+	// Pattern: lines that look like markdown table rows with finding data.
+	// The report template produces rows like:
+	// "| high | security | main.go | 42 | SQL injection risk | claude |"
+	// We capture severity, category, file, line, and description. The trailing
+	// column(s) are agent attribution, which we skip.
+	tableRowRe := regexp.MustCompile(`(?m)^\|\s*(critical|high|medium|low|info)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|`)
+	tableMatches := tableRowRe.FindAllStringSubmatch(report, -1)
+	for _, m := range tableMatches {
+		if len(m) < 6 {
+			continue
+		}
+		line := 0
+		if _, err := fmt.Sscanf(m[4], "%d", &line); err != nil {
+			continue
+		}
+		findings = append(findings, &Finding{
+			Severity:    Severity(strings.TrimSpace(m[1])),
+			Category:    strings.TrimSpace(m[2]),
+			File:        strings.TrimSpace(m[3]),
+			Line:        line,
+			Description: strings.TrimSpace(m[5]),
+		})
+	}
+
+	if len(findings) > 0 {
+		return findings
+	}
+
+	// Fallback: parse "### file.go:42 (severity)" style headers from the
+	// report's "Findings by File" section.
+	headerRe := regexp.MustCompile(`(?m)^###?\s+` + "`?" + `([^:` + "`" + `]+):(\d+)` + "`?" + `\s*\((\w+)\)`)
+	headerMatches := headerRe.FindAllStringSubmatch(report, -1)
+	for _, m := range headerMatches {
+		if len(m) < 4 {
+			continue
+		}
+		line := 0
+		if _, err := fmt.Sscanf(m[2], "%d", &line); err != nil {
+			continue
+		}
+		sev := Severity(strings.ToLower(strings.TrimSpace(m[3])))
+		if !validSeverities[sev] {
+			sev = SeverityMedium
+		}
+		findings = append(findings, &Finding{
+			Severity:    sev,
+			File:        strings.TrimSpace(m[1]),
+			Line:        line,
+			Category:    "review",
+			Description: "Finding from review report.",
+		})
+	}
+
+	return findings
 }
 
 // captureGitDiff runs "git diff" in the current working directory and returns

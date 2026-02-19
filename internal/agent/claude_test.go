@@ -22,6 +22,7 @@ import (
 type noopLogger struct{}
 
 func (noopLogger) Debug(_ string, _ ...interface{}) {}
+func (noopLogger) Warn(_ string, _ ...interface{})  {}
 
 // newTestAgent returns a ClaudeAgent configured with a command that exists on
 // the test machine (the shell itself) so that CheckPrerequisites passes without
@@ -451,7 +452,8 @@ func TestClaudeAgent_BuildCommand_EffortFromOpts(t *testing.T) {
 
 	// We can't easily inspect Cmd.Env directly from outside, so we run
 	// "env" and look for the CLAUDE_CODE_EFFORT_LEVEL in its output.
-	cmd := a.buildCommand(ctx, RunOpts{Effort: "high"})
+	cmd, cleanup := a.buildCommand(ctx, RunOpts{Effort: "high"})
+	defer cleanup()
 	var found bool
 	for _, e := range cmd.Env {
 		if e == "CLAUDE_CODE_EFFORT_LEVEL=high" {
@@ -471,7 +473,8 @@ func TestClaudeAgent_BuildCommand_EffortFromConfig(t *testing.T) {
 
 	a := newTestAgent(AgentConfig{Effort: "medium"})
 	ctx := context.Background()
-	cmd := a.buildCommand(ctx, RunOpts{})
+	cmd, cleanup := a.buildCommand(ctx, RunOpts{})
+	defer cleanup()
 
 	var found bool
 	for _, e := range cmd.Env {
@@ -491,7 +494,8 @@ func TestClaudeAgent_BuildCommand_NoEffortWhenEmpty(t *testing.T) {
 
 	a := newTestAgent(AgentConfig{})
 	ctx := context.Background()
-	cmd := a.buildCommand(ctx, RunOpts{})
+	cmd, cleanup := a.buildCommand(ctx, RunOpts{})
+	defer cleanup()
 
 	// The implementation should not append a non-empty CLAUDE_CODE_EFFORT_LEVEL
 	// when both config.Effort and opts.Effort are empty.
@@ -508,7 +512,8 @@ func TestClaudeAgent_BuildCommand_AdditionalEnv(t *testing.T) {
 
 	a := newTestAgent(AgentConfig{})
 	ctx := context.Background()
-	cmd := a.buildCommand(ctx, RunOpts{Env: []string{"MY_VAR=test_value"}})
+	cmd, cleanup := a.buildCommand(ctx, RunOpts{Env: []string{"MY_VAR=test_value"}})
+	defer cleanup()
 
 	var found bool
 	for _, e := range cmd.Env {
@@ -524,7 +529,8 @@ func TestClaudeAgent_BuildCommand_WorkDir(t *testing.T) {
 
 	a := newTestAgent(AgentConfig{})
 	ctx := context.Background()
-	cmd := a.buildCommand(ctx, RunOpts{WorkDir: "/tmp"})
+	cmd, cleanup := a.buildCommand(ctx, RunOpts{WorkDir: "/tmp"})
+	defer cleanup()
 
 	assert.Equal(t, "/tmp", cmd.Dir)
 }
@@ -534,7 +540,8 @@ func TestClaudeAgent_BuildCommand_NoWorkDir(t *testing.T) {
 
 	a := newTestAgent(AgentConfig{})
 	ctx := context.Background()
-	cmd := a.buildCommand(ctx, RunOpts{})
+	cmd, cleanup := a.buildCommand(ctx, RunOpts{})
+	defer cleanup()
 
 	assert.Equal(t, "", cmd.Dir)
 }
@@ -1001,7 +1008,7 @@ func TestClaudeAgent_BuildArgs_PromptFileExcludesPromptFlag(t *testing.T) {
 	t.Parallel()
 
 	a := newTestAgent(AgentConfig{})
-	args := a.buildArgs(RunOpts{PromptFile: "/some/file.md", Prompt: "ignored"}, false)
+	args, _ := a.buildArgs(RunOpts{PromptFile: "/some/file.md", Prompt: "ignored"}, false)
 
 	found := false
 	for i, arg := range args {
@@ -1025,7 +1032,7 @@ func TestClaudeAgent_BuildArgs_NoPromptFlags(t *testing.T) {
 
 	// Neither Prompt nor PromptFile -- neither flag should appear.
 	a := newTestAgent(AgentConfig{})
-	args := a.buildArgs(RunOpts{}, false)
+	args, _ := a.buildArgs(RunOpts{}, false)
 
 	for _, arg := range args {
 		assert.NotEqual(t, "--prompt", arg)
@@ -1037,7 +1044,7 @@ func TestClaudeAgent_BuildArgs_PermissionModeAndPrintAlwaysFirst(t *testing.T) {
 	t.Parallel()
 
 	a := newTestAgent(AgentConfig{})
-	args := a.buildArgs(RunOpts{}, false)
+	args, _ := a.buildArgs(RunOpts{}, false)
 
 	require.GreaterOrEqual(t, len(args), 3, "must have at least --permission-mode accept --print")
 	assert.Equal(t, "--permission-mode", args[0])

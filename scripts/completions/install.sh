@@ -7,6 +7,7 @@
 #   ./install.sh bash         # Install bash completions
 #   ./install.sh zsh          # Install zsh completions
 #   ./install.sh fish         # Install fish completions
+#   ./install.sh powershell   # Install PowerShell completions
 #   RAVEN_BIN=./raven ./install.sh  # Use specific raven binary
 
 set -euo pipefail
@@ -53,26 +54,51 @@ install_fish() {
     echo "Fish completions installed to $target"
 }
 
+install_powershell() {
+    # Determine the PowerShell profile directory. On Windows (Git Bash / WSL)
+    # the profile lives under the user's Documents folder. On Linux/macOS with
+    # pwsh installed, $HOME/.config/powershell is the standard location.
+    local profile_dir
+    if [[ -n "${USERPROFILE:-}" ]]; then
+        # Windows (Git Bash, MSYS2, Cygwin).
+        profile_dir="${USERPROFILE}/Documents/PowerShell/Modules/RavenCompletion"
+    else
+        # Linux / macOS with pwsh.
+        profile_dir="${HOME}/.config/powershell/Modules/RavenCompletion"
+    fi
+
+    mkdir -p "$profile_dir"
+    local target="${profile_dir}/raven.ps1"
+    "$RAVEN_BIN" completion powershell > "$target"
+    echo "PowerShell completions installed to $target"
+    echo ""
+    echo "To load completions in every PowerShell session, add this line to your"
+    echo "PowerShell profile (e.g., \$PROFILE):"
+    echo "  . \"$target\""
+}
+
 # Shell detection and dispatch
 if [[ -z "$SHELL_TYPE" ]]; then
     case "${SHELL:-}" in
         */bash) SHELL_TYPE="bash" ;;
         */zsh)  SHELL_TYPE="zsh" ;;
         */fish) SHELL_TYPE="fish" ;;
+        */pwsh|*/powershell) SHELL_TYPE="powershell" ;;
         *)
-            echo "Cannot detect shell. Usage: $0 [bash|zsh|fish]" >&2
+            echo "Cannot detect shell. Usage: $0 [bash|zsh|fish|powershell]" >&2
             exit 1
             ;;
     esac
 fi
 
 case "$SHELL_TYPE" in
-    bash) install_bash ;;
-    zsh)  install_zsh ;;
-    fish) install_fish ;;
+    bash)       install_bash ;;
+    zsh)        install_zsh ;;
+    fish)       install_fish ;;
+    powershell|pwsh) install_powershell ;;
     *)
         echo "Unsupported shell: $SHELL_TYPE" >&2
-        echo "Supported shells: bash, zsh, fish" >&2
+        echo "Supported shells: bash, zsh, fish, powershell" >&2
         exit 1
         ;;
 esac

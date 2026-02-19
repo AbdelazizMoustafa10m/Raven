@@ -211,7 +211,7 @@ func TestRegisterBuiltinHandlers_RegistersAllSteps(t *testing.T) {
 	t.Parallel()
 
 	reg := NewRegistry()
-	RegisterBuiltinHandlers(reg)
+	RegisterBuiltinHandlers(reg, nil)
 
 	wantSteps := []string{
 		"run_implement",
@@ -236,7 +236,7 @@ func TestRegisterBuiltinHandlers_AllWorkflowsValidWithRegistry(t *testing.T) {
 	t.Parallel()
 
 	reg := NewRegistry()
-	RegisterBuiltinHandlers(reg)
+	RegisterBuiltinHandlers(reg, nil)
 
 	defs := BuiltinDefinitions()
 	for name, def := range defs {
@@ -255,9 +255,9 @@ func TestRegisterBuiltinHandlers_PanicsOnDoubleRegistration(t *testing.T) {
 	t.Parallel()
 
 	reg := NewRegistry()
-	RegisterBuiltinHandlers(reg)
+	RegisterBuiltinHandlers(reg, nil)
 
 	assert.Panics(t, func() {
-		RegisterBuiltinHandlers(reg)
+		RegisterBuiltinHandlers(reg, nil)
 	}, "registering built-in handlers twice must panic")
 }

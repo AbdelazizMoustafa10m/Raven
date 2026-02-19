@@ -143,7 +143,7 @@ func TestValidatePRDFile_ValidFile(t *testing.T) {
 	path := filepath.Join(dir, "PRD.md")
 	require.NoError(t, os.WriteFile(path, []byte("# PRD"), 0644))
 
-	err := validatePRDFile(path)
+	err := validatePRDFile(path, dir)
 	assert.NoError(t, err)
 }
 
@@ -157,7 +157,7 @@ func TestValidatePRDFile_UnreadableFile(t *testing.T) {
 	path := filepath.Join(dir, "no-read.md")
 	require.NoError(t, os.WriteFile(path, []byte("content"), 0000))
 
-	err := validatePRDFile(path)
+	err := validatePRDFile(path, dir)
 	assert.Error(t, err, "unreadable file should return an error")
 }
 
@@ -653,7 +653,7 @@ func TestValidatePRDFile_EmptyFile(t *testing.T) {
 	path := filepath.Join(dir, "empty.md")
 	require.NoError(t, os.WriteFile(path, []byte{}, 0644))
 
-	err := validatePRDFile(path)
+	err := validatePRDFile(path, dir)
 	assert.NoError(t, err, "empty (but readable) file should pass validation")
 }
 
@@ -664,7 +664,7 @@ func TestValidatePRDFile_LargeContent(t *testing.T) {
 	content := strings.Repeat("# PRD Section\n\nSome content.\n\n", 100)
 	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
 
-	err := validatePRDFile(path)
+	err := validatePRDFile(path, dir)
 	assert.NoError(t, err)
 }
 

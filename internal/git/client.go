@@ -455,6 +455,17 @@ func parseOneline(output string) []LogEntry {
 	return entries
 }
 
+// RevParseAbbrev runs "git rev-parse --abbrev-ref <ref>" and returns the
+// abbreviated symbolic reference. It is used to resolve references like
+// "origin/HEAD" to their target branch name (e.g. "origin/main").
+func (g *GitClient) RevParseAbbrev(ctx context.Context, ref string) (string, error) {
+	out, err := g.run(ctx, "rev-parse", "--abbrev-ref", ref)
+	if err != nil {
+		return "", fmt.Errorf("git: rev-parse --abbrev-ref %q: %w", ref, err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // --- Fetch Operations ---
 
 // Fetch fetches from the named remote. If remote is empty, fetches from "origin".

@@ -22,6 +22,7 @@ var _ Agent = (*ClaudeAgent)(nil)
 // It accepts a message and structured key-value pairs.
 type claudeLogger interface {
 	Debug(msg string, keyvals ...interface{})
+	Warn(msg string, keyvals ...interface{})
 }
 
 // maxInlinePromptBytes is the threshold above which a prompt is written to a
@@ -96,7 +97,8 @@ func (c *ClaudeAgent) CheckPrerequisites() error {
 func (c *ClaudeAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error) {
 	start := time.Now()
 
-	cmd := c.buildCommand(ctx, opts)
+	cmd, cleanup := c.buildCommand(ctx, opts)
+	defer cleanup()
 
 	if c.logger != nil {
 		c.logger.Debug("running claude",
@@ -134,15 +136,29 @@ func (c *ClaudeAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error)
 			teeReader := io.TeeReader(stdoutPipe, &stdoutBuf)
 			decoder := NewStreamDecoder(teeReader)
 			for {
-				event, err := decoder.Next()
-				if err != nil {
-					// io.EOF or decode error -- stop reading.
-					break
+				event, decErr := decoder.Next()
+				if decErr != nil {
+					if errors.Is(decErr, io.EOF) {
+						break
+					}
+					// Malformed JSON line: log and skip to the next line
+					// rather than aborting the entire stream.
+					if c.logger != nil {
+						c.logger.Debug("skipping malformed stream event",
+							"error", decErr,
+						)
+					}
+					continue
 				}
 				// Non-blocking send: drop the event when the consumer is slow.
 				select {
 				case opts.StreamEvents <- *event:
 				default:
+					if c.logger != nil {
+						c.logger.Warn("stream event dropped: consumer too slow",
+							"event_type", event.Type,
+						)
+					}
 				}
 			}
 		} else {
@@ -219,7 +235,7 @@ func (c *ClaudeAgent) ParseRateLimit(output string) (*RateLimitInfo, bool) {
 // DryRunCommand returns the command string that would be executed without
 // actually running it. Long prompts are truncated in the output.
 func (c *ClaudeAgent) DryRunCommand(opts RunOpts) string {
-	args := c.buildArgs(opts, true /* dryRun */)
+	args, _ := c.buildArgs(opts, true /* dryRun */)
 	cmd := c.config.Command
 	if cmd == "" {
 		cmd = "claude"
@@ -229,14 +245,16 @@ func (c *ClaudeAgent) DryRunCommand(opts RunOpts) string {
 
 // buildCommand constructs the *exec.Cmd for the given RunOpts. Prompt data
 // longer than maxInlinePromptBytes is written to a temp file automatically.
-func (c *ClaudeAgent) buildCommand(ctx context.Context, opts RunOpts) *exec.Cmd {
+// The returned cleanup function removes any temp files created for the prompt;
+// callers must defer it after the command completes.
+func (c *ClaudeAgent) buildCommand(ctx context.Context, opts RunOpts) (cmd *exec.Cmd, cleanup func()) {
 	command := c.config.Command
 	if command == "" {
 		command = "claude"
 	}
 
-	args := c.buildArgs(opts, false /* dryRun */)
-	cmd := exec.CommandContext(ctx, command, args...)
+	args, tempFile := c.buildArgs(opts, false /* dryRun */)
+	cmd = exec.CommandContext(ctx, command, args...)
 	setProcGroup(cmd)
 
 	if opts.WorkDir != "" {
@@ -257,13 +275,22 @@ func (c *ClaudeAgent) buildCommand(ctx context.Context, opts RunOpts) *exec.Cmd 
 	env = append(env, opts.Env...)
 	cmd.Env = env
 
-	return cmd
+	cleanup = func() {
+		if tempFile != "" {
+			os.Remove(tempFile)
+		}
+	}
+
+	return cmd, cleanup
 }
 
 // buildArgs constructs the argument slice for the Claude CLI. When dryRun is
 // true, long prompts are truncated instead of being written to temp files.
-func (c *ClaudeAgent) buildArgs(opts RunOpts, dryRun bool) []string {
+// The second return value is the path to a temp file created for the prompt,
+// or an empty string if no temp file was created. Callers must clean it up.
+func (c *ClaudeAgent) buildArgs(opts RunOpts, dryRun bool) ([]string, string) {
 	var args []string
+	var tempFile string
 
 	args = append(args, "--permission-mode", "accept")
 	args = append(args, "--print")
@@ -309,9 +336,12 @@ func (c *ClaudeAgent) buildArgs(opts RunOpts, dryRun bool) []string {
 			if err == nil {
 				if _, werr := f.WriteString(opts.Prompt); werr == nil {
 					_ = f.Close()
-					args = append(args, "--prompt-file", f.Name())
+					tempFile = f.Name()
+					args = append(args, "--prompt-file", tempFile)
 				} else {
 					_ = f.Close()
+					// Clean up the failed temp file immediately.
+					os.Remove(f.Name())
 					// Fall back to inline if write failed.
 					args = append(args, "--prompt", opts.Prompt)
 				}
@@ -325,7 +355,7 @@ func (c *ClaudeAgent) buildArgs(opts RunOpts, dryRun bool) []string {
 		args = append(args, "--prompt", opts.Prompt)
 	}
 
-	return args
+	return args, tempFile
 }
 
 // parseResetDuration converts a numeric string and a time unit word into a

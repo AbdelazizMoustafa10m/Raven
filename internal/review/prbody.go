@@ -144,17 +144,6 @@ func NewPRBodyGenerator(ag agent.Agent, templatePath string, logger *log.Logger)
 // not exist or the injection fails for any reason, the default template
 // structure is used without error (best-effort).
 func (pg *PRBodyGenerator) Generate(ctx context.Context, data PRBodyData) (string, error) {
-	// Log if a custom PR template is present (used best-effort; the generated
-	// body is always based on the embedded default template and the
-	// custom template content is noted for informational purposes only).
-	if pg.hasPRTemplate() {
-		if pg.logger != nil {
-			pg.logger.Debug("PR body: custom PR template found (best-effort)",
-				"path", pg.templatePath,
-			)
-		}
-	}
-
 	// Pre-compute helper fields for the template.
 	td := pg.buildTemplateData(data)
 
@@ -164,6 +153,28 @@ func (pg *PRBodyGenerator) Generate(ctx context.Context, data PRBodyData) (strin
 	}
 
 	body := buf.String()
+
+	// When a custom PR template is present, merge its sections with the
+	// generated body content. Extra sections from the template that are not
+	// present in the generated body are appended.
+	if pg.hasPRTemplate() {
+		merged, mergeErr := pg.mergeWithPRTemplate(body)
+		if mergeErr != nil {
+			if pg.logger != nil {
+				pg.logger.Warn("PR body: failed to merge with PR template, using generated body",
+					"path", pg.templatePath,
+					"error", mergeErr,
+				)
+			}
+		} else {
+			body = merged
+			if pg.logger != nil {
+				pg.logger.Debug("PR body: merged with custom PR template",
+					"path", pg.templatePath,
+				)
+			}
+		}
+	}
 
 	// Enforce the GitHub PR body size limit.
 	if len(body) > maxPRBodyBytes {
@@ -475,4 +486,117 @@ func (pg *PRBodyGenerator) hasPRTemplate() bool {
 	}
 	_, err := os.Stat(pg.templatePath)
 	return err == nil
+}
+
+// mergeWithPRTemplate reads the .github/PULL_REQUEST_TEMPLATE.md file, parses
+// its section headers, and merges them with the generated body. Sections that
+// already exist in the generated body have their template content replaced with
+// the generated content. Sections unique to the template (e.g. "## Checklist")
+// are appended to the generated body, preserving the template's original
+// content for those sections.
+func (pg *PRBodyGenerator) mergeWithPRTemplate(generatedBody string) (string, error) {
+	templateData, err := os.ReadFile(pg.templatePath)
+	if err != nil {
+		return "", fmt.Errorf("reading PR template %q: %w", pg.templatePath, err)
+	}
+	templateContent := string(templateData)
+
+	// Parse both documents into section maps.
+	generatedSections := parseSections(generatedBody)
+	templateSections := parseSections(templateContent)
+
+	// Track which template sections are already covered by the generated body.
+	coveredHeaders := make(map[string]bool)
+	for _, gs := range generatedSections {
+		coveredHeaders[normalizeHeader(gs.header)] = true
+	}
+
+	// Collect template sections that are NOT in the generated body. These are
+	// "extra" sections (e.g. Checklist, Testing Notes) that should be appended.
+	// Sections with empty headers (pre-header content) are skipped.
+	var extraSections []section
+	for _, ts := range templateSections {
+		if ts.header == "" {
+			continue
+		}
+		if !coveredHeaders[normalizeHeader(ts.header)] {
+			extraSections = append(extraSections, ts)
+		}
+	}
+
+	if len(extraSections) == 0 {
+		// No extra sections to merge; the generated body is sufficient.
+		return generatedBody, nil
+	}
+
+	// Append extra sections from the template to the generated body.
+	var sb strings.Builder
+	sb.WriteString(strings.TrimRight(generatedBody, "\n"))
+	sb.WriteString("\n")
+
+	for _, es := range extraSections {
+		sb.WriteString("\n---\n\n")
+		sb.WriteString(es.header)
+		sb.WriteString("\n")
+		content := strings.TrimSpace(es.content)
+		if content != "" {
+			sb.WriteString("\n")
+			sb.WriteString(content)
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String(), nil
+}
+
+// section represents a parsed markdown section with its header line and
+// the content that follows until the next section header.
+type section struct {
+	header  string // the full header line, e.g. "## Summary"
+	content string // everything between this header and the next
+}
+
+// parseSections splits a markdown document into sections based on h2 (##)
+// headers. Content before the first header is included as a section with an
+// empty header. Each section's content includes everything from after the
+// header line up to (but not including) the next h2 header.
+func parseSections(md string) []section {
+	lines := strings.Split(md, "\n")
+	var sections []section
+	var current section
+	inSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") {
+			// Save previous section.
+			if inSection || current.content != "" {
+				sections = append(sections, current)
+			}
+			current = section{header: trimmed}
+			inSection = true
+			continue
+		}
+		if inSection {
+			current.content += line + "\n"
+		} else {
+			// Content before first header.
+			current.content += line + "\n"
+		}
+	}
+
+	// Save final section.
+	if inSection || current.content != "" {
+		sections = append(sections, current)
+	}
+
+	return sections
+}
+
+// normalizeHeader strips markdown heading prefixes and whitespace for
+// case-insensitive comparison of section headers.
+func normalizeHeader(h string) string {
+	h = strings.TrimLeft(h, "#")
+	h = strings.TrimSpace(h)
+	return strings.ToLower(h)
 }
