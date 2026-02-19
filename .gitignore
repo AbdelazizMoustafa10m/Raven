@@ -38,8 +38,19 @@ Thumbs.db
 .raven/state/
 .raven/
 
-# ─── Ralph Loop Logs ─────────────────────────────────
-scripts/logs/*.log
+# ─── Ralph Automation Scripts ─────────────────────────
+# These are the "Ralph Wiggum Loop" helpers used to build Raven with AI agents.
+# Raven project scripts (release-verify.sh, bench-report.sh, gen-*, completions/) are kept.
+scripts/RALPH-PROMPT*.md
+scripts/ralph*.sh
+scripts/ralph-lib.sh
+scripts/phases-lib.sh
+scripts/phase-pipeline.sh
+scripts/task-state-lib.sh
+scripts/task-state.sh
+scripts/test_*.sh
+scripts/review/
+scripts/logs/
 
 .review-workspace/
 reports/review/
