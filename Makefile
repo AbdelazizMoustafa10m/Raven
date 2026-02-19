@@ -55,7 +55,7 @@ install:
 	$(GOFLAGS) go install -ldflags "$(LDFLAGS)" ./cmd/raven/
 
 bench:
-	go test ./... -bench=. -benchmem -count=1
+	go test ./... -bench=. -benchmem -benchtime=3s -count=1
 
 # Development helper: build then run version subcommand
 run-version: build

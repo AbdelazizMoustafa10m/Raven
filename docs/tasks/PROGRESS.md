@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 86 |
+| Completed | 87 |
 | In Progress | 0 |
-| Not Started | 5 |
+| Not Started | 4 |
 
 ---
 
@@ -584,6 +584,34 @@ _None currently_
 
 ---
 
+### T-083: Performance Benchmarking Suite
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `cmd/raven/bench_test.go` -- binary startup time benchmarks (`BenchmarkBinaryStartup`, `BenchmarkBinaryHelp`) measuring wall-clock time from process launch; establishes <200ms baseline
+  - `internal/config/bench_test.go` -- config benchmarks: `LoadFromFile`, `Validate`, `NewDefaults`, `LoadAndValidate`, `DecodeAndValidate`, and stress variants with many agents/workflows
+  - `internal/task/bench_test.go` -- task parsing (`ParseTaskSpec`, `ParseTaskFile`, `DiscoverTasks`), StateManager I/O (`Load`, `LoadMap`, `Get`), and selector benchmarks (`SelectNext`, `SelectNextInRange`, `IsPhaseComplete`, `BlockedTasks`) at 10- and 100-task scale
+  - `internal/agent/bench_test.go` -- concurrent agent coordination overhead with 1, 3, 5, 10 agents via `errgroup`, plus `b.RunParallel` throughput benchmark
+  - `internal/workflow/bench_test.go` -- state checkpoint/restore I/O: `Save`, `Load`, `List` (n=5/10/20), and pure JSON marshal benchmarks
+  - `internal/tui/bench_test.go` -- view rendering at 120x40 (`BenchmarkAppView` ~218µs, well under <100ms target), message dispatch (`AgentOutputMsg`, `WorkflowEventMsg`), event log ring buffer, layout resize
+  - `internal/review/bench_test.go` -- JSON extraction (`json.Unmarshal` on ReviewResult), finding consolidation with 3 and 5 agents, deduplication key computation
+  - `scripts/bench-report.sh` -- shell script to run all benchmarks and format a header report with git ref, Go version, and configurable `-benchtime`/`-count`/`-bench` flags
+  - Updated `Makefile` `bench` target to use `-benchtime=3s` per task spec
+- **Files created/modified:**
+  - `cmd/raven/bench_test.go` -- binary startup benchmarks using `os/exec`
+  - `internal/config/bench_test.go` -- config load + validation benchmarks
+  - `internal/task/bench_test.go` -- task parsing, state manager, selector benchmarks
+  - `internal/agent/bench_test.go` -- concurrent agent coordination benchmarks
+  - `internal/workflow/bench_test.go` -- workflow state checkpoint I/O benchmarks
+  - `internal/tui/bench_test.go` -- TUI view rendering and message throughput benchmarks
+  - `internal/review/bench_test.go` -- JSON extraction and consolidation benchmarks
+  - `scripts/bench-report.sh` -- benchmark runner with formatted report output
+  - `Makefile` -- updated `bench` target to `-benchtime=3s`
+- **Verification:** `go build` ✓  `go vet` ✓  `go test ./...` ✓
+
+---
+
 ## Not Started Tasks
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
@@ -601,7 +629,7 @@ _None currently_
 | T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Completed |
 | T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Completed |
 | T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Completed |
-| T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Not Started |
+| T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Completed |
 | T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Not Started |
 | T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Not Started |
 | T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Not Started |
