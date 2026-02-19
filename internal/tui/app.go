@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,6 +62,13 @@ type AppConfig struct {
 type PipelineStartMsg struct {
 	// Config is the pipeline configuration collected from the wizard.
 	Config PipelineWizardConfig
+}
+
+// PipelineCompleteMsg is sent when the background pipeline execution finishes.
+// It carries the error (if any) from the workflow engine run.
+type PipelineCompleteMsg struct {
+	// Err is nil on success or the error that caused pipeline failure.
+	Err error
 }
 
 // App is the top-level Bubble Tea model for the Raven Command Center.
@@ -189,6 +198,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			"Pipeline starting: mode=%s, impl=%s",
 			m.Config.PhaseMode, m.Config.ImplAgent,
 		))
+		return a, a.startPipeline(m.Config)
+
+	case PipelineCompleteMsg:
+		if m.Err != nil {
+			a.eventLog.AddEntry(EventError, fmt.Sprintf("Pipeline failed: %v", m.Err))
+		} else {
+			a.eventLog.AddEntry(EventInfo, "Pipeline completed successfully")
+		}
 		return a, nil
 
 	case WizardCancelledMsg:
@@ -389,6 +406,64 @@ func (a App) forwardKeyToFocused(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.eventLog, cmd = a.eventLog.Update(m)
 	}
 	return a, cmd
+}
+
+// startPipeline returns a tea.Cmd that runs the pipeline workflow in the
+// background and sends a PipelineCompleteMsg when done. The command runs
+// in its own goroutine (managed by Bubble Tea) so it does not block the
+// TUI event loop. If the workflow engine is not configured, it returns
+// an immediate error message.
+func (a App) startPipeline(wizCfg PipelineWizardConfig) tea.Cmd {
+	engine := a.config.Engine
+	if engine == nil {
+		return func() tea.Msg {
+			return PipelineCompleteMsg{Err: fmt.Errorf("workflow engine not configured")}
+		}
+	}
+
+	ctx := a.ctx
+
+	return func() tea.Msg {
+		// Look up the built-in pipeline workflow definition.
+		def := workflow.GetDefinition(workflow.WorkflowPipeline)
+		if def == nil {
+			return PipelineCompleteMsg{Err: fmt.Errorf("pipeline workflow definition not found")}
+		}
+
+		// Build initial workflow state from wizard config.
+		runID := fmt.Sprintf("dashboard-%d", time.Now().UnixNano())
+		state := workflow.NewWorkflowState(runID, workflow.WorkflowPipeline, def.InitialStep)
+		state.Metadata["agent_name"] = wizCfg.ImplAgent
+		state.Metadata["review_agents"] = strings.Join(wizCfg.ReviewAgents, ",")
+		state.Metadata["fix_agent"] = wizCfg.FixAgent
+		state.Metadata["phase_mode"] = wizCfg.PhaseMode
+		state.Metadata["phase_id"] = wizCfg.PhaseID
+		state.Metadata["from_phase"] = wizCfg.FromPhase
+		state.Metadata["review_concurrency"] = wizCfg.ReviewConcurrency
+		state.Metadata["max_review_cycles"] = wizCfg.MaxReviewCycles
+
+		// Set current_phase and total_phases based on the phase mode so
+		// the pipeline's init_phase / advance_phase handlers iterate
+		// over the correct range.
+		switch wizCfg.PhaseMode {
+		case "single":
+			state.Metadata["current_phase"] = wizCfg.PhaseID
+			state.Metadata["total_phases"] = wizCfg.PhaseID
+		case "range":
+			state.Metadata["current_phase"] = wizCfg.FromPhase
+			state.Metadata["total_phases"] = wizCfg.ToPhase
+		default: // "all"
+			state.Metadata["current_phase"] = 1
+			if wizCfg.ToPhase > 0 {
+				state.Metadata["total_phases"] = wizCfg.ToPhase
+			} else {
+				state.Metadata["total_phases"] = 1
+			}
+		}
+
+		_, err := engine.Run(ctx, def, state)
+		return PipelineCompleteMsg{Err: err}
+	}
 }
 
 // View renders the complete UI as a string.

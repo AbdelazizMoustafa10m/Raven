@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -8,6 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/AbdelazizMoustafa10m/Raven/internal/workflow"
 )
 
 // Compile-time verification that App implements tea.Model.
@@ -750,6 +753,131 @@ func TestApp_Integration_DoubleQuit_Idempotent(t *testing.T) {
 	assert.True(t, a.quitting)
 	require.NotNil(t, cmd2) // still returns Quit command
 	assert.Empty(t, a.View())
+}
+
+// ---- PipelineStartMsg / PipelineCompleteMsg ----
+
+func TestApp_Update_PipelineStartMsg_NilEngine_ReturnsPipelineCompleteWithError(t *testing.T) {
+	t.Parallel()
+	a := makeReadyApp(t, AppConfig{Version: "1.0.0"}, 120, 40)
+
+	// No engine configured: PipelineStartMsg must return a command.
+	cfg := PipelineWizardConfig{PhaseMode: "all", ImplAgent: "claude"}
+	updated, cmd := applyMsg(a, PipelineStartMsg{Config: cfg})
+	require.NotNil(t, cmd, "PipelineStartMsg must return a tea.Cmd even without engine")
+
+	// Execute the command synchronously to get the message.
+	msg := cmd()
+	completeMsg, ok := msg.(PipelineCompleteMsg)
+	require.True(t, ok, "expected PipelineCompleteMsg, got %T", msg)
+	assert.Error(t, completeMsg.Err, "should report engine not configured error")
+	assert.Contains(t, completeMsg.Err.Error(), "workflow engine not configured")
+
+	_ = updated
+}
+
+func TestApp_Update_PipelineStartMsg_WithEngine_ReturnsCmd(t *testing.T) {
+	t.Parallel()
+
+	// Build a real engine with registered handlers (nil deps so handlers
+	// return EventFailure, but the engine can at least start).
+	registry := workflow.NewRegistry()
+	workflow.RegisterBuiltinHandlers(registry, nil)
+	engine := workflow.NewEngine(registry)
+
+	a := makeReadyApp(t, AppConfig{
+		Version: "1.0.0",
+		Engine:  engine,
+	}, 120, 40)
+
+	cfg := PipelineWizardConfig{
+		PhaseMode: "single",
+		PhaseID:   1,
+		ImplAgent: "claude",
+	}
+	_, cmd := applyMsg(a, PipelineStartMsg{Config: cfg})
+	require.NotNil(t, cmd, "PipelineStartMsg with engine must return a non-nil command")
+
+	// Execute the command -- it will fail because Runner is nil, but it
+	// should return a PipelineCompleteMsg rather than panic.
+	msg := cmd()
+	completeMsg, ok := msg.(PipelineCompleteMsg)
+	require.True(t, ok, "expected PipelineCompleteMsg, got %T", msg)
+	// The pipeline will fail because the handler has nil deps, which is expected.
+	assert.Error(t, completeMsg.Err, "pipeline should fail with nil handler deps")
+}
+
+func TestApp_Update_PipelineCompleteMsg_Success(t *testing.T) {
+	t.Parallel()
+	a := makeReadyApp(t, AppConfig{Version: "1.0.0"}, 120, 40)
+
+	updated, cmd := applyMsg(a, PipelineCompleteMsg{Err: nil})
+	assert.Nil(t, cmd, "successful PipelineCompleteMsg should not return a command")
+	_ = updated
+}
+
+func TestApp_Update_PipelineCompleteMsg_Error(t *testing.T) {
+	t.Parallel()
+	a := makeReadyApp(t, AppConfig{Version: "1.0.0"}, 120, 40)
+
+	updated, cmd := applyMsg(a, PipelineCompleteMsg{Err: fmt.Errorf("test pipeline error")})
+	assert.Nil(t, cmd, "failed PipelineCompleteMsg should not return a command")
+	_ = updated
+}
+
+func TestApp_Update_PipelineStartMsg_PhaseMode_TableDriven(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		phaseMode string
+		phaseID   int
+		fromPhase int
+		toPhase   int
+	}{
+		{name: "all mode", phaseMode: "all", toPhase: 3},
+		{name: "single mode", phaseMode: "single", phaseID: 2},
+		{name: "range mode", phaseMode: "range", fromPhase: 1, toPhase: 5},
+		{name: "all mode no toPhase", phaseMode: "all"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			registry := workflow.NewRegistry()
+			workflow.RegisterBuiltinHandlers(registry, nil)
+			engine := workflow.NewEngine(registry)
+
+			a := makeReadyApp(t, AppConfig{
+				Version: "1.0.0",
+				Engine:  engine,
+			}, 120, 40)
+
+			cfg := PipelineWizardConfig{
+				PhaseMode: tt.phaseMode,
+				PhaseID:   tt.phaseID,
+				FromPhase: tt.fromPhase,
+				ToPhase:   tt.toPhase,
+				ImplAgent: "claude",
+			}
+
+			_, cmd := applyMsg(a, PipelineStartMsg{Config: cfg})
+			require.NotNil(t, cmd, "must return a command for phase mode %s", tt.phaseMode)
+
+			// The command should execute without panic and return PipelineCompleteMsg.
+			msg := cmd()
+			_, ok := msg.(PipelineCompleteMsg)
+			assert.True(t, ok, "expected PipelineCompleteMsg for phase mode %s, got %T", tt.phaseMode, msg)
+		})
+	}
+}
+
+func TestPipelineCompleteMsg_IsTeaMsg(t *testing.T) {
+	t.Parallel()
+	var msg PipelineCompleteMsg
+	_, ok := (tea.Msg(msg)).(PipelineCompleteMsg)
+	assert.True(t, ok, "PipelineCompleteMsg must be type-assertable as PipelineCompleteMsg")
 }
 
 // ---- Version display ----

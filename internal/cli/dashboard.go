@@ -12,6 +12,7 @@ import (
 	"github.com/AbdelazizMoustafa10m/Raven/internal/buildinfo"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/logging"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/loop"
+	"github.com/AbdelazizMoustafa10m/Raven/internal/pipeline"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/tui"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/workflow"
 )
@@ -64,9 +65,19 @@ func runDashboard(cmd *cobra.Command, _ []string) error {
 	agentOutput := make(chan tui.AgentOutputMsg, 256)
 	taskProgress := make(chan tui.TaskProgressMsg, 64)
 
-	// Initialize the workflow engine with the event channel wired in.
+	// Initialize the workflow engine with real handler dependencies so that
+	// pipeline execution triggered from the wizard can run steps.
 	registry := workflow.NewRegistry()
-	workflow.RegisterBuiltinHandlers(registry, nil)
+	var handlerDeps *workflow.HandlerDeps
+	if resolved != nil {
+		deps, depsErr := buildRuntimeHandlerDeps(resolved.Config, pipeline.PipelineOpts{}, nil, nil)
+		if depsErr != nil {
+			logger.Warn("building runtime handler deps; pipeline steps may fail", "error", depsErr)
+		} else {
+			handlerDeps = deps
+		}
+	}
+	workflow.RegisterBuiltinHandlers(registry, handlerDeps)
 
 	var stateDir string
 	if resolved != nil && resolved.Config.Project.LogDir != "" {

@@ -299,22 +299,28 @@ func runPipeline(cmd *cobra.Command, flags pipelineFlags) error {
 		return fmt.Errorf("creating state store: %w", err)
 	}
 
-	registry := workflow.NewRegistry()
-	workflow.RegisterBuiltinHandlers(registry, nil)
-
-	engine := workflow.NewEngine(
-		registry,
-		workflow.WithLogger(logging.New("workflow")),
-		workflow.WithCheckpointing(store),
-	)
-
-	// Create git client for branch management.
+	// Create git client for branch management (needed before handler registration).
 	gitClient, gitErr := git.NewGitClient("")
 	if gitErr != nil {
 		// Non-fatal: pipeline can still run without branch management.
 		logger.Warn("git client unavailable; branch management disabled", "error", gitErr)
 		gitClient = nil
 	}
+
+	// Build real runtime dependencies for built-in workflow handlers.
+	registry := workflow.NewRegistry()
+	deps, depsErr := buildRuntimeHandlerDeps(cfg, opts, phases, gitClient)
+	if depsErr != nil {
+		logger.Warn("building runtime handler deps; handlers may fail at runtime", "error", depsErr)
+		// Fall back to nil deps so handlers return descriptive errors if called.
+	}
+	workflow.RegisterBuiltinHandlers(registry, deps)
+
+	engine := workflow.NewEngine(
+		registry,
+		workflow.WithLogger(logging.New("workflow")),
+		workflow.WithCheckpointing(store),
+	)
 
 	// Create pipeline orchestrator.
 	orchestrator := pipeline.NewPipelineOrchestrator(

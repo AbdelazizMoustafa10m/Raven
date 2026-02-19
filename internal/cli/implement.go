@@ -215,6 +215,17 @@ func runImplement(cmd *cobra.Command, flags implementFlags) error {
 		logger,
 	)
 
+	// Step 12b: Wire progress generator for PROGRESS.md regeneration.
+	if cfg.Project.ProgressFile != "" {
+		pg, pgErr := task.NewProgressGenerator(specs, stateManager, phases)
+		if pgErr != nil {
+			logger.Info("progress generator disabled", "error", pgErr)
+		} else {
+			runner.SetProgressGenerator(pg, cfg.Project.ProgressFile)
+			logger.Info("progress generator enabled", "path", cfg.Project.ProgressFile)
+		}
+	}
+
 	// Step 13: Build run configuration from flags.
 	runCfg := loop.RunConfig{
 		AgentName:     flags.Agent,
