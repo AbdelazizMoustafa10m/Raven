@@ -92,15 +92,15 @@ func TestMissingConfigFallsBackToDefaults(t *testing.T) {
 	assert.Contains(t, out, "Configuration Debug")
 }
 
-func TestNoArgsShowsHelp(t *testing.T) {
+func TestHelpFlagShowsHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 	t.Parallel()
 
 	tp := newTestProject(t)
-	// Cobra's RunE returns cmd.Help() for the root command, which exits 0.
-	out := tp.runExpectSuccess()
+	// The root command launches the TUI dashboard; help is available via --help.
+	out := tp.runExpectSuccess("--help")
 	assert.Contains(t, out, "raven")
 	assert.Contains(t, out, "Usage")
 }

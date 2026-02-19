@@ -60,9 +60,9 @@ func TestBuild_BinaryRuns(t *testing.T) {
 	buildOutput, err := buildCmd.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", string(buildOutput))
 
-	// Run the binary and check it exits with code 0.
-	// With Cobra, running with no subcommand shows help and exits 0.
-	runCmd := exec.Command(binPath)
+	// Run the binary with --help and check it exits with code 0.
+	// The root command launches the TUI dashboard; help is available via --help.
+	runCmd := exec.Command(binPath, "--help")
 	output, err := runCmd.CombinedOutput()
 	require.NoError(t, err, "binary execution failed with output: %s", string(output))
 }
@@ -97,7 +97,8 @@ func TestBuild_BinaryOutput(t *testing.T) {
 func TestGoRun_Success(t *testing.T) {
 	root := projectRoot(t)
 
-	cmd := exec.Command("go", "run", "./cmd/raven/")
+	// The root command launches the TUI dashboard; use --help to verify go run works.
+	cmd := exec.Command("go", "run", "./cmd/raven/", "--help")
 	cmd.Dir = root
 
 	output, err := cmd.CombinedOutput()
