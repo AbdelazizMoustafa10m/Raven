@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 68 |
+| Completed | 82 |
 | In Progress | 0 |
-| Not Started | 21 |
+| Not Started | 7 |
 
 ---
 
@@ -396,6 +396,102 @@
 
 ---
 
+### Phase 6: TUI Command Center -- Initial Task (T-066)
+
+- **Status:** Completed (partial phase)
+- **Date:** 2026-02-18
+- **Tasks Completed:** 1 task (T-066)
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Bubble Tea App Scaffold | T-066 | `FocusPanel` enum (Sidebar/AgentPanel/EventLog), `AppConfig` struct, `App` top-level `tea.Model`; `NewApp` with default focus=Sidebar, ready=false, quitting=false; `Init()` returning nil; `Update()` handling WindowSizeMsg (store dims, set ready=true) and quit KeyMsgs (q/ctrl+c/ctrl+q → tea.Quit); `View()` with quitting/not-ready/too-small/full branches using lipgloss title bar; `RunTUI` with WithAltScreen + WithMouseCellMotion |
+
+#### Key Technical Decisions
+
+1. **Value receiver for App methods** -- Elm architecture is purely functional; each Update returns a new model copy, matching bubbletea's serialized state update guarantees
+2. **`tea.WithMouseCellMotion()` not `WithMouseAllMotion()`** -- preserves user ability to select and copy text from the terminal
+3. **`Init()` returns nil** -- bubbletea v1.x sends `WindowSizeMsg` automatically on startup; no explicit request needed
+4. **Minimum terminal size guard (80x24) in `View()`** -- prevents garbled layout when the terminal is too narrow/short; shown before the full render path
+5. **lipgloss for all rendering** -- consistent with the charmbracelet ecosystem; color constants use terminal-256 palette codes to stay within CGO_ENABLED=0
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| TUI App Scaffold | `internal/tui/app.go` |
+| TUI App Tests | `internal/tui/app_test.go` |
+| Package doc | `internal/tui/doc.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./internal/tui/...` pass
+
+---
+
+### Phase 6: TUI Command Center (T-066 to T-078)
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **Tasks Completed:** 13 tasks
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Elm Architecture Scaffold | T-066 | `App` top-level `tea.Model` with `Init`/`Update`/`View`, `FocusPanel` enum, `AppConfig`, `RunTUI` entry point |
+| TUI Message Types and Event System | T-067 | `AgentOutputMsg`, `AgentStatusMsg`, `WorkflowEventMsg`, `LoopEventMsg`, `RateLimitMsg`, `TaskProgressMsg`, `TickMsg`, `ErrorMsg`, `FocusChangedMsg`; `AgentStatus`/`LoopEventType` enums; `TickCmd`/`TickEvery` helpers |
+| Lipgloss Styles and Theme System | T-068 | 11 `AdaptiveColor` palette vars, `Theme` struct with 37 `lipgloss.Style` fields, `DefaultTheme()`, `StatusIndicator(AgentStatus)`, `ProgressBar(filled, width)` |
+| Split-Pane Layout Manager | T-069 | `Layout` with `Resize`/`IsTooSmall`/`TerminalSize`/`Render`/`RenderTooSmall`; `PanelDimensions`; 6 exported dimension constants |
+| Sidebar: Workflow List | T-070 | `SidebarModel` with `WorkflowEntry`/`WorkflowStatus`, O(1) dedup via map, j/k navigation, scroll-tracking, status indicators |
+| Sidebar: Task Progress Bars | T-071 | `TaskProgressSection` with `SetTotals`/`SetPhase`/`Update`/`View`; handles `TaskProgressMsg` and `LoopEventMsg`; integrated into `SidebarModel` |
+| Sidebar: Rate-Limit Countdown | T-072 | `RateLimitSection` with `ProviderRateLimit`, per-provider WAIT M:SS countdown, `TickCmd` self-scheduling, `formatCountdown`; integrated into `SidebarModel` |
+| Agent Output Panel | T-073 | `AgentPanelModel` with `OutputBuffer` ring buffer (1000 lines), `AgentView` per-agent viewport, tab bar, auto-scroll, Tab passthrough |
+| Event Log Panel | T-074 | `EventLogModel` with 500-entry bounded buffer, `EventEntry`/`EventCategory`, classifier functions for all message types, visibility toggle (`l`), auto-scroll |
+| Status Bar | T-075 | `StatusBarModel` tracking phase/task/iteration/elapsed/paused/mode; two-pass segment layout; PAUSED badge; `formatElapsed` |
+| Keyboard Navigation and Help Overlay | T-076 | `KeyMap` with 15 bindings via `charmbracelet/bubbles/key`, `DefaultKeyMap`, `NextFocus`/`PrevFocus` cycling, `HelpOverlay` with centered rounded-border box, `PauseRequestMsg`/`SkipRequestMsg` |
+| Pipeline Wizard | T-077 | `WizardModel` wrapping 5-group `huh.Form`; `PipelineWizardConfig`; `WizardCompleteMsg`/`WizardCancelledMsg`; `buildHuhTheme`; `positiveIntValidator`; `parseFormValues` |
+| Dashboard Command and Integration | T-078 | `NewDashboardCmd` Cobra subcommand with `--dry-run` support; `EventBridge` with `WorkflowEventCmd`/`LoopEventCmd`/`AgentOutputCmd`/`TaskProgressCmd` and goroutine-safe push functions; `App` fully integrated with all sub-models |
+
+#### Key Technical Decisions
+
+1. **Value-receiver sub-models** -- `TaskProgressSection`, `RateLimitSection`, and `StatusBarModel` use value receivers returning updated copies, matching Elm architecture immutability guarantees and avoiding TUI race conditions
+2. **Ring buffer capped at 1000 lines** -- `OutputBuffer` in `AgentPanelModel` uses O(1) append/eviction to bound memory regardless of agent verbosity
+3. **`TickCmd` self-scheduling** -- Rate-limit countdown returns `TickCmd(time.Second)` only while a limit is active, eliminating unnecessary timer ticks when all providers are clear
+4. **Two-pass status bar layout** -- Mandatory segments (mode, task) always rendered; optional segments (phase, iter, timer) dropped when width is insufficient, avoiding truncation artifacts
+5. **`buildHuhTheme`** -- Translates Raven's `lipgloss.AdaptiveColor` palette into a custom `huh.ThemeBase()` derivative so the wizard respects the TUI's light/dark color scheme
+6. **`mapLoopEventType`** -- `EventBridge` converts `loop.LoopEventType` string constants to TUI `LoopEventType` int iota values, decoupling backend and TUI event systems
+7. **Border-box width accounting** -- Sidebar and status bar use `Width(m.width - 1)` / `Width(sb.width)` (total terminal cells) rather than inner content width to prevent lipgloss border-box overflow
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Top-level Elm model, `FocusPanel`, `AppConfig`, `RunTUI` | `internal/tui/app.go` |
+| All TUI message types, enums, `TickCmd`/`TickEvery` | `internal/tui/messages.go` |
+| Color palette, `Theme`, `DefaultTheme`, `StatusIndicator`, `ProgressBar` | `internal/tui/styles.go` |
+| `Layout`, `PanelDimensions`, dimension constants | `internal/tui/layout.go` |
+| `SidebarModel`, `WorkflowEntry`, `TaskProgressSection`, `RateLimitSection` | `internal/tui/sidebar.go` |
+| `AgentPanelModel`, `OutputBuffer`, `AgentView` | `internal/tui/agent_panel.go` |
+| `EventLogModel`, `EventEntry`, `EventCategory`, classifier functions | `internal/tui/event_log.go` |
+| `StatusBarModel`, `formatElapsed` | `internal/tui/status_bar.go` |
+| `KeyMap`, `DefaultKeyMap`, `NextFocus`/`PrevFocus`, `HelpOverlay`, `PauseRequestMsg`, `SkipRequestMsg` | `internal/tui/keybindings.go` |
+| `WizardModel`, `PipelineWizardConfig`, `WizardCompleteMsg`, `WizardCancelledMsg`, `buildHuhTheme` | `internal/tui/wizard.go` |
+| `EventBridge`, `mapLoopEventType`, Cmd-based and goroutine-safe bridge helpers | `internal/tui/bridge.go` |
+| `NewDashboardCmd`, `dashboardRun` | `internal/cli/dashboard.go` |
+| Root command with `NewDashboardCmd` registration | `internal/cli/root.go` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -403,36 +499,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 6: TUI Command Center (T-066 to T-078, T-089)
-
-- **Status:** Not Started
-- **Tasks:** 14 (13 Must Have, 1 Should Have)
-- **Estimated Effort:** 96-148 hours
-- **PRD Roadmap:** Weeks 11-13
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-089 | Stream-JSON Integration -- Wire into Adapters & Loop | Must Have | Medium (8-12hrs) | Completed |
-| T-066 | Bubble Tea Application Scaffold and Elm Architecture | Must Have | Medium (8-12hrs) | Not Started |
-| T-067 | TUI Message Types and Event System | Must Have | Medium (6-10hrs) | Not Started |
-| T-068 | Lipgloss Styles and Theme System | Must Have | Medium (6-8hrs) | Not Started |
-| T-069 | Split-Pane Layout Manager | Must Have | Medium (8-12hrs) | Not Started |
-| T-070 | Sidebar -- Workflow List with Status Indicators | Must Have | Medium (6-8hrs) | Not Started |
-| T-071 | Sidebar -- Task Progress Bars and Phase Progress | Must Have | Medium (6-8hrs) | Not Started |
-| T-072 | Sidebar -- Rate-Limit Status Display with Countdown | Must Have | Medium (6-8hrs) | Not Started |
-| T-073 | Agent Output Panel with Viewport and Tabbed View | Must Have | Large (16-24hrs) | Not Started |
-| T-074 | Event Log Panel for Workflow Milestones | Must Have | Medium (6-10hrs) | Not Started |
-| T-075 | Status Bar with Current State, Iteration, and Timer | Must Have | Small (4-6hrs) | Not Started |
-| T-076 | Keyboard Navigation and Help Overlay | Must Have | Medium (8-12hrs) | Not Started |
-| T-077 | Pipeline Wizard TUI Integration (huh) | Should Have | Medium (8-12hrs) | Not Started |
-| T-078 | Raven Dashboard Command and TUI Integration Testing | Must Have | Large (16-24hrs) | Not Started |
-
-**Deliverable:** `raven dashboard` launches a beautiful, responsive command center with live agent monitoring.
-
----
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
 
