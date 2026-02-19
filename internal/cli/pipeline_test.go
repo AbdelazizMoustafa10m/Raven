@@ -55,8 +55,8 @@ func TestNewPipelineCmd_Defaults(t *testing.T) {
 	cmd := newPipelineCmd()
 
 	tests := []struct {
-		flag     string
-		wantDef  string
+		flag    string
+		wantDef string
 	}{
 		{"review-concurrency", "2"},
 		{"max-review-cycles", "3"},
@@ -828,12 +828,12 @@ func TestBuildPipelineOpts_DefaultEmptyFlags(t *testing.T) {
 func TestBuildPipelineOpts_SkipFlagsPreserved(t *testing.T) {
 	// Each skip flag must be independently mapped.
 	tests := []struct {
-		name          string
-		flags         pipelineFlags
-		wantSkipImpl  bool
-		wantSkipRev   bool
-		wantSkipFix   bool
-		wantSkipPR    bool
+		name         string
+		flags        pipelineFlags
+		wantSkipImpl bool
+		wantSkipRev  bool
+		wantSkipFix  bool
+		wantSkipPR   bool
 	}{
 		{
 			name:         "only skip-implement",
@@ -856,12 +856,12 @@ func TestBuildPipelineOpts_SkipFlagsPreserved(t *testing.T) {
 			wantSkipPR: true,
 		},
 		{
-			name:          "all skip flags true",
-			flags:         pipelineFlags{SkipImplement: true, SkipReview: true, SkipFix: true, SkipPR: true},
-			wantSkipImpl:  true,
-			wantSkipRev:   true,
-			wantSkipFix:   true,
-			wantSkipPR:    true,
+			name:         "all skip flags true",
+			flags:        pipelineFlags{SkipImplement: true, SkipReview: true, SkipFix: true, SkipPR: true},
+			wantSkipImpl: true,
+			wantSkipRev:  true,
+			wantSkipFix:  true,
+			wantSkipPR:   true,
 		},
 	}
 	for _, tt := range tests {
@@ -987,18 +987,18 @@ func TestApplyWizardOpts_SkipFlagsAlwaysOverwritten(t *testing.T) {
 	// If wizard returns false, the flag must be false afterwards regardless of
 	// the previous CLI value.
 	wizardOpts := &pipeline.PipelineOpts{
-		SkipImplement: false,
-		SkipReview:    false,
-		SkipFix:       false,
-		SkipPR:        false,
+		SkipImplement:     false,
+		SkipReview:        false,
+		SkipFix:           false,
+		SkipPR:            false,
 		ReviewConcurrency: 2,
 		MaxReviewCycles:   2,
 	}
 	flags := pipelineFlags{
-		SkipImplement: true,
-		SkipReview:    true,
-		SkipFix:       true,
-		SkipPR:        true,
+		SkipImplement:     true,
+		SkipReview:        true,
+		SkipFix:           true,
+		SkipPR:            true,
 		ReviewConcurrency: 2,
 		MaxReviewCycles:   3,
 	}
@@ -1416,9 +1416,9 @@ func TestAllStagesSkipped_TableDriven(t *testing.T) {
 // RunE which requires a real project) by using cmd.ParseFlags.
 func TestNewPipelineCmd_FlagParsing(t *testing.T) {
 	tests := []struct {
-		name      string
-		args      []string
-		checkFn   func(t *testing.T, cmd *cobra.Command)
+		name    string
+		args    []string
+		checkFn func(t *testing.T, cmd *cobra.Command)
 	}{
 		{
 			name: "phase flag parsed",

@@ -84,9 +84,9 @@ func TestAddStepRecord_Multiple(t *testing.T) {
 
 func TestLastStep(t *testing.T) {
 	tests := []struct {
-		name    string
-		records []StepRecord
-		wantNil bool
+		name     string
+		records  []StepRecord
+		wantNil  bool
 		wantStep string
 	}{
 		{
@@ -1202,10 +1202,10 @@ func TestStateStore_List_StatusDerivation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		currentStep  string
-		history      []StepRecord
-		wantStatus   string
+		name        string
+		currentStep string
+		history     []StepRecord
+		wantStatus  string
 	}{
 		{
 			name:        "completed run",

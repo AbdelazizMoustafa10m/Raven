@@ -548,8 +548,12 @@ func TestClaudeAgent_BuildCommand_NoWorkDir(t *testing.T) {
 func writeMockScript(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0755)
+	// Write without executable bit first, then chmod — avoids ETXTBSY ("text
+	// file busy") on Linux when the kernel sees an executable file that is
+	// still being written/closed.
+	err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0600)
 	require.NoError(t, err, "writing mock script %s", name)
+	require.NoError(t, os.Chmod(path, 0755), "chmod mock script %s", name)
 	return path
 }
 
@@ -1351,7 +1355,7 @@ exit 0
 
 	// Collect events from the channel (it is not closed by the agent per spec).
 	var events []StreamEvent
-	drainCh:
+drainCh:
 	for {
 		select {
 		case ev := <-ch:

@@ -19,14 +19,14 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockGitClient struct {
-	diffFilesResult  []git.DiffEntry
-	diffFilesErr     error
-	numStatResult    []git.NumStatEntry
-	numStatErr       error
-	unifiedResult    string
-	unifiedErr       error
-	diffStatResult   *git.DiffStats
-	diffStatErr      error
+	diffFilesResult []git.DiffEntry
+	diffFilesErr    error
+	numStatResult   []git.NumStatEntry
+	numStatErr      error
+	unifiedResult   string
+	unifiedErr      error
+	diffStatResult  *git.DiffStats
+	diffStatErr     error
 }
 
 func (m *mockGitClient) DiffFiles(_ context.Context, _ string) ([]git.DiffEntry, error) {
@@ -243,9 +243,9 @@ func TestGenerate_ChangeTypeMappings(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		status     string
-		wantType   ChangeType
+		name     string
+		status   string
+		wantType ChangeType
 	}{
 		{"added", "A", ChangeAdded},
 		{"modified", "M", ChangeModified},
@@ -484,7 +484,7 @@ func TestGenerate_StatsAggregation(t *testing.T) {
 	assert.Equal(t, 2, s.FilesModified)
 	assert.Equal(t, 1, s.FilesDeleted)
 	assert.Equal(t, 1, s.FilesRenamed)
-	assert.Equal(t, 23, s.TotalLinesAdded)  // 10+5+0+0+8
+	assert.Equal(t, 23, s.TotalLinesAdded)   // 10+5+0+0+8
 	assert.Equal(t, 25, s.TotalLinesDeleted) // 0+3+20+0+2
 	assert.Equal(t, 1, s.HighRiskFiles)
 }

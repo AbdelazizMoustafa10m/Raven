@@ -15,8 +15,8 @@ import (
 
 	"github.com/AbdelazizMoustafa10m/Raven/internal/agent"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/config"
-	"github.com/AbdelazizMoustafa10m/Raven/internal/loop"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/logging"
+	"github.com/AbdelazizMoustafa10m/Raven/internal/loop"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/task"
 )
 

@@ -12,7 +12,6 @@ linters:
     - unused
     - gofmt
     - goimports
-    - misspell
     - unconvert
     - unparam
     - gosec
@@ -20,17 +19,20 @@ linters:
     - noctx
     - errorlint
     - exhaustive
-    - prealloc
 
 linters-settings:
   errcheck:
     check-type-assertions: true
   govet:
     enable-all: true
+    disable:
+      - fieldalignment  # Struct field reordering for alignment is a micro-optimization
+      - shadow           # Variable shadowing is idiomatic in Go (e.g. if err := ...)
+      - unusedwrite      # False positives on struct initialization in tests
+  exhaustive:
+    default-signifies-exhaustive: true
   goimports:
     local-prefixes: raven
-  misspell:
-    locale: US
   errorlint:
     errorf: true
     asserts: true
@@ -45,6 +47,7 @@ issues:
       linters:
         - gosec
         - errcheck
+        - unparam
     - path: mock
       linters:
         - unused

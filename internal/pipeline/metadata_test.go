@@ -18,7 +18,7 @@ func makePhases(n int) []task.Phase {
 	for i := range n {
 		phases[i] = task.Phase{
 			ID:        i + 1,
-			Name:      "Phase " + string(rune('A'+rune(i))),
+			Name:      "Phase " + string(rune('A'+i)),
 			StartTask: "T-001",
 			EndTask:   "T-010",
 		}
@@ -284,36 +284,36 @@ func TestPipelineMetadataFromMap_InvalidJSON(t *testing.T) {
 // zero-value for the absent fields.
 func TestPipelineMetadataFromMap_MissingKeys(t *testing.T) {
 	tests := []struct {
-		name          string
-		m             map[string]interface{}
+		name           string
+		m              map[string]interface{}
 		wantPipelineID string
-		wantStatus    string
-		wantPhases    int
+		wantStatus     string
+		wantPhases     int
 	}{
 		{
-			name:          "completely empty map",
-			m:             map[string]interface{}{},
+			name:           "completely empty map",
+			m:              map[string]interface{}{},
 			wantPipelineID: "",
-			wantStatus:    "",
-			wantPhases:    0,
+			wantStatus:     "",
+			wantPhases:     0,
 		},
 		{
-			name:          "only pipeline_id present",
-			m:             map[string]interface{}{"pipeline_id": "p-001"},
+			name:           "only pipeline_id present",
+			m:              map[string]interface{}{"pipeline_id": "p-001"},
 			wantPipelineID: "p-001",
-			wantStatus:    "",
-			wantPhases:    0,
+			wantStatus:     "",
+			wantPhases:     0,
 		},
 		{
 			name: "unknown keys are ignored",
 			m: map[string]interface{}{
-				"pipeline_id":    "p-002",
-				"unknown_field":  "should be ignored",
-				"another_extra":  42,
+				"pipeline_id":   "p-002",
+				"unknown_field": "should be ignored",
+				"another_extra": 42,
 			},
 			wantPipelineID: "p-002",
-			wantStatus:    "",
-			wantPhases:    0,
+			wantStatus:     "",
+			wantPhases:     0,
 		},
 		{
 			name: "status present but phases absent",
@@ -322,8 +322,8 @@ func TestPipelineMetadataFromMap_MissingKeys(t *testing.T) {
 				"status":      "running",
 			},
 			wantPipelineID: "p-003",
-			wantStatus:    "running",
-			wantPhases:    0,
+			wantStatus:     "running",
+			wantPhases:     0,
 		},
 	}
 
@@ -361,11 +361,11 @@ func TestToMetadataMap_PreservesPhaseFields(t *testing.T) {
 // This is the exact spec-required test name.
 func TestUpdatePhaseStatus(t *testing.T) {
 	tests := []struct {
-		name         string
-		nPhases      int
-		updateIndex  int
-		newStatus    string
-		wantChanged  int // index that should have changed
+		name        string
+		nPhases     int
+		updateIndex int
+		newStatus   string
+		wantChanged int // index that should have changed
 	}{
 		{
 			name:        "correct phase updated, others unchanged",
@@ -496,9 +496,9 @@ func TestUpdatePhaseStage_OutOfBounds(t *testing.T) {
 // four supported stage values and verifies only the targeted field changes.
 func TestUpdatePhaseStage_AllStages(t *testing.T) {
 	tests := []struct {
-		stage     string
-		value     string
-		checkFn   func(t *testing.T, ph PhaseMetadata)
+		stage   string
+		value   string
+		checkFn func(t *testing.T, ph PhaseMetadata)
 	}{
 		{
 			stage: "impl",

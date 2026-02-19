@@ -119,20 +119,20 @@ func TestNewPromptGenerator_DefaultTemplatePreParsed(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := PromptContext{
-		TaskID:    "T-001",
-		TaskTitle: "Test Task",
-		TaskSpec:  "Some spec content",
-		PhaseID:   1,
-		PhaseName: "Foundation",
-		PhaseRange: "T-001 to T-015",
-		ProjectName:     "TestProject",
-		ProjectLanguage: "Go",
+		TaskID:               "T-001",
+		TaskTitle:            "Test Task",
+		TaskSpec:             "Some spec content",
+		PhaseID:              1,
+		PhaseName:            "Foundation",
+		PhaseRange:           "T-001 to T-015",
+		ProjectName:          "TestProject",
+		ProjectLanguage:      "Go",
 		VerificationCommands: []string{"go build ./..."},
 		VerificationString:   "go build ./...",
-		CompletedSummary: "None",
-		RemainingSummary: "T-001",
-		AgentName: "claude",
-		Model:     "claude-opus-4-6",
+		CompletedSummary:     "None",
+		RemainingSummary:     "T-001",
+		AgentName:            "claude",
+		Model:                "claude-opus-4-6",
 	}
 
 	result, err := pg.Generate("", ctx)
@@ -690,10 +690,10 @@ func TestGenerate_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		ctx           PromptContext
-		wantContains  []string
-		wantAbsent    []string
+		name         string
+		ctx          PromptContext
+		wantContains []string
+		wantAbsent   []string
 	}{
 		{
 			name: "basic task renders all sections",
@@ -838,11 +838,11 @@ func TestGenerateFromString_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		tmplStr     string
-		ctx         PromptContext
-		wantResult  string
-		wantErrStr  string
+		name       string
+		tmplStr    string
+		ctx        PromptContext
+		wantResult string
+		wantErrStr string
 	}{
 		{
 			name:       "simple field substitution",
@@ -851,15 +851,15 @@ func TestGenerateFromString_TableDriven(t *testing.T) {
 			wantResult: "Task: T-001",
 		},
 		{
-			name:    "range over slice",
-			tmplStr: "[[range .CompletedTasks]][[.]] [[end]]",
-			ctx:     PromptContext{CompletedTasks: []string{"T-001", "T-002"}},
+			name:       "range over slice",
+			tmplStr:    "[[range .CompletedTasks]][[.]] [[end]]",
+			ctx:        PromptContext{CompletedTasks: []string{"T-001", "T-002"}},
 			wantResult: "T-001 T-002 ",
 		},
 		{
-			name:    "conditional with if",
-			tmplStr: `[[if .AgentName]]Agent: [[.AgentName]][[else]]No agent[[end]]`,
-			ctx:     PromptContext{AgentName: "claude"},
+			name:       "conditional with if",
+			tmplStr:    `[[if .AgentName]]Agent: [[.AgentName]][[else]]No agent[[end]]`,
+			ctx:        PromptContext{AgentName: "claude"},
 			wantResult: "Agent: claude",
 		},
 		{

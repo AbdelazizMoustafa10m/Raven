@@ -140,7 +140,7 @@ var (
 	styleSection   = lipgloss.NewStyle().Bold(true)
 	styleErrorLbl  = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)  // red
 	styleWarnLbl   = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // yellow
-	styleSuccess   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))             // green
+	styleSuccess   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))            // green
 )
 
 // ---- printResolvedConfig ----------------------------------------------------

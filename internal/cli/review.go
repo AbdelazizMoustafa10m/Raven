@@ -258,7 +258,7 @@ func runReview(cmd *cobra.Command, flags reviewFlags) error {
 
 	// Step 17: Write report to file or stdout.
 	if flags.Output != "" {
-		if writeErr := os.WriteFile(flags.Output, []byte(report), 0644); writeErr != nil {
+		if writeErr := os.WriteFile(flags.Output, []byte(report), 0o600); writeErr != nil {
 			return fmt.Errorf("writing report to %q: %w", flags.Output, writeErr)
 		}
 		logger.Info("report written", "path", flags.Output)

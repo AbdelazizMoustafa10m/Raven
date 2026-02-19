@@ -460,11 +460,11 @@ func TestValidateDefinition_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		def          *WorkflowDefinition
-		registry     *Registry
-		wantValid    bool
-		wantErrCodes []string
+		name          string
+		def           *WorkflowDefinition
+		registry      *Registry
+		wantValid     bool
+		wantErrCodes  []string
 		wantWarnCodes []string
 	}{
 		{
@@ -485,7 +485,7 @@ func TestValidateDefinition_TableDriven(t *testing.T) {
 			wantValid: true,
 		},
 		{
-			name:         "missing initial step",
+			name: "missing initial step",
 			def: &WorkflowDefinition{
 				Name:        "w",
 				InitialStep: "ghost",
@@ -497,7 +497,7 @@ func TestValidateDefinition_TableDriven(t *testing.T) {
 			wantErrCodes: []string{IssueMissingInitial},
 		},
 		{
-			name:         "invalid transition target",
+			name: "invalid transition target",
 			def: &WorkflowDefinition{
 				Name:        "w",
 				InitialStep: "a",
@@ -523,7 +523,7 @@ func TestValidateDefinition_TableDriven(t *testing.T) {
 			wantValid: true,
 		},
 		{
-			name:          "unreachable step produces warning",
+			name: "unreachable step produces warning",
 			def: &WorkflowDefinition{
 				Name:        "w",
 				InitialStep: "a",
@@ -536,21 +536,21 @@ func TestValidateDefinition_TableDriven(t *testing.T) {
 			wantWarnCodes: []string{IssueUnreachableStep},
 		},
 		{
-			name: "three-step linear chain",
-			def:  simpleWorkflow("build", "test", "deploy"),
+			name:      "three-step linear chain",
+			def:       simpleWorkflow("build", "test", "deploy"),
 			wantValid: true,
 		},
 		{
-			name: "handler missing with registry",
-			def:  simpleWorkflow("a", "b"),
-			registry: registryWith("a"),
+			name:         "handler missing with registry",
+			def:          simpleWorkflow("a", "b"),
+			registry:     registryWith("a"),
 			wantValid:    false,
 			wantErrCodes: []string{IssueMissingHandler},
 		},
 		{
-			name: "all handlers present",
-			def:  simpleWorkflow("a", "b"),
-			registry: registryWith("a", "b"),
+			name:      "all handlers present",
+			def:       simpleWorkflow("a", "b"),
+			registry:  registryWith("a", "b"),
 			wantValid: true,
 		},
 	}

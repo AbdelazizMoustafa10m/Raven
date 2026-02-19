@@ -3,6 +3,7 @@ package review
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -352,7 +353,8 @@ func (pc *PRCreator) runBin(ctx context.Context, bin string, args ...string) (in
 		return 0, stdoutBuf.String(), stderrBuf.String(), nil
 	}
 
-	if exitErr, ok := runErr.(*exec.ExitError); ok {
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
 		code := exitErr.ExitCode()
 		stdout := stdoutBuf.String()
 		stderr := strings.TrimSpace(stderrBuf.String())

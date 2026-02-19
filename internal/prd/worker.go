@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -219,7 +220,8 @@ func (s *ScatterOrchestrator) Scatter(ctx context.Context, opts ScatterOpts) (*S
 				// runWithRetry already emitted worker_failed) and a truly fatal
 				// error (context cancelled, rate-limit exhausted, etc.).
 				failure := ScatterFailure{EpicID: epic.ID, Err: err}
-				if vf, ok := err.(*scatterValidationFailure); ok {
+				var vf *scatterValidationFailure
+				if errors.As(err, &vf) {
 					failure.Errors = vf.errs
 					// worker_failed was already emitted inside runWithRetry.
 				} else {

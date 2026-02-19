@@ -181,6 +181,7 @@ func (tp TaskProgressSection) Update(msg tea.Msg) TaskProgressSection {
 			if tp.completedTasks < tp.totalTasks {
 				tp.completedTasks++
 			}
+		default:
 		}
 	}
 
@@ -704,6 +705,7 @@ func (m SidebarModel) handleKeyMsg(msg tea.KeyMsg) SidebarModel {
 		m.selectedIdx = clampIdx(m.selectedIdx+1, n)
 	case tea.KeyUp:
 		m.selectedIdx = clampIdx(m.selectedIdx-1, n)
+	default:
 	}
 
 	m.scrollOffset = adjustScroll(m.scrollOffset, m.selectedIdx, m.listHeight())
@@ -744,11 +746,12 @@ func adjustScroll(offset, selected, visible int) int {
 // the sidebar, accounting for the section header and separators.
 //
 // Layout within View():
-//   row 0  : "WORKFLOWS" header
-//   row 1  : (blank line after header produced by MarginBottom on SidebarTitle)
-//   rows 2…: workflow entries (or "No workflows" placeholder)
-//   …
-//   remaining rows: future section placeholders + padding
+//
+//	row 0  : "WORKFLOWS" header
+//	row 1  : (blank line after header produced by MarginBottom on SidebarTitle)
+//	rows 2…: workflow entries (or "No workflows" placeholder)
+//	…
+//	remaining rows: future section placeholders + padding
 //
 // We reserve 2 rows for the header block (header text + its margin), then
 // leave the rest for entries.

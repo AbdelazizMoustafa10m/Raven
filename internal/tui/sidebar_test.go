@@ -646,11 +646,11 @@ func TestTaskProgressSection_SetPhase(t *testing.T) {
 func TestTaskProgressSection_Update_TaskProgressMsg(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name           string
-		completed      int
-		total          int
-		wantCompleted  int
-		wantTotal      int
+		name          string
+		completed     int
+		total         int
+		wantCompleted int
+		wantTotal     int
 	}{
 		{name: "normal progress", completed: 12, total: 30, wantCompleted: 12, wantTotal: 30},
 		{name: "completed equals total", completed: 30, total: 30, wantCompleted: 30, wantTotal: 30},
@@ -2069,9 +2069,9 @@ func TestRateLimitSection_Tick_ValueSemantics_OriginalUnchanged(t *testing.T) {
 func TestRateLimitSection_HasActiveLimit_TableDriven(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		setupFn     func() RateLimitSection
-		wantActive  bool
+		name       string
+		setupFn    func() RateLimitSection
+		wantActive bool
 	}{
 		{
 			name:       "empty section",

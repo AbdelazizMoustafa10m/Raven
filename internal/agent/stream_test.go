@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -277,8 +278,8 @@ func TestStreamDecoder_Decode_ContextCancellation(t *testing.T) {
 	// Channel should be closed.
 	_, ok := <-ch
 	if ok {
-		// Got the system event; next read should indicate closed.
-		_, ok = <-ch
+		// Got the system event; drain one more to verify channel behavior.
+		<-ch
 		// Channel may or may not have more; eventually it closes.
 	}
 	// We mainly verify Decode returns and doesn't hang.
@@ -605,7 +606,7 @@ func TestStreamDecoder_GoldenFullSession(t *testing.T) {
 	var events []StreamEvent
 	for {
 		event, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
@@ -674,7 +675,7 @@ func TestStreamDecoder_GoldenErrorSession(t *testing.T) {
 	var events []StreamEvent
 	for {
 		event, err := dec.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

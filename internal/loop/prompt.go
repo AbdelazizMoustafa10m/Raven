@@ -256,7 +256,14 @@ func BuildContext(
 
 	remainingIDs, err := selector.RemainingTaskIDs(phase.ID)
 	if err != nil {
-		return nil, fmt.Errorf("building prompt context: listing remaining tasks: %w", err)
+		// When no phases are configured (e.g., single-task mode without
+		// phases.conf), a synthetic phase with ID 0 is used. The selector
+		// won't find it, so we fall back to an empty remaining list.
+		if phase.ID == 0 {
+			remainingIDs = nil
+		} else {
+			return nil, fmt.Errorf("building prompt context: listing remaining tasks: %w", err)
+		}
 	}
 
 	// Build VerificationString from the slice (no trailing " && ").

@@ -470,15 +470,14 @@ func applySkipFlags(def *workflow.WorkflowDefinition, opts PipelineOpts) *workfl
 		Steps:       steps,
 	}
 
-	// removeStep removes the step with the given name and returns true when found.
-	removeStep := func(name string) bool {
+	// removeStep removes the step with the given name.
+	removeStep := func(name string) {
 		for i, s := range modified.Steps {
 			if s.Name == name {
 				modified.Steps = append(modified.Steps[:i], modified.Steps[i+1:]...)
-				return true
+				return
 			}
 		}
-		return false
 	}
 
 	// rewireTransitions replaces every transition that targets oldTarget with

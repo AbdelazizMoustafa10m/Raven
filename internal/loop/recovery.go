@@ -66,7 +66,9 @@ type RateLimitWaiter struct {
 	coordinator *agent.RateLimitCoordinator
 	output      io.Writer
 	events      chan<- RecoveryEvent
-	logger      interface{ Info(msg string, kv ...interface{}) }
+	logger      interface {
+		Info(msg string, kv ...interface{})
+	}
 }
 
 // NewRateLimitWaiter creates a RateLimitWaiter. output may be nil to suppress
@@ -75,7 +77,9 @@ func NewRateLimitWaiter(
 	coordinator *agent.RateLimitCoordinator,
 	output io.Writer,
 	events chan<- RecoveryEvent,
-	logger interface{ Info(msg string, kv ...interface{}) },
+	logger interface {
+		Info(msg string, kv ...interface{})
+	},
 ) *RateLimitWaiter {
 	return &RateLimitWaiter{
 		coordinator: coordinator,
@@ -290,13 +294,17 @@ func (dtr *DirtyTreeRecovery) EnsureCleanTree(ctx context.Context, taskID string
 type AgentErrorRecovery struct {
 	maxConsecutiveErrors int
 	consecutiveErrors    int
-	logger               interface{ Warn(msg string, kv ...interface{}) }
+	logger               interface {
+		Warn(msg string, kv ...interface{})
+	}
 }
 
 // NewAgentErrorRecovery creates an AgentErrorRecovery. Set
 // maxConsecutiveErrors to 0 or negative to disable the limit (the loop never
 // aborts due to consecutive errors). logger may be nil.
-func NewAgentErrorRecovery(maxConsecutiveErrors int, logger interface{ Warn(msg string, kv ...interface{}) }) *AgentErrorRecovery {
+func NewAgentErrorRecovery(maxConsecutiveErrors int, logger interface {
+	Warn(msg string, kv ...interface{})
+}) *AgentErrorRecovery {
 	return &AgentErrorRecovery{
 		maxConsecutiveErrors: maxConsecutiveErrors,
 		logger:               logger,

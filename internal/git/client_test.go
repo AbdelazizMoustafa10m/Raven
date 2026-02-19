@@ -595,17 +595,13 @@ func TestDiffFiles_ModifiedAndDeleted(t *testing.T) {
 	c := newTestRepo(t)
 	ctx := context.Background()
 
-	// Record base SHA.
-	base, err := c.HeadCommit(ctx)
-	require.NoError(t, err)
-
 	// Add another file so we can delete it.
 	writeFile(t, c.WorkDir, "todelete.txt", "bye\n")
 	mustRun(t, c.WorkDir, "git", "add", ".")
 	mustRun(t, c.WorkDir, "git", "commit", "-m", "Add todelete")
 
-	// Update base to point at the commit that has todelete.txt.
-	base, err = c.HeadCommit(ctx)
+	// Record base SHA at the commit that has todelete.txt.
+	base, err := c.HeadCommit(ctx)
 	require.NoError(t, err)
 
 	// Modify README and delete todelete.txt.

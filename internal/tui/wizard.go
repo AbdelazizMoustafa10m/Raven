@@ -90,12 +90,12 @@ type WizardModel struct {
 
 	// Intermediate string values used by huh.Input for numeric fields.
 	// Parsed into config when the form completes.
-	rawPhaseID            string
-	rawFromPhase          string
-	rawToPhase            string
-	rawReviewConcurrency  string
-	rawMaxReviewCycles    string
-	rawMaxIterations      string
+	rawPhaseID           string
+	rawFromPhase         string
+	rawToPhase           string
+	rawReviewConcurrency string
+	rawMaxReviewCycles   string
+	rawMaxIterations     string
 }
 
 // NewWizardModel creates a WizardModel with sensible defaults. The wizard
@@ -181,6 +181,8 @@ func (w WizardModel) Update(msg tea.Msg) (WizardModel, tea.Cmd) {
 	case huh.StateAborted:
 		w.active = false
 		return w, func() tea.Msg { return WizardCancelledMsg{} }
+
+	default:
 	}
 
 	return w, cmd

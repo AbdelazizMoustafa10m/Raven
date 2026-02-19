@@ -409,9 +409,9 @@ func TestRegistry_Get_TableDriven(t *testing.T) {
 	r.Register(newStub("known"))
 
 	tests := []struct {
-		name        string
-		query       string
-		wantErr     bool
+		name         string
+		query        string
+		wantErr      bool
 		wantSentinel bool
 	}{
 		{
@@ -556,10 +556,10 @@ func TestRegistry_Register_PanicCases(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		setupFn   func(r *Registry)
+		name       string
+		setupFn    func(r *Registry)
 		registerFn func(r *Registry)
-		wantPanic bool
+		wantPanic  bool
 	}{
 		{
 			name:       "nil handler panics",

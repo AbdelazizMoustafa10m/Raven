@@ -237,6 +237,7 @@ func (c *ClaudeAgent) buildCommand(ctx context.Context, opts RunOpts) *exec.Cmd 
 
 	args := c.buildArgs(opts, false /* dryRun */)
 	cmd := exec.CommandContext(ctx, command, args...)
+	setProcGroup(cmd)
 
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir
@@ -347,4 +348,3 @@ func parseResetDuration(amount string, unit string) time.Duration {
 		return 0
 	}
 }
-

@@ -276,6 +276,7 @@ func (c *CodexAgent) buildCommand(ctx context.Context, opts RunOpts) *exec.Cmd {
 	}
 
 	cmd := exec.CommandContext(ctx, command, args...)
+	setProcGroup(cmd)
 
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir

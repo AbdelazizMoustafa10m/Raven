@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -523,7 +524,8 @@ func (g *GitClient) runSilent(ctx context.Context, args ...string) (int, string,
 
 	exitCode := 0
 	if runErr != nil {
-		if exitErr, ok := runErr.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
 			exitCode = exitErr.ExitCode()
 			// Non-zero exit is not an exec error — return it as a wrapped error
 			// so callers that need it can detect the exit code.

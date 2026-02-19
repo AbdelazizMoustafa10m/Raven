@@ -242,7 +242,7 @@ func (e *Emitter) writeFile(path string, content []byte) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, content, 0644); err != nil {
+	if err := os.WriteFile(tmp, content, 0o600); err != nil {
 		return fmt.Errorf("writing temporary file %s: %w", tmp, err)
 	}
 

@@ -44,7 +44,7 @@ func (h *recordingHandler) Execute(_ context.Context, state *WorkflowState) (str
 }
 
 func (h *recordingHandler) DryRun(_ *WorkflowState) string { return h.dryRunMsg }
-func (h *recordingHandler) Name() string                    { return h.name }
+func (h *recordingHandler) Name() string                   { return h.name }
 
 // callCount returns the number of times Execute was called (safe for concurrent use).
 func (h *recordingHandler) callCount() int {
@@ -69,7 +69,7 @@ func (p *panicHandler) Execute(_ context.Context, _ *WorkflowState) (string, err
 	panic("deliberate panic from " + p.name)
 }
 func (p *panicHandler) DryRun(_ *WorkflowState) string { return "dry-run: " + p.name }
-func (p *panicHandler) Name() string                    { return p.name }
+func (p *panicHandler) Name() string                   { return p.name }
 
 // blockingHandler blocks until the context is cancelled.
 type blockingHandler struct{ name string }
@@ -79,7 +79,7 @@ func (b *blockingHandler) Execute(ctx context.Context, _ *WorkflowState) (string
 	return "", ctx.Err()
 }
 func (b *blockingHandler) DryRun(_ *WorkflowState) string { return "dry-run: " + b.name }
-func (b *blockingHandler) Name() string                    { return b.name }
+func (b *blockingHandler) Name() string                   { return b.name }
 
 // metadataHandler reads and writes a key in WorkflowState.Metadata.
 // It stores the counter value it observed under "seen-<name>" so downstream
@@ -102,7 +102,7 @@ func (m *metadataHandler) Execute(_ context.Context, state *WorkflowState) (stri
 	return EventSuccess, nil
 }
 func (m *metadataHandler) DryRun(_ *WorkflowState) string { return "dry-run: " + m.name }
-func (m *metadataHandler) Name() string                    { return m.name }
+func (m *metadataHandler) Name() string                   { return m.name }
 
 // conditionalHandler returns different events based on a Metadata key value.
 type conditionalHandler struct {
@@ -120,7 +120,7 @@ func (c *conditionalHandler) Execute(_ context.Context, state *WorkflowState) (s
 	return c.falseEvent, nil
 }
 func (c *conditionalHandler) DryRun(_ *WorkflowState) string { return "dry-run: " + c.name }
-func (c *conditionalHandler) Name() string                    { return c.name }
+func (c *conditionalHandler) Name() string                   { return c.name }
 
 // dryRunTrackingHandler tracks whether DryRun or Execute was called.
 type dryRunTrackingHandler struct {
@@ -920,10 +920,10 @@ func TestEngine_Run_MissingTransition(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
+		name          string
 		returnedEvent string
-		transitions  map[string]string
-		wantErrMsg   string
+		transitions   map[string]string
+		wantErrMsg    string
 	}{
 		{
 			name:          "blocked event with no transition",
