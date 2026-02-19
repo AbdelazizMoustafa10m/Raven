@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 90 |
+| Completed | 91 |
 | In Progress | 0 |
-| Not Started | 1 |
+| Not Started | 0 |
 
 ---
 
@@ -704,11 +704,47 @@ _None currently_
 
 ---
 
+### T-087: Final Binary Verification and Release Checklist
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `scripts/release-verify.sh` -- automated release verification script that runs all pre-release checks and produces a structured PASS/FAIL report; accepts an optional version argument and a `--quick` flag to skip E2E and GoReleaser checks for faster developer runs
+  - `docs/RELEASE_CHECKLIST.md` -- manual release checklist with pre-release verification (automated, binary, functional, documentation, performance), step-by-step release process (8 steps), and post-release tasks including `go install` verification and announcement guidance; includes a sign-off table
+  - `Makefile` `release-verify` target -- invokes `./scripts/release-verify.sh $(VERSION)` for convenient script execution
+  - `Makefile` `release` target -- creates an annotated git tag for `$(VERSION)` with an interactive yes/no confirmation prompt, then pushes the tag to origin; GitHub Actions release workflow fires automatically
+- **Checks implemented in `release-verify.sh`:**
+  - Build: `go build ./cmd/raven/`, `go vet ./...`, `go mod tidy` with no git diff
+  - Tests: `go test -race ./...`, `go test -v ./tests/e2e/ -timeout 10m` (skipped with `--quick`)
+  - Binary size: cross-compile all 5 platforms (darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64) with `-s -w`, measure size, enforce < 25 MiB; cleanup temp binaries
+  - GoReleaser: `goreleaser check` and `goreleaser build --snapshot --clean`; skipped with warning if goreleaser not installed or with `--quick`
+  - Documentation: `README.md`, `LICENSE`, `CONTRIBUTING.md` existence; `go run ./scripts/gen-manpages` and `go run ./scripts/gen-completions` into temp dirs
+  - Version injection: build with `-X MODULE/internal/buildinfo.Version=VERSION` ldflags, run `raven version`, grep for version string
+  - CI: `.github/workflows/ci.yml` and `.github/workflows/release.yml` existence
+- **Files created/modified:**
+  - `scripts/release-verify.sh` -- automated release verification script (executable)
+  - `docs/RELEASE_CHECKLIST.md` -- manual release checklist with sign-off table
+  - `Makefile` -- added `release-verify` and `release` targets, updated `.PHONY`
+  - `docs/tasks/PROGRESS.md` -- updated T-087 status to Completed
+- **Key decisions:**
+  - Portable `file_size()` shell function tries GNU `stat -c%s` first, falls back to BSD `stat -f%z` -- handles both macOS and Linux without a separate OS detection block
+  - `((PASS++)) || true` and `((FAIL++)) || true` guard against bash `set -e` exiting when the pre-increment value is 0 (arithmetic returns non-zero for result=0)
+  - Used a plain bash indexed array for `PLATFORMS` instead of `declare -A` associative array to maintain compatibility with bash 3.x (default on macOS) even though the task spec says bash 4+ is required
+  - GoReleaser absence is a warning (skip), not a failure -- allows developers without goreleaser installed to run the script locally
+  - `SKIP:` entries accumulate in `RESULTS[]` but do not affect `PASS` or `FAIL` counters
+- **Verification:** `bash -n scripts/release-verify.sh` (syntax check) ✓  `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./...` ✓
+
+---
+
 ## Not Started Tasks
+
+_None -- all tasks completed._
+
+---
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
 
-- **Status:** Not Started
+- **Status:** Completed
 - **Tasks:** 9 (8 Must Have, 1 Should Have)
 - **Estimated Effort:** 64-96 hours
 - **PRD Roadmap:** Week 14
@@ -725,7 +761,7 @@ _None currently_
 | T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Completed |
 | T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Completed |
 | T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Completed |
-| T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Not Started |
+| T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Completed |
 
 **Deliverable:** Published v2.0.0 with signed binaries for all platforms.
 
