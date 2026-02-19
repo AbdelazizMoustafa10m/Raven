@@ -86,16 +86,30 @@ func Execute() int {
 }
 
 // NewRootCmd returns a new instance of the root command for use in external
-// tools such as the shell completion generator. It initialises a fresh cobra
-// command tree so that it can be used independently of the global rootCmd.
+// tools such as the shell completion generator and man page generator. It
+// initialises a fresh cobra command tree with the same persistent flags and
+// PersistentPreRunE as the global rootCmd so that generated docs and
+// completions include all flags.
 func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           rootCmd.Use,
-		Short:         rootCmd.Short,
-		Long:          rootCmd.Long,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               rootCmd.Use,
+		Short:             rootCmd.Short,
+		Long:              rootCmd.Long,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		PersistentPreRunE: rootCmd.PersistentPreRunE,
 	}
+
+	// Register the same persistent flags that the global rootCmd carries.
+	// These use local variables (not the package-level flags) so the
+	// exported command is safe for concurrent use by generators.
+	cmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose (debug) output (env: RAVEN_VERBOSE)")
+	cmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress all output except errors (env: RAVEN_QUIET)")
+	cmd.PersistentFlags().String("config", "", "Path to raven.toml config file")
+	cmd.PersistentFlags().String("dir", "", "Override working directory")
+	cmd.PersistentFlags().Bool("dry-run", false, "Show planned actions without executing")
+	cmd.PersistentFlags().Bool("no-color", false, "Disable colored output (env: RAVEN_NO_COLOR, NO_COLOR)")
+
 	// Attach all registered subcommands from the global tree.
 	for _, child := range rootCmd.Commands() {
 		cmd.AddCommand(child)

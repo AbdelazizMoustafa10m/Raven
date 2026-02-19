@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/AbdelazizMoustafa10m/Raven/internal/config"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/git"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/logging"
 	"github.com/AbdelazizMoustafa10m/Raven/internal/pipeline"
@@ -285,7 +286,7 @@ func runPipeline(cmd *cobra.Command, flags pipelineFlags) error {
 
 	// Step 10: Handle dry-run mode.
 	if opts.DryRun {
-		return runPipelineDryRun(cmd, opts, phases, cfg.Project.PhasesConf)
+		return runPipelineDryRun(cmd, opts, phases, cfg)
 	}
 
 	// Step 11: Construct subsystems.
@@ -299,7 +300,7 @@ func runPipeline(cmd *cobra.Command, flags pipelineFlags) error {
 	}
 
 	registry := workflow.NewRegistry()
-	workflow.RegisterBuiltinHandlers(registry)
+	workflow.RegisterBuiltinHandlers(registry, nil)
 
 	engine := workflow.NewEngine(
 		registry,
@@ -387,8 +388,9 @@ func runPipeline(cmd *cobra.Command, flags pipelineFlags) error {
 
 // runPipelineDryRun builds a PipelineDryRunInfo from the given options and
 // phases, formats it using DryRunFormatter, and prints it to stdout.
-func runPipelineDryRun(cmd *cobra.Command, opts pipeline.PipelineOpts, phases []task.Phase, phasesConf string) error {
+func runPipelineDryRun(cmd *cobra.Command, opts pipeline.PipelineOpts, phases []task.Phase, cfg *config.Config) error {
 	// If phases were not loaded yet (e.g. in all mode), try again.
+	phasesConf := cfg.Project.PhasesConf
 	if len(phases) == 0 && phasesConf != "" {
 		var err error
 		phases, err = task.LoadPhases(phasesConf)
@@ -418,13 +420,49 @@ func runPipelineDryRun(cmd *cobra.Command, opts pipeline.PipelineOpts, phases []
 		fixAgent = "claude"
 	}
 
+	// Resolve branch template from config if available.
+	branchTemplate := ""
+	if cfg.Project.BranchTemplate != "" {
+		branchTemplate = cfg.Project.BranchTemplate
+	}
+	baseBranchName := opts.BaseBranch
+	if baseBranchName == "" {
+		baseBranchName = "main"
+	}
+	branchMgr := pipeline.NewBranchManager(nil, branchTemplate, baseBranchName)
+	projectName := cfg.Project.Name
+
+	// Build the workflow definition to extract step-level detail.
+	baseDef := workflow.GetDefinition(workflow.WorkflowImplementReview)
+	registry := workflow.NewRegistry()
+	workflow.RegisterBuiltinHandlers(registry, nil)
+
 	phaseDryRunDetails := make([]workflow.PhaseDryRunDetail, len(filtered))
 	for i, ph := range filtered {
-		branchName := fmt.Sprintf("raven/phase-%d", ph.ID)
-		baseBranch := "main"
+		branchName := branchMgr.ResolveBranchName(ph.ID, ph.Name, projectName)
+		baseBranch := baseBranchName
 		if i > 0 {
-			baseBranch = fmt.Sprintf("raven/phase-%d", filtered[i-1].ID)
+			baseBranch = branchMgr.ResolveBranchName(filtered[i-1].ID, filtered[i-1].Name, projectName)
 		}
+
+		// Build step-level dry-run details from the workflow definition.
+		var stepDetails []workflow.StepDryRunDetail
+		if baseDef != nil {
+			modifiedDef := pipeline.ApplySkipFlags(baseDef, opts)
+			for _, sd := range modifiedDef.Steps {
+				desc := sd.Name
+				handler, handlerErr := registry.Get(sd.Name)
+				if handlerErr == nil {
+					desc = handler.DryRun(nil)
+				}
+				stepDetails = append(stepDetails, workflow.StepDryRunDetail{
+					StepName:    sd.Name,
+					Description: desc,
+					Transitions: sd.Transitions,
+				})
+			}
+		}
+
 		phaseDryRunDetails[i] = workflow.PhaseDryRunDetail{
 			PhaseID:     ph.ID,
 			PhaseName:   ph.Name,
@@ -434,6 +472,7 @@ func runPipelineDryRun(cmd *cobra.Command, opts pipeline.PipelineOpts, phases []
 			ImplAgent:   implAgent,
 			ReviewAgent: reviewAgent,
 			FixAgent:    fixAgent,
+			Steps:       stepDetails,
 		}
 	}
 
@@ -539,6 +578,7 @@ func buildPipelineOpts(flags pipelineFlags) pipeline.PipelineOpts {
 		SkipPR:            flags.SkipPR,
 		DryRun:            flags.DryRun,
 		Interactive:       flags.Interactive,
+		BaseBranch:        flags.Base,
 	}
 
 	// Normalise "all" to empty string (the orchestrator treats empty as "all").

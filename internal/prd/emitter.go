@@ -131,8 +131,9 @@ func (e *Emitter) Emit(opts EmitOpts) (*EmitResult, error) {
 		)
 	}
 
-	// Re-sequence GlobalIDs to close gaps from deduplication.
-	tasks, idMap := ResequenceIDs(opts.Tasks)
+	// Re-sequence GlobalIDs to close gaps from deduplication, starting from
+	// the configured StartID (defaults to 1 when zero or negative).
+	tasks, idMap := ResequenceIDs(opts.Tasks, opts.StartID)
 	if len(idMap) > 0 {
 		e.logger.Debug("re-sequenced task IDs", "remapped", len(idMap))
 	}
@@ -253,19 +254,25 @@ func (e *Emitter) writeFile(path string, content []byte) error {
 	return nil
 }
 
-// ResequenceIDs re-assigns sequential IDs (T-001, T-002, ...) to tasks, closing
-// any gaps left by deduplication. All Dependencies fields are updated to use
-// the new IDs. The original task ordering is preserved.
+// ResequenceIDs re-assigns sequential IDs starting from startID (T-{startID},
+// T-{startID+1}, ...) to tasks, closing any gaps left by deduplication. All
+// Dependencies fields are updated to use the new IDs. The original task
+// ordering is preserved. A startID of 0 or less is treated as 1.
 //
 // Returns the updated task slice and an IDMapping from old GlobalID to new GlobalID.
 // Only IDs that actually changed are included in the mapping.
-func ResequenceIDs(tasks []MergedTask) ([]MergedTask, IDMapping) {
+func ResequenceIDs(tasks []MergedTask, startID ...int) ([]MergedTask, IDMapping) {
 	if len(tasks) == 0 {
 		return nil, IDMapping{}
 	}
 
+	start := 1
+	if len(startID) > 0 && startID[0] > 0 {
+		start = startID[0]
+	}
+
 	format := "T-%03d"
-	if len(tasks) >= 1000 {
+	if start+len(tasks)-1 >= 1000 {
 		format = "T-%04d"
 	}
 
@@ -273,7 +280,7 @@ func ResequenceIDs(tasks []MergedTask) ([]MergedTask, IDMapping) {
 	mapping := make(IDMapping, len(tasks))
 	hasChanges := false
 	for i, task := range tasks {
-		newID := fmt.Sprintf(format, i+1)
+		newID := fmt.Sprintf(format, start+i)
 		if task.GlobalID != newID {
 			mapping[task.GlobalID] = newID
 			hasChanges = true
@@ -290,7 +297,7 @@ func ResequenceIDs(tasks []MergedTask) ([]MergedTask, IDMapping) {
 	// Apply new IDs and remap dependencies.
 	out := make([]MergedTask, len(tasks))
 	for i, task := range tasks {
-		newID := fmt.Sprintf(format, i+1)
+		newID := fmt.Sprintf(format, start+i)
 		task.GlobalID = newID
 
 		if len(task.Dependencies) > 0 {
@@ -526,14 +533,14 @@ func renderTaskFile(task MergedTask) ([]byte, error) {
 }
 
 // buildTaskState generates the content of task-state.conf.
-// Format: TASK_ID|STATUS|UPDATED_AT (one line per task).
+// Format: TASK_ID|STATUS|AGENT|TIMESTAMP|NOTES (one line per task, 5 columns).
 func (e *Emitter) buildTaskState(tasks []MergedTask) []byte {
 	var sb strings.Builder
 	sb.WriteString("# Raven Task State -- machine-readable source of truth\n")
-	sb.WriteString("# Format: TASK_ID|STATUS|UPDATED_AT (YYYY-MM-DD)\n")
+	sb.WriteString("# Format: TASK_ID|STATUS|AGENT|TIMESTAMP|NOTES\n")
 	sb.WriteString("# STATUS: completed | not_started | in_progress | blocked\n")
 	for _, task := range tasks {
-		fmt.Fprintf(&sb, "%s|not_started|\n", task.GlobalID)
+		fmt.Fprintf(&sb, "%s|not_started|||\n", task.GlobalID)
 	}
 	return []byte(sb.String())
 }

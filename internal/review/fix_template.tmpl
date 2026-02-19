@@ -1,5 +1,9 @@
 You are a code fix agent. Apply the following review findings to fix the codebase.
+[[ if .BaseBranch ]]
+## Context
 
+This branch is based on `[[ .BaseBranch ]]`. All changes should be consistent with the code on that branch.
+[[ end ]]
 ## Review Findings
 
 [[ range .Findings ]]
@@ -9,7 +13,19 @@ You are a code fix agent. Apply the following review findings to fix the codebas
 **Suggestion:** [[ .Suggestion ]]
 
 [[ end ]]
+[[ if .ReviewReport ]]
+## Full Review Report
 
+The following is the complete review report providing additional context about the findings:
+
+<details>
+<summary>Review Report</summary>
+
+[[ .ReviewReport ]]
+
+</details>
+
+[[ end ]]
 ## Changed Files (Diff)
 
 ```

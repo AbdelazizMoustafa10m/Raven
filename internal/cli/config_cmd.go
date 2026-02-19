@@ -110,10 +110,30 @@ func loadAndResolveConfig() (*config.ResolvedConfig, *toml.MetaData, error) {
 		}
 	}
 
-	resolved := config.Resolve(config.NewDefaults(), fileCfg, os.LookupEnv, nil)
+	overrides := buildCLIOverrides()
+	resolved := config.Resolve(config.NewDefaults(), fileCfg, os.LookupEnv, overrides)
 	resolved.Path = cfgPath
 
 	return resolved, meta, nil
+}
+
+// buildCLIOverrides constructs a CLIOverrides from the global persistent flags
+// registered on rootCmd. Only flags whose values differ from the zero default
+// are considered "set" (i.e., they will override file/env values).
+func buildCLIOverrides() *config.CLIOverrides {
+	overrides := &config.CLIOverrides{}
+
+	// Map the --verbose and --quiet persistent flags.
+	if flagVerbose {
+		v := true
+		overrides.Verbose = &v
+	}
+	if flagQuiet {
+		q := true
+		overrides.Quiet = &q
+	}
+
+	return overrides
 }
 
 // ---- Lipgloss styles --------------------------------------------------------

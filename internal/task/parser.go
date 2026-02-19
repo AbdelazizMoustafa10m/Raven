@@ -20,8 +20,8 @@ var utf8BOM = "\xef\xbb\xbf"
 
 // Pre-compiled regexes for parsing task spec markdown files.
 var (
-	// reTitleLine matches "# T-001: Some Title" at the start of a line.
-	reTitleLine = regexp.MustCompile(`^#\s+T-(\d{3}):\s*(.+)$`)
+	// reTitleLine matches "# T-001: Some Title" or "# T-001 - Some Title" at the start of a line.
+	reTitleLine = regexp.MustCompile(`^#\s+T-(\d{3})(?::\s*|\s+-\s+)(.+)$`)
 
 	// reMetaDeps matches "| Dependencies | T-001, T-003 |" in metadata table.
 	reMetaDeps = regexp.MustCompile(`(?i)\|\s*Dependencies\s*\|\s*([^|]+)\|`)
@@ -69,7 +69,7 @@ type ParsedTaskSpec struct {
 
 // ParseTaskSpec parses raw markdown content of a task spec file.
 // It returns a ParsedTaskSpec or an error if the content does not contain
-// a valid task spec heading ("# T-NNN: Title").
+// a valid task spec heading ("# T-NNN: Title" or "# T-NNN - Title").
 func ParseTaskSpec(content string) (*ParsedTaskSpec, error) {
 	// Strip UTF-8 BOM if present.
 	content = strings.TrimPrefix(content, utf8BOM)
@@ -124,7 +124,7 @@ func ParseTaskSpec(content string) (*ParsedTaskSpec, error) {
 	}
 
 	if !foundTitle {
-		return nil, fmt.Errorf("parsing task spec: no valid task heading found (expected '# T-NNN: Title')")
+		return nil, fmt.Errorf("parsing task spec: no valid task heading found (expected '# T-NNN: Title' or '# T-NNN - Title')")
 	}
 
 	return spec, nil

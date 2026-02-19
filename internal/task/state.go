@@ -267,8 +267,11 @@ func parseStateFile(f *os.File) ([]TaskState, error) {
 }
 
 // parseLine parses a single pipe-delimited state file line into a TaskState.
-// The format is: task_id|status|agent|timestamp|notes
-// The split is limited to 5 parts so that notes may contain pipe characters.
+// The canonical format is: task_id|status|agent|timestamp|notes (5 columns).
+// For backward compatibility, lines with fewer than 5 columns are accepted;
+// missing columns default to zero values. When the state file is next written
+// via writeAtomic, all entries are serialized in the full 5-column format by
+// formatLine, normalizing any incomplete rows that were read.
 func parseLine(line string) (*TaskState, error) {
 	parts := strings.SplitN(line, "|", 5)
 	if len(parts) < 1 || strings.TrimSpace(parts[0]) == "" {
@@ -309,8 +312,11 @@ func parseLine(line string) (*TaskState, error) {
 	return state, nil
 }
 
-// formatLine formats a TaskState as a pipe-delimited state file line.
+// formatLine formats a TaskState as a pipe-delimited state file line using
+// the canonical 5-column schema: task_id|status|agent|timestamp|notes.
 // Empty timestamp is rendered as an empty field; notes are kept verbatim.
+// This ensures that every line written by writeAtomic conforms to the full
+// 5-column format required by the task state specification (T-064).
 func formatLine(state TaskState) string {
 	ts := ""
 	if !state.Timestamp.IsZero() {

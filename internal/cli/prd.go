@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -297,12 +298,21 @@ func resolveDefaultAgentName(agents map[string]config.AgentConfig) string {
 	return "claude"
 }
 
-// validatePRDFile checks that the PRD file exists and is readable.
-func validatePRDFile(path string) error {
+// validatePRDFile checks that the PRD file exists, is readable, and resides
+// within the project boundary (no path traversal). The optional projectRoot
+// parameter overrides the default of os.Getwd() for the boundary check.
+func validatePRDFile(path string, projectRoot ...string) error {
 	if path == "" {
 		return fmt.Errorf("--file is required")
 	}
-	info, err := os.Stat(path)
+
+	// Resolve the absolute path for consistent comparisons.
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolving PRD file path %q: %w", path, err)
+	}
+
+	info, err := os.Stat(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("PRD file not found: %s", path)
@@ -312,8 +322,40 @@ func validatePRDFile(path string) error {
 	if info.IsDir() {
 		return fmt.Errorf("PRD path %q is a directory, not a file", path)
 	}
+
+	// Enforce project-boundary constraint: the resolved path must reside
+	// within the project root directory. This prevents path traversal
+	// attacks (e.g., --file ../../etc/passwd).
+	root := ""
+	if len(projectRoot) > 0 && projectRoot[0] != "" {
+		root = projectRoot[0]
+	} else {
+		root, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("determining project root: %w", err)
+		}
+	}
+
+	// Resolve symlinks on both paths to handle macOS /var -> /private/var
+	// and similar platform-specific symlink trees.
+	realAbsPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		realAbsPath = absPath // fallback to unresolved
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		realRoot = root // fallback to unresolved
+	}
+
+	// Add a trailing separator to realRoot to avoid false positives
+	// (e.g., /project-ext matching /project).
+	if !strings.HasPrefix(realAbsPath, realRoot+string(filepath.Separator)) && realAbsPath != realRoot {
+		return fmt.Errorf("PRD file path %q resolves to %q which is outside the project boundary %q",
+			path, realAbsPath, realRoot)
+	}
+
 	// Check readability by attempting to open.
-	f, err := os.Open(path)
+	f, err := os.Open(absPath)
 	if err != nil {
 		return fmt.Errorf("opening PRD file %q: %w", path, err)
 	}
@@ -385,11 +427,15 @@ func (p *prdPipeline) runConcurrent(ctx context.Context) error {
 		return fmt.Errorf("reading PRD content for scatter phase: %w", err)
 	}
 
+	// Create a rate-limit coordinator shared across all scatter workers.
+	rateLimiter := agent.NewRateLimitCoordinator(agent.DefaultBackoffConfig())
+
 	scatter := prd.NewScatterOrchestrator(
 		p.agent,
 		p.workDir,
 		prd.WithConcurrency(p.concurrency),
 		prd.WithScatterLogger(p.logger),
+		prd.WithRateLimiter(rateLimiter),
 	)
 
 	scatterResult, err := scatter.Scatter(ctx, prd.ScatterOpts{

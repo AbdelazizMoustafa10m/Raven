@@ -300,13 +300,15 @@ func runResumeMode(ctx context.Context, cmd *cobra.Command, store *workflow.Stat
 	return nil
 }
 
-// resolveDefinition looks up a workflow definition by name.
-// Until T-049 (built-in workflow definitions) is implemented, this always
-// returns ErrWorkflowNotFound with a descriptive message.
+// resolveDefinition looks up a workflow definition by name. It first checks
+// the built-in workflow definitions shipped with Raven (implement,
+// implement-review-pr, pipeline, prd-decompose). If the name does not match
+// any built-in, ErrWorkflowNotFound is returned.
 func resolveDefinition(workflowName string) (*workflow.WorkflowDefinition, error) {
-	// T-049 will register built-in definitions into a lookup table here.
-	// For now, return an informative error so resume --run fails gracefully
-	// while --list and --clean modes work without requiring definition resolution.
+	def := workflow.GetDefinition(workflowName)
+	if def != nil {
+		return def, nil
+	}
 	return nil, fmt.Errorf("workflow %q: %w", workflowName, ErrWorkflowNotFound)
 }
 

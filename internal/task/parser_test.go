@@ -137,9 +137,9 @@ func TestParseTaskSpec_HeadingFormats(t *testing.T) {
 			wantID:  "T-002",
 		},
 		{
-			name:    "dash separator not supported",
+			name:    "dash separator",
 			content: "# T-001 - Setup\n",
-			wantErr: true,
+			wantID:  "T-001",
 		},
 		{
 			name:    "missing colon entirely",

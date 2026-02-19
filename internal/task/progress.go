@@ -88,6 +88,10 @@ type TaskProgressData struct {
 }
 
 // ProgressGenerator creates PROGRESS.md content from task state and phase data.
+// It is designed to be called after each task state change (e.g., task
+// completion, task blocked) to keep PROGRESS.md in sync with task-state.conf.
+// The implementation loop runner (internal/loop) should hold a reference and
+// invoke WriteFile after handleCompletion updates task state.
 type ProgressGenerator struct {
 	specs   []*ParsedTaskSpec
 	specMap map[string]*ParsedTaskSpec

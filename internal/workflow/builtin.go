@@ -1,5 +1,10 @@
 package workflow
 
+import (
+	"github.com/AbdelazizMoustafa10m/Raven/internal/loop"
+	"github.com/AbdelazizMoustafa10m/Raven/internal/review"
+)
+
 // Builtin workflow name constants identify the four workflow definitions
 // shipped with Raven. Use these constants instead of raw string literals
 // wherever a workflow name is required to avoid typos and enable grep-ability.
@@ -183,18 +188,62 @@ func GetDefinition(name string) *WorkflowDefinition {
 	return builtinDefs[name]
 }
 
-// RegisterBuiltinHandlers registers all built-in step handlers into registry.
+// HandlerDeps holds the runtime dependencies that built-in step handlers need
+// to perform real work. Fields may be nil when the handlers are registered
+// solely for validation or dry-run purposes; in that case Execute returns
+// EventFailure with a descriptive error.
+type HandlerDeps struct {
+	// Runner is the implementation loop runner used by ImplementHandler and
+	// RunPhaseWorkflowHandler.
+	Runner *loop.Runner
+
+	// RunConfig provides default values for the ImplementHandler when values
+	// are not present in the workflow state metadata.
+	RunConfig loop.RunConfig
+
+	// ReviewOrchestrator is the multi-agent review coordinator used by
+	// ReviewHandler.
+	ReviewOrchestrator *review.ReviewOrchestrator
+
+	// FixEngine is the review fix engine used by FixHandler.
+	FixEngine *review.FixEngine
+
+	// PRCreator is the GitHub PR creation helper used by PRHandler.
+	PRCreator *review.PRCreator
+}
+
+// RegisterBuiltinHandlers registers all built-in step handlers into registry,
+// injecting the runtime dependencies from deps. deps may be nil to register
+// handlers without runtime dependencies (useful for validation or dry-run);
+// in that case handlers that require dependencies return EventFailure when
+// Execute is called.
+//
 // It must be called explicitly before constructing an Engine that will execute
 // any of the built-in workflows. The function panics (via Registry.Register) if
 // a handler name has already been registered in registry.
-func RegisterBuiltinHandlers(registry *Registry) {
-	registry.Register(&ImplementHandler{})
-	registry.Register(&ReviewHandler{})
+func RegisterBuiltinHandlers(registry *Registry, deps *HandlerDeps) {
+	if deps == nil {
+		deps = &HandlerDeps{}
+	}
+
+	registry.Register(&ImplementHandler{
+		Runner:    deps.Runner,
+		RunConfig: deps.RunConfig,
+	})
+	registry.Register(&ReviewHandler{
+		Orchestrator: deps.ReviewOrchestrator,
+	})
 	registry.Register(&CheckReviewHandler{})
-	registry.Register(&FixHandler{})
-	registry.Register(&PRHandler{})
+	registry.Register(&FixHandler{
+		Engine: deps.FixEngine,
+	})
+	registry.Register(&PRHandler{
+		Creator: deps.PRCreator,
+	})
 	registry.Register(&InitPhaseHandler{})
-	registry.Register(&RunPhaseWorkflowHandler{})
+	registry.Register(&RunPhaseWorkflowHandler{
+		Runner: deps.Runner,
+	})
 	registry.Register(&AdvancePhaseHandler{})
 	registry.Register(&ShredHandler{})
 	registry.Register(&ScatterHandler{})

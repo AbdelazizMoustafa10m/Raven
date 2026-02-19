@@ -87,6 +87,10 @@ const (
 // defaultMaxIterations is the default maximum number of loop iterations.
 const defaultMaxIterations = 50
 
+// defaultMaxLimitWaits is the default maximum number of rate-limit waits
+// allowed per run before aborting.
+const defaultMaxLimitWaits = 5
+
 // defaultSleepBetween is the default sleep duration between iterations.
 const defaultSleepBetween = 5 * time.Second
 
@@ -99,15 +103,18 @@ const staleTaskThreshold = 3
 // task state, and repeats until the phase is complete, limits are reached, or
 // the context is cancelled.
 type Runner struct {
-	selector     *task.TaskSelector
-	promptGen    *PromptGenerator
-	agent        agent.Agent
-	stateManager *task.StateManager
-	rateLimiter  *agent.RateLimitCoordinator
-	config       *config.Config
-	phases       []task.Phase
-	events       chan<- LoopEvent
-	logger       interface {
+	selector       *task.TaskSelector
+	promptGen      *PromptGenerator
+	agent          agent.Agent
+	stateManager   *task.StateManager
+	rateLimiter    *agent.RateLimitCoordinator
+	config         *config.Config
+	phases         []task.Phase
+	events         chan<- LoopEvent
+	progressGen    *task.ProgressGenerator
+	progressPath   string
+	rateLimitWaits int // tracks rate-limit wait count within a single Run/RunSingleTask call
+	logger         interface {
 		Info(msg string, kv ...interface{})
 		Debug(msg string, kv ...interface{})
 	}
@@ -143,11 +150,21 @@ func NewRunner(
 	}
 }
 
+// SetProgressGenerator configures a ProgressGenerator that regenerates
+// PROGRESS.md at progressPath after each task state change. If not set,
+// progress file regeneration is skipped. This should be called before Run
+// or RunSingleTask.
+func (r *Runner) SetProgressGenerator(pg *task.ProgressGenerator, progressPath string) {
+	r.progressGen = pg
+	r.progressPath = progressPath
+}
+
 // Run executes the implementation loop in phase mode. It iterates over all
 // not-started tasks in runCfg.PhaseID, running the agent on each, until the
 // phase is complete, max iterations are reached, or ctx is cancelled.
 func (r *Runner) Run(ctx context.Context, runCfg RunConfig) error {
 	applyDefaults(&runCfg)
+	r.rateLimitWaits = 0 // reset per-run rate-limit wait counter
 
 	r.logger.Info("starting implementation loop",
 		"agent", runCfg.AgentName,
@@ -389,6 +406,7 @@ func (r *Runner) Run(ctx context.Context, runCfg RunConfig) error {
 // returns after one successful invocation (or error).
 func (r *Runner) RunSingleTask(ctx context.Context, runCfg RunConfig) error {
 	applyDefaults(&runCfg)
+	r.rateLimitWaits = 0 // reset per-run rate-limit wait counter
 
 	r.logger.Info("starting single-task implementation",
 		"agent", runCfg.AgentName,
@@ -676,8 +694,13 @@ func (r *Runner) invokeAgent(ctx context.Context, prompt string, runCfg RunConfi
 
 // consumeStreamEvents reads StreamEvent values from streamCh and translates
 // them into fine-grained LoopEvents that are forwarded to the events channel.
-// It blocks until streamCh is closed or ctx is cancelled.
+// It blocks until streamCh is closed or ctx is cancelled. Token usage is
+// accumulated from assistant and user messages and emitted in the final
+// EventSessionStats event.
 func (r *Runner) consumeStreamEvents(ctx context.Context, streamCh <-chan agent.StreamEvent, iteration int, taskID string, agentName string) {
+	// Accumulate token counts from message-level Usage across the session.
+	var totalTokensIn, totalTokensOut int
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -688,6 +711,11 @@ func (r *Runner) consumeStreamEvents(ctx context.Context, streamCh <-chan agent.
 			}
 			switch event.Type {
 			case agent.StreamEventAssistant:
+				// Accumulate token usage from assistant messages.
+				if event.Message != nil && event.Message.Usage != nil {
+					totalTokensIn += event.Message.Usage.InputTokens
+					totalTokensOut += event.Message.Usage.OutputTokens
+				}
 				// Tool_use blocks → EventToolStarted.
 				for _, block := range event.ToolUseBlocks() {
 					r.emit(LoopEvent{
@@ -712,6 +740,11 @@ func (r *Runner) consumeStreamEvents(ctx context.Context, streamCh <-chan agent.
 					})
 				}
 			case agent.StreamEventUser:
+				// Accumulate token usage from user messages.
+				if event.Message != nil && event.Message.Usage != nil {
+					totalTokensIn += event.Message.Usage.InputTokens
+					totalTokensOut += event.Message.Usage.OutputTokens
+				}
 				// Tool_result blocks → EventToolCompleted.
 				for _, block := range event.ToolResultBlocks() {
 					r.emit(LoopEvent{
@@ -731,7 +764,9 @@ func (r *Runner) consumeStreamEvents(ctx context.Context, streamCh <-chan agent.
 					TaskID:    taskID,
 					AgentName: agentName,
 					CostUSD:   event.CostUSD,
-					Message:   fmt.Sprintf("session cost: $%.4f", event.CostUSD),
+					TokensIn:  totalTokensIn,
+					TokensOut: totalTokensOut,
+					Message:   fmt.Sprintf("session cost: $%.4f, tokens: %d in / %d out", event.CostUSD, totalTokensIn, totalTokensOut),
 					Timestamp: time.Now(),
 				})
 			default:
@@ -776,10 +811,24 @@ func (r *Runner) invokeAgentWithRetry(
 		return result, nil
 	}
 
-	// Rate limit detected.
+	// Rate limit detected -- enforce per-run MaxLimitWaits.
+	r.rateLimitWaits++
+	if r.rateLimitWaits > runCfg.MaxLimitWaits {
+		r.logger.Info("max rate-limit waits exceeded",
+			"agent", runCfg.AgentName,
+			"task", taskID,
+			"maxLimitWaits", runCfg.MaxLimitWaits,
+			"totalWaits", r.rateLimitWaits,
+		)
+		return nil, fmt.Errorf("rate limit: max waits (%d) exceeded for run: %w",
+			runCfg.MaxLimitWaits, agent.ErrMaxWaitsExceeded)
+	}
+
 	r.logger.Info("rate limit detected, waiting for reset",
 		"agent", runCfg.AgentName,
 		"task", taskID,
+		"waitNumber", r.rateLimitWaits,
+		"maxLimitWaits", runCfg.MaxLimitWaits,
 	)
 	ps := r.rateLimiter.RecordRateLimit(runCfg.AgentName, rlInfo)
 	waitDuration := ps.RemainingWait()
@@ -789,7 +838,7 @@ func (r *Runner) invokeAgentWithRetry(
 		Iteration: iteration,
 		TaskID:    taskID,
 		AgentName: runCfg.AgentName,
-		Message:   fmt.Sprintf("rate limited, waiting %s", waitDuration.Round(time.Second)),
+		Message:   fmt.Sprintf("rate limited (%d/%d), waiting %s", r.rateLimitWaits, runCfg.MaxLimitWaits, waitDuration.Round(time.Second)),
 		Timestamp: time.Now(),
 		WaitTime:  waitDuration,
 	})
@@ -898,7 +947,27 @@ func (r *Runner) handleCompletion(signal CompletionSignal, detail string, taskID
 			Timestamp: time.Now(),
 		})
 	}
+
+	// Regenerate PROGRESS.md after task state changes (if configured).
+	r.regenerateProgress()
+
 	return nil
+}
+
+// regenerateProgress writes an updated PROGRESS.md if a ProgressGenerator has
+// been configured via SetProgressGenerator. Errors are logged but do not
+// interrupt the loop -- progress file generation is best-effort.
+func (r *Runner) regenerateProgress() {
+	if r.progressGen == nil || r.progressPath == "" {
+		return
+	}
+	projectName := r.config.Project.Name
+	if projectName == "" {
+		projectName = "Raven"
+	}
+	if err := r.progressGen.WriteFile(r.progressPath, projectName); err != nil {
+		r.logger.Info("failed to regenerate PROGRESS.md", "path", r.progressPath, "err", err)
+	}
 }
 
 // handleDryRun generates and prints the prompt to stderr without invoking the
@@ -960,6 +1029,9 @@ func (r *Runner) emit(event LoopEvent) {
 func applyDefaults(cfg *RunConfig) {
 	if cfg.MaxIterations <= 0 {
 		cfg.MaxIterations = defaultMaxIterations
+	}
+	if cfg.MaxLimitWaits <= 0 {
+		cfg.MaxLimitWaits = defaultMaxLimitWaits
 	}
 	if cfg.SleepBetween <= 0 {
 		cfg.SleepBetween = defaultSleepBetween

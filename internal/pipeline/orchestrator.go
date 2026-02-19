@@ -74,6 +74,15 @@ type PipelineOpts struct {
 	// Interactive enables interactive mode (user confirmations at phase
 	// boundaries). Reserved for future use.
 	Interactive bool
+
+	// BaseBranch is the base branch for pipeline phase branches. When empty,
+	// the orchestrator detects the default branch from git (origin/HEAD) or
+	// falls back to "main".
+	BaseBranch string
+
+	// BranchTemplate is the naming pattern for phase branches (e.g.
+	// "phase/{phase_id}-{slug}"). When empty the default template is used.
+	BranchTemplate string
 }
 
 // Phase status constants describe the lifecycle status of a single phase within
@@ -122,12 +131,13 @@ type PipelineResult struct {
 // PipelineOrchestrator chains the implement -> review -> fix -> PR lifecycle
 // across multiple phases using the workflow engine for per-phase execution.
 type PipelineOrchestrator struct {
-	engine    *workflow.Engine
-	store     *workflow.StateStore
-	gitClient *git.GitClient
-	config    *config.Config
-	logger    *log.Logger
-	events    chan<- workflow.WorkflowEvent
+	engine       *workflow.Engine
+	store        *workflow.StateStore
+	gitClient    *git.GitClient
+	config       *config.Config
+	logger       *log.Logger
+	events       chan<- workflow.WorkflowEvent
+	pipelineMeta *PipelineMetadata
 }
 
 // PipelineOption is a functional option for configuring a PipelineOrchestrator.
@@ -191,6 +201,17 @@ func (p *PipelineOrchestrator) Run(ctx context.Context, opts PipelineOpts) (*Pip
 	opts.ReviewAgent = normalizeAgent(opts.ReviewAgent)
 	opts.FixAgent = normalizeAgent(opts.FixAgent)
 
+	// Resolve the base branch: use the explicit value from opts, detect from
+	// git (origin/HEAD), or fall back to "main".
+	if opts.BaseBranch == "" {
+		opts.BaseBranch = p.detectDefaultBranch()
+	}
+
+	// Resolve the branch template from config if not set explicitly.
+	if opts.BranchTemplate == "" && p.config != nil {
+		opts.BranchTemplate = p.config.Project.BranchTemplate
+	}
+
 	// Determine pipeline run ID and check for a resumable checkpoint.
 	pipelineRunID, startIdx, existingResults, loadErr := p.loadOrCreatePipelineState(opts)
 	if loadErr != nil {
@@ -199,6 +220,9 @@ func (p *PipelineOrchestrator) Run(ctx context.Context, opts PipelineOpts) (*Pip
 		startIdx = 0
 		existingResults = nil
 	}
+
+	// Initialise structured pipeline metadata for persistence and TUI display.
+	p.pipelineMeta = p.loadOrCreatePipelineMetadata(pipelineRunID, phases, opts)
 
 	results := make([]PhaseResult, len(phases))
 	// Seed with any previously completed phase results.
@@ -268,6 +292,22 @@ func (p *PipelineOrchestrator) DryRun(opts PipelineOpts) string {
 	opts.ReviewAgent = normalizeAgent(opts.ReviewAgent)
 	opts.FixAgent = normalizeAgent(opts.FixAgent)
 
+	if opts.BaseBranch == "" {
+		opts.BaseBranch = p.detectDefaultBranch()
+	}
+	if opts.BranchTemplate == "" && p.config != nil {
+		opts.BranchTemplate = p.config.Project.BranchTemplate
+	}
+
+	var branchMgr *BranchManager
+	projectName := ""
+	if opts.BranchTemplate != "" {
+		if p.config != nil {
+			projectName = p.config.Project.Name
+		}
+		branchMgr = NewBranchManager(nil, opts.BranchTemplate, opts.BaseBranch)
+	}
+
 	var sb strings.Builder
 	sb.WriteString("Pipeline dry-run plan\n")
 	sb.WriteString(strings.Repeat("=", 40))
@@ -276,7 +316,12 @@ func (p *PipelineOrchestrator) DryRun(opts PipelineOpts) string {
 	steps := activeSteps(opts)
 
 	for _, ph := range phases {
-		branchName := phaseBranchName(strconv.Itoa(ph.ID))
+		var branchName string
+		if branchMgr != nil {
+			branchName = branchMgr.ResolveBranchName(ph.ID, ph.Name, projectName)
+		} else {
+			branchName = phaseBranchName(strconv.Itoa(ph.ID))
+		}
 		fmt.Fprintf(&sb, "Phase %d: %s\n", ph.ID, ph.Name)
 		fmt.Fprintf(&sb, "  Branch:       %s\n", branchName)
 		fmt.Fprintf(&sb, "  Tasks:        %s - %s\n", ph.StartTask, ph.EndTask)
@@ -351,7 +396,21 @@ func filterFromPhase(phases []task.Phase, fromPhase string) ([]task.Phase, error
 // from the final workflow state.
 func (p *PipelineOrchestrator) runPhase(ctx context.Context, ph task.Phase, opts PipelineOpts) (PhaseResult, error) {
 	phaseID := strconv.Itoa(ph.ID)
-	branchName := phaseBranchName(phaseID)
+
+	// Resolve the branch name: use the BranchManager template when configured,
+	// otherwise fall back to the legacy "raven/phase-N" convention.
+	var branchName string
+	if opts.BranchTemplate != "" {
+		projectName := ""
+		if p.config != nil {
+			projectName = p.config.Project.Name
+		}
+		branchMgr := NewBranchManager(p.gitClient, opts.BranchTemplate, opts.BaseBranch)
+		branchName = branchMgr.ResolveBranchName(ph.ID, ph.Name, projectName)
+	} else {
+		branchName = phaseBranchName(phaseID)
+	}
+
 	ts := time.Now().Format("20060102150405")
 	runID := fmt.Sprintf("pipeline-%s-phase-%s", ts, phaseID)
 
@@ -366,7 +425,7 @@ func (p *PipelineOrchestrator) runPhase(ctx context.Context, ph task.Phase, opts
 
 	// Manage the git branch (skip when gitClient is nil, e.g. in tests).
 	if p.gitClient != nil {
-		if err := p.ensureBranch(ctx, branchName); err != nil {
+		if err := p.ensureBranch(ctx, branchName, opts.BaseBranch); err != nil {
 			result.Status = PhaseStatusFailed
 			result.Error = err.Error()
 			result.Duration = time.Since(phaseStart)
@@ -403,7 +462,7 @@ func (p *PipelineOrchestrator) runPhase(ctx context.Context, ph task.Phase, opts
 	state.Metadata["fix_agent"] = opts.FixAgent
 	state.Metadata["review_concurrency"] = opts.ReviewConcurrency
 	state.Metadata["max_fix_cycles"] = opts.MaxReviewCycles
-	state.Metadata["base_branch"] = "main"
+	state.Metadata["base_branch"] = opts.BaseBranch
 	state.Metadata["branch_name"] = branchName
 	state.Metadata["phase_name"] = ph.Name
 	state.Metadata["start_task"] = ph.StartTask
@@ -432,9 +491,9 @@ func (p *PipelineOrchestrator) runPhase(ctx context.Context, ph task.Phase, opts
 	return result, nil
 }
 
-// ensureBranch creates the named branch if it does not already exist, or
-// checks it out if it does.
-func (p *PipelineOrchestrator) ensureBranch(ctx context.Context, branchName string) error {
+// ensureBranch creates the named branch from baseBranch if it does not already
+// exist, or checks it out if it does.
+func (p *PipelineOrchestrator) ensureBranch(ctx context.Context, branchName, baseBranch string) error {
 	exists, err := p.gitClient.BranchExists(ctx, branchName)
 	if err != nil {
 		return fmt.Errorf("checking branch %q: %w", branchName, err)
@@ -442,7 +501,37 @@ func (p *PipelineOrchestrator) ensureBranch(ctx context.Context, branchName stri
 	if exists {
 		return p.gitClient.Checkout(ctx, branchName)
 	}
-	return p.gitClient.CreateBranch(ctx, branchName, "")
+	return p.gitClient.CreateBranch(ctx, branchName, baseBranch)
+}
+
+// detectDefaultBranch attempts to determine the project's default branch using
+// git. It tries "git rev-parse --abbrev-ref origin/HEAD" first. If that fails
+// (e.g., no remote, shallow clone) it falls back to "main".
+func (p *PipelineOrchestrator) detectDefaultBranch() string {
+	if p.gitClient == nil {
+		return "main"
+	}
+	// Try to resolve origin/HEAD (e.g., "origin/main" -> "main").
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	out, err := p.gitClient.RevParseAbbrev(ctx, "origin/HEAD")
+	if err == nil && out != "" {
+		// out is like "origin/main" — strip the remote prefix.
+		if idx := strings.Index(out, "/"); idx >= 0 {
+			return out[idx+1:]
+		}
+		return out
+	}
+	return "main"
+}
+
+// ApplySkipFlags is the exported entry point for applySkipFlags. It returns a
+// deep copy of def with steps removed and transitions rewired according to the
+// skip flags in opts. The original definition is never modified. Exported for
+// use by the CLI dry-run path.
+func ApplySkipFlags(def *workflow.WorkflowDefinition, opts PipelineOpts) *workflow.WorkflowDefinition {
+	return applySkipFlags(def, opts)
 }
 
 // applySkipFlags returns a deep copy of def with steps removed and transitions
@@ -586,6 +675,8 @@ func (p *PipelineOrchestrator) buildResult(
 
 // savePipelineState persists the current pipeline run progress as a
 // WorkflowState checkpoint so execution can be resumed after interruption.
+// It uses PipelineMetadata for structured persistence alongside the legacy
+// flat keys for backward compatibility.
 func (p *PipelineOrchestrator) savePipelineState(
 	runID string,
 	opts PipelineOpts,
@@ -620,6 +711,16 @@ func (p *PipelineOrchestrator) savePipelineState(
 	state.Metadata["pipeline_phases"] = phasesAny
 	state.Metadata["current_phase_index"] = currentIdx
 	state.Metadata["pipeline_opts"] = optsAny
+
+	// Also persist structured PipelineMetadata for richer resume and TUI display.
+	if p.pipelineMeta != nil {
+		p.pipelineMeta.CurrentPhase = currentIdx
+		for i, r := range results {
+			p.pipelineMeta.SetPhaseResult(i, r)
+		}
+		metaMap := p.pipelineMeta.ToMetadataMap()
+		state.Metadata["pipeline_metadata"] = metaMap
+	}
 
 	return p.store.Save(state)
 }
@@ -671,6 +772,30 @@ func (p *PipelineOrchestrator) loadOrCreatePipelineState(_ PipelineOpts) (
 
 	p.log("resuming pipeline", "run_id", latest.ID, "from_phase_index", startIdx)
 	return latest.ID, startIdx, existingResults, nil
+}
+
+// loadOrCreatePipelineMetadata attempts to load a persisted PipelineMetadata
+// from the state store. If none is found or the store is unavailable, it
+// creates a fresh PipelineMetadata for the given run.
+func (p *PipelineOrchestrator) loadOrCreatePipelineMetadata(
+	pipelineRunID string,
+	phases []task.Phase,
+	opts PipelineOpts,
+) *PipelineMetadata {
+	if p.store != nil {
+		latest, _ := p.store.LatestRun()
+		if latest != nil && latest.WorkflowName == workflow.WorkflowPipeline {
+			if raw, ok := latest.Metadata["pipeline_metadata"]; ok {
+				if metaMap, ok2 := raw.(map[string]interface{}); ok2 {
+					pm, pmErr := PipelineMetadataFromMap(metaMap)
+					if pmErr == nil {
+						return pm
+					}
+				}
+			}
+		}
+	}
+	return NewPipelineMetadata(pipelineRunID, phases, opts)
 }
 
 // phaseBranchName returns the git branch name for the given phase ID string.

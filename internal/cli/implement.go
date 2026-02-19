@@ -283,6 +283,7 @@ func runImplement(cmd *cobra.Command, flags implementFlags) error {
 type charmLogger interface {
 	Info(msg interface{}, kv ...interface{})
 	Debug(msg interface{}, kv ...interface{})
+	Warn(msg interface{}, kv ...interface{})
 }
 
 // runnerLogger wraps a charmbracelet/log.Logger to satisfy the
@@ -302,13 +303,17 @@ func (l *runnerLogger) Debug(msg string, kv ...interface{}) {
 
 // agentDebugLogger wraps a charmbracelet/log.Logger to satisfy the agent
 // package's unexported claudeLogger and codexLogger interfaces, which require
-// Debug(msg string, ...).
+// Debug(msg string, ...) and Warn(msg string, ...).
 type agentDebugLogger struct {
 	logger charmLogger
 }
 
 func (l *agentDebugLogger) Debug(msg string, kv ...interface{}) {
 	l.logger.Debug(msg, kv...)
+}
+
+func (l *agentDebugLogger) Warn(msg string, kv ...interface{}) {
+	l.logger.Warn(msg, kv...)
 }
 
 // runAllPhases runs the implementation loop for each phase in sequence.
