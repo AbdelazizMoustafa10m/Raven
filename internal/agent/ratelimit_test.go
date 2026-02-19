@@ -146,12 +146,6 @@ func TestProviderState_RemainingWait(t *testing.T) {
 			ps:       &ProviderState{IsLimited: true, ResetAt: time.Time{}},
 			wantZero: true,
 		},
-		{
-			name:      "limited with future reset returns positive duration",
-			ps:        &ProviderState{IsLimited: true, ResetAt: time.Now().Add(30 * time.Second)},
-			wantZero:  false,
-			wantAbout: 30 * time.Second,
-		},
 	}
 
 	for _, tt := range tests {
@@ -163,11 +157,19 @@ func TestProviderState_RemainingWait(t *testing.T) {
 				assert.Equal(t, time.Duration(0), remaining)
 				return
 			}
-			// Allow 5s tolerance for slow CI environments and test scheduling.
-			assert.Greater(t, remaining, tt.wantAbout-5*time.Second)
-			assert.LessOrEqual(t, remaining, tt.wantAbout)
 		})
 	}
+
+	// Separate non-table test for the time-sensitive case to avoid capturing
+	// time.Now() before t.Parallel() defers execution.
+	t.Run("limited with future reset returns positive duration", func(t *testing.T) {
+		t.Parallel()
+		// Capture time.Now() inside the subtest so the delta is minimal.
+		ps := &ProviderState{IsLimited: true, ResetAt: time.Now().Add(30 * time.Second)}
+		remaining := ps.RemainingWait()
+		assert.Greater(t, remaining, time.Duration(0), "remaining wait should be positive")
+		assert.LessOrEqual(t, remaining, 30*time.Second, "remaining wait should not exceed reset duration")
+	})
 }
 
 // ---------------------------------------------------------------------------

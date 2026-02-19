@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Mock Claude CLI that simulates agent behavior.
+# Controlled via environment variables:
+#   MOCK_EXIT_CODE   - exit code to return (default: 0)
+#   MOCK_OUTPUT_FILE - file containing stdout content to emit
+#   MOCK_STDERR_FILE - file containing stderr content to emit
+#   MOCK_RATE_LIMIT  - if "true", emit rate-limit message and exit 1
+#   MOCK_DELAY       - sleep duration before responding (default: 0)
+#   MOCK_SIGNAL_FILE - file to append "called:<args>" to (for call counting)
+set -euo pipefail
+
+# Record invocation for test verification.
+if [[ -n "${MOCK_SIGNAL_FILE:-}" ]]; then
+    echo "called:$*" >> "$MOCK_SIGNAL_FILE"
+fi
+
+# Simulate delay.
+if [[ -n "${MOCK_DELAY:-}" ]] && [[ "${MOCK_DELAY}" != "0" ]]; then
+    sleep "$MOCK_DELAY"
+fi
+
+# Simulate rate limit.
+if [[ "${MOCK_RATE_LIMIT:-}" == "true" ]]; then
+    echo "Your rate limit will reset in 30 seconds." >&2
+    exit 1
+fi
+
+# Emit configured stdout content.
+if [[ -n "${MOCK_OUTPUT_FILE:-}" ]] && [[ -f "$MOCK_OUTPUT_FILE" ]]; then
+    cat "$MOCK_OUTPUT_FILE"
+fi
+
+# Emit configured stderr content.
+if [[ -n "${MOCK_STDERR_FILE:-}" ]] && [[ -f "$MOCK_STDERR_FILE" ]]; then
+    cat "$MOCK_STDERR_FILE" >&2
+fi
+
+# Emit completion signal.
+echo "PHASE_COMPLETE"
+
+exit "${MOCK_EXIT_CODE:-0}"

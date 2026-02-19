@@ -84,3 +84,21 @@ func Execute() int {
 	}
 	return 0
 }
+
+// NewRootCmd returns a new instance of the root command for use in external
+// tools such as the shell completion generator. It initialises a fresh cobra
+// command tree so that it can be used independently of the global rootCmd.
+func NewRootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           rootCmd.Use,
+		Short:         rootCmd.Short,
+		Long:          rootCmd.Long,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	// Attach all registered subcommands from the global tree.
+	for _, child := range rootCmd.Commands() {
+		cmd.AddCommand(child)
+	}
+	return cmd
+}

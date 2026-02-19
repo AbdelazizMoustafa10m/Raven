@@ -1,0 +1,82 @@
+version: 2
+
+project_name: raven
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+    - go run ./scripts/gen-completions completions
+    - go run ./scripts/gen-manpages man/man1
+
+builds:
+  - id: raven
+    main: ./cmd/raven
+    binary: raven
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/AbdelazizMoustafa10m/Raven/internal/buildinfo.Version={{.Version}}
+      - -X github.com/AbdelazizMoustafa10m/Raven/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/AbdelazizMoustafa10m/Raven/internal/buildinfo.Date={{.Date}}
+
+archives:
+  - id: raven-archive
+    builds:
+      - raven
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - completions/*
+      - scripts/completions/install.sh
+      - man/man1/*.1
+      - scripts/install-manpages.sh
+  - id: completions-archive
+    meta: true
+    name_template: "{{ .ProjectName }}_completions_{{ .Version }}"
+    format: tar.gz
+    files:
+      - completions/*
+      - scripts/completions/install.sh
+  - id: manpages-archive
+    meta: true
+    name_template: "{{ .ProjectName }}_manpages_{{ .Version }}"
+    format: tar.gz
+    files:
+      - man/man1/*.1
+      - scripts/install-manpages.sh
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+release:
+  github:
+    owner: "{{ .Env.GITHUB_OWNER }}"
+    name: raven
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
