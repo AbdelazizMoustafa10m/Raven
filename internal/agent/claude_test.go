@@ -545,16 +545,20 @@ func TestClaudeAgent_BuildCommand_NoWorkDir(t *testing.T) {
 
 // writeMockScript creates an executable shell script in dir with the given
 // content (#!/bin/sh header is prepended automatically). It returns the path.
+//
+// It uses a write-to-temp-then-rename strategy to avoid ETXTBSY ("text file
+// busy") on Linux.  The kernel tracks open-for-write file descriptors per
+// inode; by writing to a temporary name and atomically renaming, the final
+// path's inode was never opened for writing, so exec cannot race with close.
 func writeMockScript(t *testing.T, dir, name, content string) string {
 	t.Helper()
-	path := filepath.Join(dir, name)
-	// Write without executable bit first, then chmod — avoids ETXTBSY ("text
-	// file busy") on Linux when the kernel sees an executable file that is
-	// still being written/closed.
-	err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0600)
+	finalPath := filepath.Join(dir, name)
+	tmpPath := finalPath + ".tmp"
+
+	err := os.WriteFile(tmpPath, []byte("#!/bin/sh\n"+content), 0755)
 	require.NoError(t, err, "writing mock script %s", name)
-	require.NoError(t, os.Chmod(path, 0755), "chmod mock script %s", name)
-	return path
+	require.NoError(t, os.Rename(tmpPath, finalPath), "rename mock script %s", name)
+	return finalPath
 }
 
 // skipOnWindows skips the test on Windows where shell scripts are not supported.
