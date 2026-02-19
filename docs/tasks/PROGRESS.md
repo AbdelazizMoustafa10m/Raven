@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 89 |
+| Completed | 90 |
 | In Progress | 0 |
-| Not Started | 2 |
+| Not Started | 1 |
 
 ---
 
@@ -654,6 +654,37 @@ _None currently_
   - `Makefile` -- added `test-e2e` target and updated `.PHONY`
 - **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test -short ./tests/e2e/` ✓
 
+### T-086: Comprehensive README and User Documentation
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `README.md` -- main project documentation with all sections: what is Raven, features, binary download and source build installation with checksum verification, Quick Start tutorial (init → implement → review → PR), every CLI command with synopsis/flags table/examples, full `raven.toml` reference, architecture overview, shell completions (bash/zsh/fish/PowerShell), man pages, CI/CD integration with GitHub Actions example, exit codes, contributing and license links
+  - `CONTRIBUTING.md` -- development prerequisites, clone and build instructions, project layout, all Makefile targets, adding a new CLI command and agent adapter, unit/E2E/benchmark test instructions, code style rules (naming, error handling, logging, concurrency), conventional commit message guide, PR process checklist, code of conduct reference
+  - `LICENSE` -- MIT license with copyright year 2024 and holder "Raven Contributors"
+  - `docs/configuration.md` -- exhaustive `raven.toml` reference: file discovery, four-layer resolution order, complete annotated example, all `[project]` fields with types/defaults/descriptions, task-state.conf and phases.conf formats, `[agents.NAME]` fields with Claude-specific and Codex-specific notes, Gemini stub status, `[review]` fields, `[workflows.NAME]` fields and transitions format, environment variable overrides table, security notes
+  - `docs/workflows.md` -- workflow engine overview, StepHandler interface, transition events and terminal pseudo-steps, workflow lifecycle events, ASCII state machine diagram for implement-review-pr, all four built-in workflow descriptions and step tables, checkpointing and resume guide, custom workflow guide with two examples, validation notes, dry-run mode, engine options
+  - `docs/agents.md` -- Agent interface and RunOpts/RunResult types, Claude adapter prerequisites/configuration/internals/streaming/rate-limit detection/model values, Codex adapter prerequisites/configuration/internals/rate-limit detection, Gemini stub status, rate-limit coordinator design (provider mapping, ProviderState, BackoffConfig), agent registry with sentinel errors, custom agent guide with minimal stub example, security notes
+- **Files created/modified:**
+  - `README.md` -- main project documentation (~500 lines)
+  - `CONTRIBUTING.md` -- contribution and development guidelines
+  - `LICENSE` -- MIT license file
+  - `docs/configuration.md` -- exhaustive raven.toml reference
+  - `docs/workflows.md` -- workflow engine documentation
+  - `docs/agents.md` -- agent adapter documentation
+  - `docs/tasks/PROGRESS.md` -- updated T-086 status to Completed
+- **Key decisions:**
+  - README kept under ~500 lines with links to extended docs for detailed references
+  - CI badge URLs use placeholder GitHub owner (must be updated when repo is public)
+  - TUI screenshot/GIF has a `<!-- placeholder -->` comment as instructed
+  - No emojis, GitHub-flavored Markdown, code blocks with language tags throughout
+  - Security section explicitly notes that Raven does not store credentials
+  - Checksum verification included in binary download instructions
+  - Platform-specific completion instructions for macOS vs Linux (no tabs; separate code blocks)
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./...` ✓
+
+---
+
 ### T-085: CI/CD Pipeline with GitHub Actions
 
 - **Status:** Completed
@@ -693,7 +724,7 @@ _None currently_
 | T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Completed |
 | T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Completed |
 | T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Completed |
-| T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Not Started |
+| T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Completed |
 | T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Not Started |
 
 **Deliverable:** Published v2.0.0 with signed binaries for all platforms.
