@@ -1,0 +1,47 @@
+{
+  "epic_id": "E-001",
+  "tasks": [
+    {
+      "temp_id": "E001-T01",
+      "title": "Set up authentication middleware",
+      "description": "Implement JWT-based authentication middleware that validates tokens on each incoming request.",
+      "acceptance_criteria": [
+        "JWT tokens are validated on every protected endpoint",
+        "Expired tokens are rejected with a 401 response",
+        "Invalid signature tokens are rejected with a 401 response"
+      ],
+      "local_dependencies": [],
+      "cross_epic_dependencies": ["E-003:database-schema"],
+      "effort": "medium",
+      "priority": "must-have"
+    },
+    {
+      "temp_id": "E001-T02",
+      "title": "Implement login endpoint",
+      "description": "Create the POST /auth/login endpoint that accepts credentials and returns a signed JWT token.",
+      "acceptance_criteria": [
+        "Endpoint returns a JWT token on valid credentials",
+        "Endpoint returns 401 on invalid credentials",
+        "Rate limiting is applied to prevent brute-force attacks"
+      ],
+      "local_dependencies": ["E001-T01"],
+      "cross_epic_dependencies": [],
+      "effort": "small",
+      "priority": "must-have"
+    },
+    {
+      "temp_id": "E001-T03",
+      "title": "Implement logout and token revocation",
+      "description": "Create the POST /auth/logout endpoint and token blacklist mechanism for immediate revocation.",
+      "acceptance_criteria": [
+        "Logout invalidates the current token immediately",
+        "Revoked tokens are rejected even if not yet expired",
+        "Blacklist is persisted across server restarts"
+      ],
+      "local_dependencies": ["E001-T01", "E001-T02"],
+      "cross_epic_dependencies": ["E-003:database-schema"],
+      "effort": "medium",
+      "priority": "should-have"
+    }
+  ]
+}

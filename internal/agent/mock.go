@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -12,6 +13,9 @@ var _ Agent = (*MockAgent)(nil)
 // MockAgent is a configurable mock implementation of Agent for testing.
 // It records all Run calls and supports customizable behavior via builder
 // methods and function fields.
+//
+// MockAgent is safe for concurrent use: Run may be called from multiple
+// goroutines simultaneously (e.g., during scatter tests).
 type MockAgent struct {
 	// AgentName is the value returned by Name().
 	AgentName string
@@ -32,8 +36,12 @@ type MockAgent struct {
 	// default format is used.
 	DryRunOutput string
 
+	// mu protects Calls from concurrent writes.
+	mu sync.Mutex
+
 	// Calls records every set of RunOpts passed to Run, in order. Tests can
-	// inspect this slice to verify call count and arguments.
+	// inspect this slice to verify call count and arguments. Access through
+	// the GetCalls helper when the mock is used concurrently.
 	Calls []RunOpts
 }
 
@@ -50,9 +58,11 @@ func (m *MockAgent) Name() string {
 }
 
 // Run records the call and delegates to RunFunc if set, otherwise returns a
-// default success result.
+// default success result. Safe for concurrent use.
 func (m *MockAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error) {
+	m.mu.Lock()
 	m.Calls = append(m.Calls, opts)
+	m.mu.Unlock()
 	if m.RunFunc != nil {
 		return m.RunFunc(ctx, opts)
 	}
@@ -61,6 +71,15 @@ func (m *MockAgent) Run(ctx context.Context, opts RunOpts) (*RunResult, error) {
 		ExitCode: 0,
 		Duration: 100 * time.Millisecond,
 	}, nil
+}
+
+// GetCalls returns a snapshot of all recorded Run calls. Safe for concurrent use.
+func (m *MockAgent) GetCalls() []RunOpts {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	snapshot := make([]RunOpts, len(m.Calls))
+	copy(snapshot, m.Calls)
+	return snapshot
 }
 
 // CheckPrerequisites returns PrereqError, which is nil by default (success).

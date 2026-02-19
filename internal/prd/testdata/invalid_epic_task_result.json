@@ -1,0 +1,25 @@
+{
+  "epic_id": "EPIC-1",
+  "tasks": [
+    {
+      "temp_id": "E001T01",
+      "title": "",
+      "description": "",
+      "acceptance_criteria": [],
+      "local_dependencies": ["E001-T99"],
+      "cross_epic_dependencies": ["E-999:some-feature"],
+      "effort": "extra-large",
+      "priority": "critical"
+    },
+    {
+      "temp_id": "E001-T01",
+      "title": "Duplicate task",
+      "description": "This task has a duplicate temp_id",
+      "acceptance_criteria": ["ac"],
+      "local_dependencies": [],
+      "cross_epic_dependencies": ["missing-colon"],
+      "effort": "small",
+      "priority": "must-have"
+    }
+  ]
+}

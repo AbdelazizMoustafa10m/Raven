@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 58 |
+| Completed | 68 |
 | In Progress | 0 |
-| Not Started | 31 |
+| Not Started | 21 |
 
 ---
 
@@ -154,7 +154,7 @@
 
 - **Status:** Completed
 - **Date:** 2026-02-18
-- **Tasks Completed:** 12 tasks (T-031 to T-042, including T-058)
+- **Tasks Completed:** 13 tasks (T-031 to T-042, including T-058, T-059)
 
 #### Features Implemented
 
@@ -334,6 +334,68 @@
 
 ---
 
+### Phase 5: PRD Decomposition (T-056 to T-065)
+
+- **Status:** Completed
+- **Date:** 2026-02-18
+- **Tasks Completed:** 10 tasks
+
+#### Features Implemented
+
+| Feature | Tasks | Description |
+| ------- | ----- | ----------- |
+| Epic JSON Schema & Types | T-056 | `EpicBreakdown`, `Epic`, `EpicTaskResult`, `TaskDef`, `ValidationError` structs with validation, parse helpers, and golden/fuzz tests |
+| PRD Shredder | T-057 | Single-agent PRD-to-epics call with retry loop, embedded prompt template, event tracking, and JSON extraction from file or stdout |
+| JSON Extraction Utility | T-058 | Multi-strategy `Extract`/`ExtractAll`/`ExtractInto`/`ExtractFromFile` API: markdown fences, brace/bracket matching, ANSI stripping, BOM removal, 10 MB cap |
+| Parallel Epic Workers | T-059 | `ScatterOrchestrator` with bounded `errgroup` concurrency, per-epic retry loop, rate-limiter integration, partial-failure handling, and concurrent-safe `MockAgent` |
+| Merge: Global ID Assignment | T-060 | Kahn's topological sort of epics (`SortEpicsByDependency`) + sequential `T-NNN` assignment (`AssignGlobalIDs`) with deterministic lexicographic ordering |
+| Merge: Dependency Remapping | T-061 | `RemapDependencies` resolving local temp IDs and cross-epic `E-NNN:label` references to global IDs, with unresolved/ambiguous reporting |
+| Merge: Title Deduplication | T-062 | `DeduplicateTasks` with `NormalizeTitle` (prefix stripping, punctuation removal), AC merging, dependency rewriting, and `DedupReport` |
+| Merge: DAG Validation | T-063 | `ValidateDAG` (Kahn + DFS cycle tracing), `TopologicalDepths`, dangling/self/cycle error reporting, 10 000-task guard |
+| Task File Emitter | T-064 | `Emitter` producing per-task `.md` files, `task-state.conf`, `phases.conf`, `PROGRESS.md`, `INDEX.md` (with Mermaid graph), atomic tmp+rename writes |
+| PRD CLI Command | T-065 | `raven prd` Cobra command: 4-phase pipeline (Shred→Scatter→Merge→Emit), single-pass mode, dry-run, partial-success exit code 2, SIGINT/SIGTERM handling |
+
+#### Key Technical Decisions
+
+1. **Kahn's algorithm for epic and task DAG** -- produces cleaner cycle reports ("unprocessed nodes") vs DFS; queue re-sorted after each step for lexicographic determinism
+2. **Custom template delimiters `[[` `]]`** -- prevents conflicts when task descriptions/ACs contain Go `{{ }}` template syntax
+3. **`errgroup.SetLimit` for scatter concurrency** -- bounded parallel execution; workers return nil so sibling goroutines continue on partial failure
+4. **`scatterValidationFailure` sentinel** -- distinguishes validation exhaustion (non-fatal) from fatal errors (context cancel, rate-limit exceeded)
+5. **Multi-strategy JSON extraction** -- code fence first, then brace/bracket matching; `fenceSpan` tracking prevents double-emitting fence content via brace scanner
+6. **Single-pass mode as `concurrency=1`** -- reuses all pipeline stages rather than a separate prompt path; simpler and correct
+7. **`errPartialSuccess` custom type** -- carries structured data (totalEpics, failedEpics) for future exit-code mapping; type-asserted (not `errors.As`) since it is never wrapped
+8. **Atomic write via tmp+rename** -- all emitted files written to a temp path then renamed, preventing partial writes on error
+9. **`ResequenceIDs` closes dedup gaps** -- remaps all `Dependencies` references through `IDMapping` after re-sequencing; skips remap when no gaps exist
+
+#### Key Files Reference
+
+| Purpose | Location |
+| ------- | -------- |
+| Epic/task JSON types, validation, parse helpers | `internal/prd/schema.go` |
+| Schema tests, golden snapshots, fuzz seeds | `internal/prd/schema_test.go` |
+| PRD shredder (single-agent, retry, events) | `internal/prd/shredder.go` |
+| Shredder tests | `internal/prd/shredder_test.go` |
+| Parallel scatter orchestrator | `internal/prd/worker.go` |
+| Scatter tests | `internal/prd/worker_test.go` |
+| Merger: ID assignment, dep remapping, dedup, DAG | `internal/prd/merger.go` |
+| Merger tests | `internal/prd/merger_test.go` |
+| Task file emitter | `internal/prd/emitter.go` |
+| Emitter tests | `internal/prd/emitter_test.go` |
+| `raven prd` CLI command | `internal/cli/prd.go` |
+| PRD CLI tests | `internal/cli/prd_test.go` |
+| JSON extraction utility | `internal/jsonutil/extract.go` |
+| JSON extraction tests | `internal/jsonutil/extract_test.go` |
+| Concurrent-safe mock agent | `internal/agent/mock.go` |
+| Test fixtures (valid/invalid JSON) | `internal/prd/testdata/` |
+
+#### Verification
+
+- `go build ./cmd/raven/` pass
+- `go vet ./...` pass
+- `go test ./...` pass
+
+---
+
 ## In Progress Tasks
 
 _None currently_
@@ -341,32 +403,6 @@ _None currently_
 ---
 
 ## Not Started Tasks
-
-### Phase 5: PRD Decomposition (T-056 to T-065)
-
-- **Status:** Not Started
-- **Tasks:** 10 (10 Must Have)
-- **Estimated Effort:** 70-110 hours
-- **PRD Roadmap:** Weeks 9-10
-
-#### Task List
-
-| Task | Name | Priority | Effort | Status |
-|------|------|----------|--------|--------|
-| T-056 | Epic JSON Schema and Types | Must Have | Small (2-4hrs) | Not Started |
-| T-057 | PRD Shredder (Single Agent -> Epic JSON) | Must Have | Medium (8-12hrs) | Not Started |
-| T-058 | JSON Extraction Utility | Must Have | Medium (6-10hrs) | Not Started |
-| T-059 | Parallel Epic Workers | Must Have | Medium (8-12hrs) | Not Started |
-| T-060 | Merge -- Global ID Assignment | Must Have | Medium (6-10hrs) | Not Started |
-| T-061 | Merge -- Dependency Remapping | Must Have | Medium (6-10hrs) | Not Started |
-| T-062 | Merge -- Title Deduplication | Must Have | Medium (6-10hrs) | Not Started |
-| T-063 | Merge -- DAG Validation | Must Have | Medium (6-10hrs) | Not Started |
-| T-064 | Task File Emitter | Must Have | Medium (8-12hrs) | Not Started |
-| T-065 | PRD CLI Command -- raven prd | Must Have | Medium (8-12hrs) | Not Started |
-
-**Deliverable:** `raven prd --file docs/prd/PRD.md --concurrent` produces a complete task breakdown.
-
----
 
 ### Phase 6: TUI Command Center (T-066 to T-078, T-089)
 

@@ -1,0 +1,28 @@
+{
+  "epics": [
+    {
+      "id": "epic1",
+      "title": "",
+      "description": "A valid description",
+      "prd_sections": [],
+      "estimated_task_count": -1,
+      "dependencies_on_epics": []
+    },
+    {
+      "id": "E-002",
+      "title": "Valid Epic",
+      "description": "",
+      "prd_sections": ["Section 1.1"],
+      "estimated_task_count": 3,
+      "dependencies_on_epics": ["E-999"]
+    },
+    {
+      "id": "E-002",
+      "title": "Duplicate ID Epic",
+      "description": "This epic has a duplicate ID",
+      "prd_sections": [],
+      "estimated_task_count": 0,
+      "dependencies_on_epics": ["E-002"]
+    }
+  ]
+}
