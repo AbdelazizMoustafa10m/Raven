@@ -96,10 +96,7 @@ docs/
 ### Verification Commands
 
 ```bash
-go build ./cmd/raven/    # Compilation check
-go vet ./...             # Static analysis
-go test ./...            # All tests
-go mod tidy              # Module hygiene (no drift)
+./run_pipeline_checks.sh # Full CI pipeline: mod tidy, fmt, vet, lint, test, build (or `make check`)
 ```
 
 ## Key Technical Decisions
@@ -143,5 +140,5 @@ When implementing a task:
 2. Check dependencies are complete in `docs/tasks/PROGRESS.md`
 3. Implement following acceptance criteria
 4. Write tests (table-driven, golden where appropriate)
-5. Verify: `go build ./cmd/raven/ && go vet ./... && go test ./...`
+5. Verify: `./run_pipeline_checks.sh`
 6. Update `docs/tasks/PROGRESS.md` with completion entry

@@ -210,8 +210,5 @@ When implementation is complete, report:
 ## Commands to Run After Implementation
 
 ```bash
-go build ./cmd/raven/    # Verify compilation
-go vet ./...             # Static analysis
-go test ./...            # Run all tests
-go mod tidy              # Clean up module
+./run_pipeline_checks.sh # Full CI pipeline: mod tidy, fmt, vet, lint, test, build (or `make check`)
 ```

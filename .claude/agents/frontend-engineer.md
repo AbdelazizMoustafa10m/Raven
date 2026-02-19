@@ -133,7 +133,6 @@ j/k / arrows     -- Scroll agent output
 ## Commands to Run
 
 ```bash
-go build ./cmd/raven/         # Verify compilation
-go test ./internal/tui/...    # TUI tests
-go vet ./...                  # Static analysis
+./run_pipeline_checks.sh      # Full CI pipeline: mod tidy, fmt, vet, lint, test, build (or `make check`)
+go test ./internal/tui/...    # TUI-specific tests
 ```

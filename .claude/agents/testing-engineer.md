@@ -168,10 +168,9 @@ func TestVersionCommand(t *testing.T) {
 ## Commands to Run
 
 ```bash
-go test ./...                      # All tests
+./run_pipeline_checks.sh           # Full CI pipeline: mod tidy, fmt, vet, lint, test, build (or `make check`)
 go test ./internal/workflow/...    # Specific package
 go test -v -run TestEngine ./...   # Specific test
 go test -race ./...                # Race detector
-go test -count=1 ./...             # No cache
 go test -bench=. ./...             # Benchmarks
 ```

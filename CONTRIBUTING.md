@@ -21,7 +21,7 @@ Thank you for your interest in contributing to Raven. This document covers the d
 | Go | 1.24 | Build and test |
 | Git | 2.30 | Version control |
 | Make | 3.81 | Build targets |
-| golangci-lint | 1.63 | Static analysis (optional for local dev) |
+| golangci-lint | 1.64 | Static analysis (optional — `run_pipeline_checks.sh` skips lint gracefully if missing) |
 
 Install Go from [go.dev/dl](https://go.dev/dl/). All other Go tooling is resolved via `go.mod`; no extra installation is required.
 
@@ -70,7 +70,25 @@ scripts/               Build and packaging scripts
 
 ## Development Workflow
 
-### Build Targets
+### Running All CI Checks Locally
+
+Before pushing or opening a PR, run the full pipeline check script. It mirrors every job in `.github/workflows/ci.yml` so you can catch failures locally:
+
+```bash
+./run_pipeline_checks.sh              # Fail-fast mode (stops on first failure)
+./run_pipeline_checks.sh --all        # Run all checks even if some fail
+./run_pipeline_checks.sh --with-build # Include cross-platform build matrix
+```
+
+The script runs: module hygiene (`go mod tidy`), formatting (`gofmt`), static analysis (`go vet`), linting (`golangci-lint`), tests (`go test -race`), and build verification. It requires `go` and optionally `golangci-lint` (skips lint gracefully if missing). Install [gum](https://github.com/charmbracelet/gum) for a polished spinner UI.
+
+You can also run the same checks via Make:
+
+```bash
+make check          # Equivalent to ./run_pipeline_checks.sh
+```
+
+### Individual Build Targets
 
 ```bash
 make build          # Compile to bin/raven
@@ -264,14 +282,11 @@ test(review): add table-driven tests for finding consolidation
 
 2. **Implement** your change following the standards above.
 
-3. **Test** thoroughly:
+3. **Run the pipeline checks** to verify everything passes:
    ```bash
-   go build ./cmd/raven/
-   go vet ./...
-   go test ./...
-   go test -race ./...
-   go mod tidy
+   ./run_pipeline_checks.sh
    ```
+   This runs module hygiene, formatting, vet, lint, tests, and build — the same checks CI will run on your PR.
 
 4. **Commit** using conventional commit messages.
 
@@ -287,11 +302,7 @@ test(review): add table-driven tests for finding consolidation
 
 ### PR Checklist
 
-- [ ] `go build ./cmd/raven/` passes
-- [ ] `go vet ./...` passes with zero warnings
-- [ ] `go test ./...` passes
-- [ ] `go test -race ./...` passes
-- [ ] `go mod tidy` produces no diff
+- [ ] `./run_pipeline_checks.sh` passes (or equivalently `make check`)
 - [ ] All exported symbols have doc comments
 - [ ] New features have tests
 - [ ] PROGRESS.md updated if a task was completed

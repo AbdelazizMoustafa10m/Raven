@@ -25,9 +25,13 @@ LDFLAGS_DEBUG := \
 
 GOFLAGS  := CGO_ENABLED=0
 
-.PHONY: all build test test-e2e vet lint tidy clean install fmt bench run-version build-debug release-snapshot completions manpages release-verify release
+.PHONY: all build test test-e2e vet lint tidy clean install fmt bench run-version build-debug release-snapshot completions manpages release-verify release check
 
 all: tidy vet test build
+
+# Run the full local CI pipeline (mirrors .github/workflows/ci.yml)
+check:
+	./run_pipeline_checks.sh
 
 build:
 	mkdir -p $(BUILD_DIR)
