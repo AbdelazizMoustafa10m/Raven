@@ -25,7 +25,7 @@ LDFLAGS_DEBUG := \
 
 GOFLAGS  := CGO_ENABLED=0
 
-.PHONY: all build test vet lint tidy clean install fmt bench run-version build-debug release-snapshot completions manpages
+.PHONY: all build test test-e2e vet lint tidy clean install fmt bench run-version build-debug release-snapshot completions manpages
 
 all: tidy vet test build
 
@@ -35,6 +35,11 @@ build:
 
 test:
 	go test ./... -race -count=1
+
+# Run E2E integration tests (requires bash for mock agent scripts; skipped on Windows).
+# Use -timeout 10m to allow for binary compilation inside each test.
+test-e2e:
+	go test -v -count=1 -timeout 10m ./tests/e2e/
 
 vet:
 	go vet ./...

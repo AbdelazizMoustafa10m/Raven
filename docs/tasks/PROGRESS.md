@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 87 |
+| Completed | 88 |
 | In Progress | 0 |
-| Not Started | 4 |
+| Not Started | 3 |
 
 ---
 
@@ -612,6 +612,50 @@ _None currently_
 
 ---
 
+### T-084: End-to-End Integration Test Suite with Mock Agents
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `testdata/mock-agents/claude` -- Mock Claude CLI bash script; accepts all real claude flags, emits `PHASE_COMPLETE`, supports `MOCK_EXIT_CODE`, `MOCK_OUTPUT_FILE`, `MOCK_STDERR_FILE`, `MOCK_RATE_LIMIT`, `MOCK_DELAY`, `MOCK_SIGNAL_FILE` env vars
+  - `testdata/mock-agents/codex` -- Mock Codex CLI bash script with same protocol as claude mock
+  - `testdata/mock-agents/rate-limited-agent` -- Agent that rate-limits first N invocations (controlled by `MOCK_RATE_LIMIT_UNTIL`), succeeds on subsequent calls
+  - `testdata/mock-agents/failing-agent` -- Agent that always fails with configurable exit code (`MOCK_EXIT_CODE`)
+  - `tests/e2e/helpers_test.go` -- `testProject` helper struct, `newTestProject` (builds raven binary + copies mock agents), `initGitRepo`, `minimalConfig`, `sampleTaskSpec`, `run`/`runExpectSuccess`/`runExpectFailure` methods
+  - `tests/e2e/config_test.go` -- `raven version`, `raven version --json`, `raven init go-cli`, `raven config debug`, `raven config validate`, missing-config fallback, no-args help, config help
+  - `tests/e2e/implement_test.go` -- dry-run, single task with mock agent, no tasks error, dry-run no agent needed, required flags validation, dry-run does not invoke agent assertion
+  - `tests/e2e/review_test.go` -- dry-run, help, empty diff, staged change, no-agents-configured error, split mode, invalid mode
+  - `tests/e2e/pipeline_test.go` -- help, dry-run requires phase, dry-run with phases.conf, mutually exclusive flags, all stages skipped, invalid concurrency
+  - `tests/e2e/prd_test.go` -- help, required file flag, file must exist, dry-run, single-pass dry-run
+  - `tests/e2e/resume_test.go` -- help, no checkpoint error, list with no checkpoints, clean-all, invalid run ID, status command, status JSON output
+  - `tests/e2e/error_test.go` -- unknown subcommand, unknown agent, invalid config, global dry-run flag, global verbose flag, global no-color flag, phase/task mutual exclusivity, review concurrency validation
+  - `Makefile` -- added `test-e2e` target: `go test -v -count=1 -timeout 10m ./tests/e2e/`
+- **Key decisions:**
+  - External test package (`package e2e_test`) with no non-test `.go` files -- Go supports this for external test packages
+  - `runtime.Caller(0)` in `projectRoot()` yields the compile-time path of `helpers_test.go`; navigates two levels up to find the repo root reliably regardless of working directory
+  - All mock scripts use `set -euo pipefail` with `${VAR:-default}` pattern to be safe with `-u` (unset variable errors)
+  - PATH override in subprocess env (`mock-agents` prepended) shadows real claude/codex binaries; no real API calls are made
+  - `NO_COLOR=1` and `RAVEN_LOG_FORMAT=json` set in subprocess env for clean, parseable test output
+  - All tests guard with `if testing.Short() { t.Skip() }` for rapid unit-test cycles
+  - Git repo initialised with `test@example.com` identity to avoid global git config dependency
+- **Files created/modified:**
+  - `testdata/mock-agents/claude` -- Mock Claude CLI script (executable)
+  - `testdata/mock-agents/codex` -- Mock Codex CLI script (executable)
+  - `testdata/mock-agents/rate-limited-agent` -- Rate-limiting mock agent script (executable)
+  - `testdata/mock-agents/failing-agent` -- Always-failing mock agent script (executable)
+  - `tests/e2e/helpers_test.go` -- Test infrastructure helpers
+  - `tests/e2e/config_test.go` -- Config and init command E2E tests
+  - `tests/e2e/implement_test.go` -- Implementation loop E2E tests
+  - `tests/e2e/review_test.go` -- Review pipeline E2E tests
+  - `tests/e2e/pipeline_test.go` -- Pipeline orchestration E2E tests
+  - `tests/e2e/prd_test.go` -- PRD decomposition E2E tests
+  - `tests/e2e/resume_test.go` -- Checkpoint/resume and status E2E tests
+  - `tests/e2e/error_test.go` -- Error handling and CLI validation E2E tests
+  - `Makefile` -- added `test-e2e` target and updated `.PHONY`
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test -short ./tests/e2e/` ✓
+
+---
+
 ## Not Started Tasks
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
@@ -630,7 +674,7 @@ _None currently_
 | T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Completed |
 | T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Completed |
 | T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Completed |
-| T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Not Started |
+| T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Completed |
 | T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Not Started |
 | T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Not Started |
 | T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Not Started |

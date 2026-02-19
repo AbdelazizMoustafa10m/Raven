@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Mock agent that rate-limits the first N calls, then succeeds.
+#
+# Controlled via environment variables:
+#   MOCK_RATE_LIMIT_UNTIL - number of calls to rate-limit (default: 1)
+#   MOCK_SIGNAL_FILE      - file used to count invocations
+set -euo pipefail
+
+MOCK_RATE_LIMIT_UNTIL="${MOCK_RATE_LIMIT_UNTIL:-1}"
+CALL_COUNT_FILE="${MOCK_SIGNAL_FILE:-/tmp/mock-calls-$$}"
+
+# Count previous invocations.
+COUNT=0
+if [[ -f "$CALL_COUNT_FILE" ]]; then
+    COUNT=$(wc -l < "$CALL_COUNT_FILE" 2>/dev/null || echo 0)
+fi
+
+# Record this invocation.
+echo "called:$*" >> "$CALL_COUNT_FILE"
+COUNT=$((COUNT + 1))
+
+if [[ $COUNT -le $MOCK_RATE_LIMIT_UNTIL ]]; then
+    echo "Your rate limit will reset in 5 seconds." >&2
+    exit 1
+fi
+
+echo "PHASE_COMPLETE"
+exit 0

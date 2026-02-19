@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Mock agent that always fails with a configurable exit code.
+#
+# Controlled via environment variables:
+#   MOCK_EXIT_CODE - exit code to return (default: 1)
+set -euo pipefail
+
+echo "mock agent failure" >&2
+exit "${MOCK_EXIT_CODE:-1}"
