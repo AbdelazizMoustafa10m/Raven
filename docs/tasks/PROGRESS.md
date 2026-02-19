@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 83 |
+| Completed | 84 |
 | In Progress | 0 |
-| Not Started | 6 |
+| Not Started | 5 |
 
 ---
 
@@ -519,6 +519,24 @@ _None currently_
 
 ---
 
+### T-080: GitHub Actions Release Automation Workflow
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `.github/workflows/release.yml` GitHub Actions workflow triggered on `v*` tag pushes
+  - `actions/checkout@v4` with `fetch-depth: 0` for full git history (required for changelog generation)
+  - `actions/setup-go@v5` reading Go version from `go.mod` (no hardcoded version)
+  - `go vet ./... && go test ./...` gate before any release artifact is built
+  - Binary size verification step enforcing 25MB limit on linux/amd64 build
+  - `goreleaser/goreleaser-action@v6` running `release --clean` with `GITHUB_TOKEN`
+  - `permissions: contents: write` for GitHub Release creation
+- **Files created/modified:**
+  - `.github/workflows/release.yml` -- GitHub Actions release workflow for automated cross-platform builds and publishing
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## Not Started Tasks
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
@@ -533,7 +551,7 @@ _None currently_
 | Task | Name | Priority | Effort | Status |
 |------|------|----------|--------|--------|
 | T-079 | GoReleaser Configuration for Cross-Platform Builds | Must Have | Medium (6-10hrs) | Completed |
-| T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Not Started |
+| T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Completed |
 | T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Not Started |
 | T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Not Started |
 | T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Not Started |
