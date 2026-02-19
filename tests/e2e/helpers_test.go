@@ -41,6 +41,9 @@ func newTestProject(t *testing.T) *testProject {
 	mockDir := filepath.Join(dir, "mock-agents")
 	copyMockAgents(t, mockDir)
 
+	// Create the default prompts directory expected by the config defaults.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "prompts"), 0o755))
+
 	return &testProject{Dir: dir, BinaryPath: binary, t: t}
 }
 
