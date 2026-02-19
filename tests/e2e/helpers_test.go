@@ -75,7 +75,8 @@ func copyMockAgents(t *testing.T, destDir string) {
 		dst := filepath.Join(destDir, entry.Name())
 		data, readErr := os.ReadFile(src)
 		require.NoError(t, readErr)
-		require.NoError(t, os.WriteFile(dst, data, 0o755))
+		require.NoError(t, os.WriteFile(dst, data, 0o600))
+		require.NoError(t, os.Chmod(dst, 0o755))
 	}
 }
 

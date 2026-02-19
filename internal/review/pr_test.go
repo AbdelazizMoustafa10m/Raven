@@ -452,8 +452,11 @@ func TestCreate_DryRun_NoURL(t *testing.T) {
 func writeFakeScript(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	p := filepath.Join(dir, name)
-	err := os.WriteFile(p, []byte(content), 0755)
+	// Write without executable bit first, then chmod — avoids ETXTBSY ("text
+	// file busy") on Linux when parallel tests race on exec.
+	err := os.WriteFile(p, []byte(content), 0600)
 	require.NoError(t, err)
+	require.NoError(t, os.Chmod(p, 0755))
 	return p
 }
 
