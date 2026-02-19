@@ -30,10 +30,10 @@ full lifecycle of AI-assisted software development -- from PRD decomposition
 to implementation, code review, fix application, and pull request creation.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	// RunE shows full help when invoked with no subcommand. Without RunE,
-	// Cobra only prints the Long description (omitting Usage and Flags).
+	// When invoked with no subcommand, launch the interactive TUI dashboard.
+	// Help is still available via `raven --help` / `raven -h`.
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
+		return runDashboard(cmd, args)
 	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Check env vars for flags not explicitly set on command line.
