@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 84 |
+| Completed | 85 |
 | In Progress | 0 |
-| Not Started | 5 |
+| Not Started | 4 |
 
 ---
 
@@ -537,6 +537,28 @@ _None currently_
 
 ---
 
+### T-081: Shell Completion Installation Scripts and Packaging
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `scripts/completions/install.sh` universal shell completion installer that auto-detects bash/zsh/fish from `$SHELL` and installs to the correct user or system directory
+  - `scripts/gen-completions/main.go` Go program that imports `cli.NewRootCmd()` and generates all four completion files (bash, zsh, fish, powershell) into a specified output directory
+  - `cli.NewRootCmd()` exported function in `internal/cli/root.go` for use by external tools without the global rootCmd singleton
+  - Updated `.goreleaser.yaml` to run `go run ./scripts/gen-completions completions` as a `before.hook` and include `completions/*` + `install.sh` in archives; added standalone `completions-archive` meta artifact
+  - `make completions` Makefile target for local completion generation
+  - Added `completions/` to `.gitignore` (generated artifact, not committed)
+- **Files created/modified:**
+  - `scripts/completions/install.sh` -- universal bash/zsh/fish completion installer with auto-detection and idempotent installs
+  - `scripts/gen-completions/main.go` -- Go program generating all four shell completion files for GoReleaser packaging
+  - `internal/cli/root.go` -- added `NewRootCmd()` exported function
+  - `.goreleaser.yaml` -- added before hook, extra files in archives, standalone completions archive
+  - `Makefile` -- added `completions` target
+  - `.gitignore` -- added `completions/` entry
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
+---
+
 ## Not Started Tasks
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
@@ -552,7 +574,7 @@ _None currently_
 |------|------|----------|--------|--------|
 | T-079 | GoReleaser Configuration for Cross-Platform Builds | Must Have | Medium (6-10hrs) | Completed |
 | T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Completed |
-| T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Not Started |
+| T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Completed |
 | T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Not Started |
 | T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Not Started |
 | T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Not Started |

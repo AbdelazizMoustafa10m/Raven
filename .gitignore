@@ -48,6 +48,9 @@ reports/review/
 dist/
 build/
 
+# Generated shell completion files (produced by `make completions` / goreleaser)
+/completions/
+
 # Environment files
 .env
 .env.local

@@ -6,6 +6,7 @@ before:
   hooks:
     - go mod tidy
     - go vet ./...
+    - go run ./scripts/gen-completions completions
 
 builds:
   - id: raven
@@ -38,6 +39,16 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+    files:
+      - completions/*
+      - scripts/completions/install.sh
+  - id: completions-archive
+    meta: true
+    name_template: "{{ .ProjectName }}_completions_{{ .Version }}"
+    format: tar.gz
+    files:
+      - completions/*
+      - scripts/completions/install.sh
 
 checksum:
   name_template: "checksums.txt"
