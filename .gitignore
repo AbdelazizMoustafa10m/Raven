@@ -51,6 +51,9 @@ build/
 # Generated shell completion files (produced by `make completions` / goreleaser)
 /completions/
 
+# Generated man pages (produced by `make manpages` / goreleaser)
+/man/
+
 # Environment files
 .env
 .env.local

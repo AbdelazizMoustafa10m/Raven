@@ -7,6 +7,7 @@ before:
     - go mod tidy
     - go vet ./...
     - go run ./scripts/gen-completions completions
+    - go run ./scripts/gen-manpages man/man1
 
 builds:
   - id: raven
@@ -42,6 +43,8 @@ archives:
     files:
       - completions/*
       - scripts/completions/install.sh
+      - man/man1/*.1
+      - scripts/install-manpages.sh
   - id: completions-archive
     meta: true
     name_template: "{{ .ProjectName }}_completions_{{ .Version }}"
@@ -49,6 +52,13 @@ archives:
     files:
       - completions/*
       - scripts/completions/install.sh
+  - id: manpages-archive
+    meta: true
+    name_template: "{{ .ProjectName }}_manpages_{{ .Version }}"
+    format: tar.gz
+    files:
+      - man/man1/*.1
+      - scripts/install-manpages.sh
 
 checksum:
   name_template: "checksums.txt"

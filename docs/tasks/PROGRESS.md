@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 85 |
+| Completed | 86 |
 | In Progress | 0 |
-| Not Started | 4 |
+| Not Started | 5 |
 
 ---
 
@@ -559,6 +559,31 @@ _None currently_
 
 ---
 
+### T-082: Man Page Generation Using cobra/doc
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `scripts/gen-manpages/main.go` Go program that imports `cli.NewRootCmd()` and calls `doc.GenManTree()` to generate troff-formatted Section 1 man pages for every Raven command into a configurable output directory (default `man/man1`)
+  - `GenManHeader` configured with `Title:"RAVEN"`, `Section:"1"`, `Source:"Raven"`, `Manual:"Raven Manual"` so man pages display correctly under `man raven`, `man raven-implement`, etc.
+  - `scripts/install-manpages.sh` bash installer that copies `man/man1/*.1` to `${1:-/usr/local/share/man/man1}`, prints each installed path, and runs `mandb`/`makewhatis` when available to update the man database
+  - Updated `.goreleaser.yaml`: added `go run ./scripts/gen-manpages man/man1` as a `before.hook` (after completions hook); added `man/man1/*.1` and `scripts/install-manpages.sh` to the `raven-archive` extra files; added standalone `manpages-archive` meta archive
+  - `make manpages` Makefile target for local man page generation
+  - Added `/man/` to `.gitignore` (generated artifact, not committed)
+- **Files created/modified:**
+  - `scripts/gen-manpages/main.go` -- Go program generating troff man pages for all Raven commands
+  - `scripts/install-manpages.sh` -- bash installer copying man pages to system man directory with db update
+  - `.goreleaser.yaml` -- added before hook, man pages in archives, standalone manpages-archive meta
+  - `Makefile` -- added `manpages` target and updated `.PHONY`
+  - `.gitignore` -- added `/man/` entry
+- **Key decisions:**
+  - `github.com/spf13/cobra/doc` is a sub-package of the already-required `github.com/spf13/cobra` module (v1.10.2); no new module version needed. `go-md2man` (transitive dep) is added to go.mod/go.sum via `go mod tidy` when the new import is first resolved.
+  - `nullglob` in the installer prevents a bare `*.1` glob from being passed to `cp` when the source directory is empty.
+  - Man pages for hidden commands (e.g., `__complete`) are omitted automatically by cobra/doc because they are marked hidden.
+- **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test ./...` ✓  `go run ./scripts/gen-manpages man/man1` generates man pages ✓
+
+---
+
 ## Not Started Tasks
 
 ### Phase 7: Polish & Distribution (T-079 to T-087)
@@ -575,7 +600,7 @@ _None currently_
 | T-079 | GoReleaser Configuration for Cross-Platform Builds | Must Have | Medium (6-10hrs) | Completed |
 | T-080 | GitHub Actions Release Automation Workflow | Must Have | Medium (6-10hrs) | Completed |
 | T-081 | Shell Completion Installation Scripts and Packaging | Should Have | Small (3-4hrs) | Completed |
-| T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Not Started |
+| T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Completed |
 | T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Not Started |
 | T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Not Started |
 | T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Not Started |

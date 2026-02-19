@@ -25,7 +25,7 @@ LDFLAGS_DEBUG := \
 
 GOFLAGS  := CGO_ENABLED=0
 
-.PHONY: all build test vet lint tidy clean install fmt bench run-version build-debug release-snapshot completions
+.PHONY: all build test vet lint tidy clean install fmt bench run-version build-debug release-snapshot completions manpages
 
 all: tidy vet test build
 
@@ -68,6 +68,10 @@ release-snapshot:
 # Generate shell completion scripts for all supported shells into completions/
 completions:
 	go run ./scripts/gen-completions completions
+
+# Generate Unix man pages for all commands into man/man1/
+manpages:
+	go run ./scripts/gen-manpages man/man1
 
 # Debug build (with symbols, for dlv debugger)
 build-debug:
