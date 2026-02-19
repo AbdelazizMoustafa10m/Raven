@@ -4,9 +4,9 @@
 
 | Status | Count |
 |--------|-------|
-| Completed | 88 |
+| Completed | 89 |
 | In Progress | 0 |
-| Not Started | 3 |
+| Not Started | 2 |
 
 ---
 
@@ -654,6 +654,23 @@ _None currently_
   - `Makefile` -- added `test-e2e` target and updated `.PHONY`
 - **Verification:** `go build ./cmd/raven/` ✓  `go vet ./...` ✓  `go test -short ./tests/e2e/` ✓
 
+### T-085: CI/CD Pipeline with GitHub Actions
+
+- **Status:** Completed
+- **Date:** 2026-02-19
+- **What was built:**
+  - `.github/workflows/ci.yml` — four-job CI workflow (lint, test, build, mod-tidy) triggering on PRs and pushes to `main`
+  - `.golangci.yml` — golangci-lint configuration enabling 16 linters (errcheck, gosec, staticcheck, errorlint, etc.) with test-file and mock-path exclusions
+  - Lint job uses `golangci/golangci-lint-action@v6` with pinned `v1.63` version and 5-minute timeout
+  - Test job runs on Ubuntu + macOS matrix with Go 1.24, race detection (`-race`), and coverage artifact upload
+  - Build job verifies cross-compilation for 5 platforms (darwin/linux/windows × amd64/arm64, excluding windows/arm64) with `CGO_ENABLED=0`
+  - Module hygiene job ensures `go mod tidy` produces no diff
+  - Workflow uses read-only `contents: read` permission (principle of least privilege)
+- **Files created/modified:**
+  - `.github/workflows/ci.yml` — Main CI workflow for PRs and main branch
+  - `.golangci.yml` — golangci-lint configuration at project root
+- **Verification:** `go build` ✓  `go vet` ✓  `go test` ✓
+
 ---
 
 ## Not Started Tasks
@@ -675,7 +692,7 @@ _None currently_
 | T-082 | Man Page Generation Using cobra/doc | Should Have | Small (2-4hrs) | Completed |
 | T-083 | Performance Benchmarking Suite | Should Have | Medium (8-12hrs) | Completed |
 | T-084 | End-to-End Integration Test Suite with Mock Agents | Must Have | Large (20-30hrs) | Completed |
-| T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Not Started |
+| T-085 | CI/CD Pipeline with GitHub Actions | Must Have | Medium (6-10hrs) | Completed |
 | T-086 | Comprehensive README and User Documentation | Must Have | Medium (8-12hrs) | Not Started |
 | T-087 | Final Binary Verification and Release Checklist | Must Have | Medium (6-8hrs) | Not Started |
 
