@@ -7,43 +7,72 @@ Download the latest pre-built binary for your platform from the [GitHub Releases
 === "macOS (Apple Silicon)"
 
     ```bash
-    curl -Lo raven.tar.gz https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_darwin_arm64.tar.gz
+    # macOS Apple Silicon (arm64)
+    curl -Lo raven.tar.gz \
+      https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_darwin_arm64.tar.gz
     tar -xzf raven.tar.gz
     sudo install -m 755 raven /usr/local/bin/raven
+    ```
+
+    Verify the checksum:
+
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
     ```
 
 === "macOS (Intel)"
 
     ```bash
-    curl -Lo raven.tar.gz https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_darwin_amd64.tar.gz
+    # macOS Intel (amd64)
+    curl -Lo raven.tar.gz \
+      https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_darwin_amd64.tar.gz
     tar -xzf raven.tar.gz
     sudo install -m 755 raven /usr/local/bin/raven
+    ```
+
+    Verify the checksum:
+
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
     ```
 
 === "Linux (x86-64)"
 
     ```bash
-    curl -Lo raven.tar.gz https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_linux_amd64.tar.gz
+    # Linux x86-64 (amd64)
+    curl -Lo raven.tar.gz \
+      https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_linux_amd64.tar.gz
     tar -xzf raven.tar.gz
     sudo install -m 755 raven /usr/local/bin/raven
+    ```
+
+    Verify the checksum:
+
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
     ```
 
 === "Linux (ARM64)"
 
     ```bash
-    curl -Lo raven.tar.gz https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_linux_arm64.tar.gz
+    # Linux ARM64 (arm64)
+    curl -Lo raven.tar.gz \
+      https://github.com/AbdelazizMoustafa10m/Raven/releases/latest/download/raven_<VERSION>_linux_arm64.tar.gz
     tar -xzf raven.tar.gz
     sudo install -m 755 raven /usr/local/bin/raven
     ```
 
-Verify the checksum against `checksums.txt` included in the release:
+    Verify the checksum:
 
-```bash
-sha256sum -c checksums.txt --ignore-missing
-```
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
+    ```
 
-!!! note "Windows"
-    Download the `.zip` from the releases page. For the best experience on Windows, consider running Raven under [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
+=== "Windows"
+
+    Download the `.zip` from the [GitHub Releases page](https://github.com/AbdelazizMoustafa10m/Raven/releases).
+
+    For the best experience on Windows, consider running Raven under [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
 
 ## From Source
 
