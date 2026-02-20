@@ -1,0 +1,77 @@
+[project]
+site_name = "Raven"
+site_description = "AI workflow orchestration command center"
+site_url = "https://abdelazizmoustafa10m.github.io/Raven/"
+docs_dir = "doc"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Getting Started" = [
+    { "Installation" = "getting-started/installation.md" },
+    { "Quick Start" = "getting-started/quickstart.md" },
+  ] },
+  { "Reference" = [
+    { "Commands" = "reference/commands.md" },
+    { "Configuration" = "reference/configuration.md" },
+  ] },
+  { "Architecture" = [
+    { "Overview" = "architecture/overview.md" },
+    { "Workflow Engine" = "architecture/workflows.md" },
+    { "Agent Adapters" = "architecture/agents.md" },
+  ] },
+  { "Guides" = [
+    { "CI/CD Integration" = "guides/ci-cd.md" },
+    { "Shell Completions" = "guides/shell-completions.md" },
+  ] },
+  { "Development" = [
+    { "Release Checklist" = "development/release-checklist.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+
+features = [
+  "navigation.instant",
+  "navigation.tracking",
+  "navigation.sections",
+  "navigation.expand",
+  "navigation.top",
+  "search.highlight",
+  "content.code.copy",
+  "content.code.annotate",
+  "content.action.edit",
+  "content.tabs.link",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "deep orange"
+accent = "deep orange"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "deep orange"
+accent = "deep orange"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.theme.font]
+text = "Inter"
+code = "JetBrains Mono"
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/AbdelazizMoustafa10m/Raven"

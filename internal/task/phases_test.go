@@ -1,6 +1,7 @@
 package task
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -217,20 +218,39 @@ func TestLoadPhases_SkipsCommentsAndBlanks(t *testing.T) {
 	assert.Len(t, phases, 3)
 }
 
-func TestLoadPhases_ActualProjectFile(t *testing.T) {
-	// Integration test: parse the real phases.conf in this repository.
-	phases, err := LoadPhases(filepath.Join("..", "..", "docs", "tasks", "phases.conf"))
-	require.NoError(t, err)
-	assert.NotEmpty(t, phases, "project phases.conf should contain at least one phase")
+func TestLoadPhases_RealisticMultiPhaseFile(t *testing.T) {
+	t.Parallel()
 
-	// Verify phases are sorted.
+	// Write a realistic phases.conf to a temp file — mirrors the structure of
+	// the real project file without depending on a gitignored artifact.
+	content := `# Raven Phase Definitions
+#
+# Format: ID|SLUG|DISPLAY_NAME|TASK_START|TASK_END|ICON
+#
+1|foundation|Foundation|001|015|x
+2|task-system-agents|Task System & Agent Adapters|016|030|x
+3|review-pipeline|Review Pipeline|031|042|x
+4|workflow-engine|Workflow Engine & Pipeline|043|055|x
+5|prd-decomposition|PRD Decomposition|056|065|x
+6|tui-command-center|TUI Command Center|066|078|x
+7|polish-distribution|Polish & Distribution|079|087|x
+8|headless-observability|Headless Observability|088|089|x
+`
+	path := filepath.Join(t.TempDir(), "phases.conf")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	phases, err := LoadPhases(path)
+	require.NoError(t, err)
+	assert.Len(t, phases, 8, "should load all 8 phases")
+
+	// Verify phases are sorted by ID.
 	for i := 1; i < len(phases); i++ {
 		assert.Less(t, phases[i-1].ID, phases[i].ID, "phases must be sorted by ID")
 	}
 
-	// Validate phases are non-overlapping.
+	// Validate non-overlapping ranges.
 	err = ValidatePhases(phases)
-	assert.NoError(t, err, "project phases.conf should be valid")
+	assert.NoError(t, err, "phases should be valid (no overlaps)")
 }
 
 // ---- PhaseForTask tests -----------------------------------------------------
