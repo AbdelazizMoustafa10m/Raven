@@ -59,6 +59,12 @@ reports/review/
 dist/
 build/
 
+# MkDocs / Zensical build output
+site/
+
+# Internal development docs (tasks, PRD)
+docs/
+
 # Generated shell completion files (produced by `make completions` / goreleaser)
 /completions/
 

@@ -146,20 +146,22 @@ raven pipeline --phase 1 --impl-agent claude --review-agent codex --fix-agent cl
 | `raven version` | Print version information |
 | `raven completion` | Generate shell completion scripts |
 
-See the [Command Reference](docs/commands.md) for full flag details and usage examples.
+See the [Command Reference](doc/reference/commands.md) for full flag details and usage examples.
 
 ## Documentation
 
+Full documentation is available at **[abdelazizmoustafa10m.github.io/Raven](https://abdelazizmoustafa10m.github.io/Raven/)**.
+
 | Document | Description |
 |----------|-------------|
-| [Command Reference](docs/commands.md) | Full flag tables and examples for every command |
-| [Configuration Reference](docs/configuration.md) | Complete `raven.toml` field reference |
-| [Architecture](docs/architecture.md) | Package layout, core abstractions, design decisions |
-| [Workflow Engine](docs/workflows.md) | State machine design, built-in workflows, custom workflows |
-| [Agent Adapters](docs/agents.md) | Agent interface, Claude/Codex/Gemini adapters, rate-limit coordination |
-| [Shell Completions & Man Pages](docs/shell-completions.md) | Installation instructions for bash, zsh, fish, PowerShell |
-| [CI/CD Integration](docs/ci-cd.md) | GitHub Actions examples, exit codes, automation patterns |
-| [Release Checklist](docs/RELEASE_CHECKLIST.md) | Steps for cutting a new release |
+| [Command Reference](doc/reference/commands.md) | Full flag tables and examples for every command |
+| [Configuration Reference](doc/reference/configuration.md) | Complete `raven.toml` field reference |
+| [Architecture](doc/architecture/overview.md) | Package layout, core abstractions, design decisions |
+| [Workflow Engine](doc/architecture/workflows.md) | State machine design, built-in workflows, custom workflows |
+| [Agent Adapters](doc/architecture/agents.md) | Agent interface, Claude/Codex/Gemini adapters, rate-limit coordination |
+| [Shell Completions & Man Pages](doc/guides/shell-completions.md) | Installation instructions for bash, zsh, fish, PowerShell |
+| [CI/CD Integration](doc/guides/ci-cd.md) | GitHub Actions examples, exit codes, automation patterns |
+| [Release Checklist](doc/development/release-checklist.md) | Steps for cutting a new release |
 
 ## Contributing
 
